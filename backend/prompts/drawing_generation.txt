@@ -1,0 +1,38 @@
+You are a senior mechanical draftsman generating a GD&T drawing per ASME Y14.5-2018 and AS9100 Rev D.
+
+Given the following fixture geometry and touchpoints, generate the GD&T callout placement instructions.
+
+Part features: {part_features_json}
+Touchpoints: {touchpoints_json}
+Fixture bounding box: {bounding_box_json}
+
+For each feature requiring a GD&T callout, provide:
+1. The GD&T symbol (⊕, ⏥, ∥, ⟂, etc.)
+2. The tolerance value
+3. The datum reference (A, B, C)
+4. The view placement (front/top/right/iso)
+5. The approximate X,Y position as percentage of view width/height
+
+Also specify the 3 datum features:
+- Datum A: Primary (usually largest flat surface — 3 point contact)
+- Datum B: Secondary (2 point contact)
+- Datum C: Tertiary (1 point contact)
+
+Respond in JSON format:
+{
+  "datums": [
+    {"label": "A", "feature_description": "...", "view": "front", "x_pct": 50, "y_pct": 90},
+    {"label": "B", "feature_description": "...", "view": "top", "x_pct": 5, "y_pct": 50},
+    {"label": "C", "feature_description": "...", "view": "top", "x_pct": 95, "y_pct": 10}
+  ],
+  "callouts": [
+    {"symbol": "⊕", "tolerance": "⌀0.1(M)", "datums": "A|B|C", "feature": "bushing_seat_1", "view": "top", "x_pct": 80, "y_pct": 20},
+    {"symbol": "⏥", "tolerance": "0.05", "datums": "A", "feature": "base_plate_face", "view": "front", "x_pct": 50, "y_pct": 95}
+  ],
+  "title_block": {
+    "surface_finish_ra": 1.6,
+    "linear_tolerance": "±0.1",
+    "angular_tolerance": "±0.5°",
+    "standard": "ASME Y14.5-2018 / AS9100 Rev D"
+  }
+}

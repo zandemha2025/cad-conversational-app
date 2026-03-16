@@ -1,0 +1,22 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglu1-mesa libgl1-mesa-dev libx11-dev libxt-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install all deps except pythonocc-core first
+COPY requirements.txt .
+RUN grep -v 'pythonocc-core' requirements.txt | pip install --no-cache-dir -r /dev/stdin
+
+# pythonocc-core: OCCT STEP parsing runs on this worker.
+# Pre-built wheel available on Linux x86_64 (Fly.io performance CPUs).
+RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
+    || echo "WARN: pythonocc-core wheel not found — OCCT features will use stub fallbacks"
+
+COPY . .
+
+# Celery worker — runs all task queues
+CMD ["celery", "-A", "app.core.celery_app.celery_app", "worker", \
+     "--loglevel=info", "--queues=high_priority,normal,low", "--concurrency=2"]

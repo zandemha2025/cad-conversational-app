@@ -1,0 +1,27 @@
+# Fly.io deployment — ScaleCAD Celery Worker
+# Deploy with: fly deploy --config fly-worker.toml --app scalecad-worker
+
+app = "scalecad-worker"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 60   # Workers may be mid-job; give more grace time
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[deploy]
+  strategy = "immediate"
+
+[env]
+  ENVIRONMENT = "production"
+  DEBUG       = "false"
+
+# Shares the same secrets as the API app.
+# Run: fly secrets import --app scalecad-worker < .env.production
+
+[[vm]]
+  cpu_kind = "performance"
+  cpus     = 2
+  memory   = "4gb"   # OCCT / KCL compilation is memory-intensive
+
+# No HTTP services — this is a background worker only

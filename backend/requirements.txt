@@ -1,0 +1,59 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+websockets==14.1
+
+# Settings & validation
+pydantic==2.10.3
+pydantic[email]==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# Database — Supabase + direct Postgres
+supabase==2.11.0
+asyncpg==0.30.0
+sqlalchemy[asyncio]==2.0.36
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# AI — Google Gemini
+google-generativeai==0.8.3
+
+# Zoo.dev CAD kernel (HTTP client)
+httpx==0.28.1
+
+# File storage — Cloudflare R2 (S3-compatible)
+boto3==1.35.93
+botocore==1.35.93
+
+# Job queue
+celery[redis]==5.4.0
+redis==5.2.1
+
+# Geometry & math
+numpy==2.2.1
+scipy==1.15.0
+trimesh==4.5.3
+
+# CAD kernel — pip wheel available for Linux x86_64 (Fly.io)
+# On arm64/macOS use: conda install -c conda-forge pythonocc-core
+pythonocc-core==7.8.1
+
+# Utilities
+httpx==0.28.1
+python-slugify==8.0.4
+orjson==3.10.12
+aiofiles==24.1.0
+Pillow==11.1.0
+
+# PDF generation (for drawing export)
+reportlab==4.2.5
+svglib==1.5.1
+
+# Dev / testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1

@@ -1,0 +1,268 @@
+import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  Box,
+  ChevronDown,
+  Grid2x2,
+  Layers,
+  Play,
+  RotateCcw,
+  Save,
+  Settings,
+  Share2,
+  Undo2,
+  Redo2,
+  Zap,
+  Wrench,
+  Target,
+  GitBranch,
+  CheckCircle2,
+  AlertTriangle,
+  Package,
+  BarChart3,
+  Shield,
+  Users,
+  LogOut,
+} from 'lucide-react';
+
+export type WorkspaceMode = 'part' | 'assembly' | 'drawing' | 'nodes';
+
+interface TopBarProps {
+  mode?: WorkspaceMode;
+  onModeChange?: (m: WorkspaceMode) => void;
+  projectId?: string;
+}
+
+export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isWorkspace = location.pathname.startsWith('/workspace');
+  const [saved] = useState(true);
+  const [showStandards, setShowStandards] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  return (
+    <header className="h-11 bg-cadsurface-900 border-b border-cadsurface-700 flex items-center px-3 gap-1 shrink-0 z-50 select-none">
+      {/* Logo */}
+      <button
+        onClick={() => navigate('/')}
+        className="flex items-center gap-2 mr-2 hover:opacity-80 transition-opacity shrink-0"
+      >
+        <div className="w-7 h-7 rounded-lg bg-cadblue-600 flex items-center justify-center glow-blue">
+          <Wrench size={13} className="text-white" />
+        </div>
+        <span className="text-sm font-semibold text-white tracking-tight">
+          Forge<span className="text-cadblue-400">AI</span>
+        </span>
+      </button>
+
+      <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
+
+      {isWorkspace ? (
+        <>
+          {/* Menu items */}
+          {['File', 'Edit', 'View', 'Insert', 'Tooling', 'Simulate', 'Help'].map((item) => (
+            <button
+              key={item}
+              className={`btn-ghost text-xs px-2 py-1 rounded flex items-center gap-0.5 ${
+                item === 'Tooling' ? 'text-amber-400 hover:text-amber-300' : ''
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+
+          <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
+
+          {/* Undo/Redo */}
+          <button className="btn-ghost p-1.5 rounded" title="Undo"><Undo2 size={14} /></button>
+          <button className="btn-ghost p-1.5 rounded" title="Redo"><Redo2 size={14} /></button>
+
+          <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
+
+          {/* Mode switcher */}
+          <div className="flex items-center bg-cadsurface-800 rounded-md p-0.5 gap-0.5 shrink-0">
+            {([
+              { id: 'part'     as const, icon: Box,       label: 'Part' },
+              { id: 'assembly' as const, icon: Layers,    label: 'Assembly' },
+              { id: 'drawing'  as const, icon: Grid2x2,   label: 'Drawing' },
+              { id: 'nodes'    as const, icon: GitBranch, label: 'Nodes' },
+            ] as const).map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => onModeChange?.(id)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                  mode === id
+                    ? 'bg-cadblue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-cadsurface-700'
+                }`}
+              >
+                <Icon size={12} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Part number pill */}
+          <div className="flex items-center gap-2 px-2.5 py-1 bg-cadsurface-800/60 border border-cadsurface-700 rounded-lg text-xs shrink-0">
+            <div className="flex items-center gap-1.5">
+              <Wrench size={11} className="text-amber-400" />
+              <span className="font-mono text-slate-300 font-medium">TL-4471-A</span>
+            </div>
+            <div className="w-px h-3 bg-cadsurface-600" />
+            <div className="flex items-center gap-1">
+              <GitBranch size={11} className="text-slate-500" />
+              <span className="font-mono text-emerald-400 font-medium">Rev B</span>
+            </div>
+            <div className="w-px h-3 bg-cadsurface-600" />
+            <span className="text-slate-500 font-mono">Al 6061-T6</span>
+          </div>
+
+          {/* Filename + save */}
+          <div className="flex items-center gap-1.5 text-xs px-2">
+            <span className="text-slate-400">wing_panel_drill_jig.sldprt</span>
+            {saved ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 size={11} />Saved
+              </span>
+            ) : (
+              <span className="text-amber-400 flex items-center gap-1">
+                <AlertTriangle size={11} />Unsaved
+              </span>
+            )}
+          </div>
+
+          <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
+
+          {/* Standards badge + dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowStandards((p) => !p)}
+              className="flex items-center gap-1 text-xs btn-ghost px-2 py-1 rounded-md border border-cadsurface-700 hover:border-cadblue-600/50 transition-colors"
+            >
+              <Target size={11} className="text-cadblue-400" />
+              <span className="text-slate-400">Standards</span>
+              <span className="text-emerald-400">3/4</span>
+              <ChevronDown size={10} className={`text-slate-600 transition-transform ${showStandards ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showStandards && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowStandards(false)} />
+                <div className="absolute top-full right-0 mt-1 w-56 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
+                  <div className="px-3 py-1.5 border-b border-cadsurface-800">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Standards Compliance</p>
+                  </div>
+                  {[
+                    { std: 'AS9100 Rev D',    ok: true,  note: 'Traceability fields complete' },
+                    { std: 'ASME Y14.5-2018', ok: true,  note: 'GD&T annotations applied' },
+                    { std: 'ISO 2768-m',      ok: true,  note: 'General tolerances set' },
+                    { std: 'ITAR',            ok: false, note: 'Classification pending' },
+                  ].map((item) => (
+                    <div key={item.std} className="flex items-center justify-between px-3 py-2 hover:bg-cadsurface-800 transition-colors">
+                      <div>
+                        <p className="text-xs text-slate-300 font-medium">{item.std}</p>
+                        <p className="text-xs text-slate-600">{item.note}</p>
+                      </div>
+                      {item.ok
+                        ? <CheckCircle2 size={12} className="text-emerald-400 shrink-0 ml-2" />
+                        : <AlertTriangle size={12} className="text-amber-400 shrink-0 ml-2" />
+                      }
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button className="btn-ghost p-1.5 rounded" title="Save"><Save size={14} /></button>
+          <button className="btn-ghost p-1.5 rounded" title="Run simulation"><Play size={14} /></button>
+
+          <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
+
+          <button className="flex items-center gap-1.5 btn-ghost text-xs rounded-md px-2 py-1 border border-cadsurface-700 hover:border-cadblue-600/50">
+            <Share2 size={13} />Share<ChevronDown size={11} />
+          </button>
+
+          {/* DFM indicator */}
+          <div className="flex items-center gap-1 ml-1 px-2 py-1 rounded-md bg-red-950/40 border border-red-900/60 cursor-pointer hover:bg-red-900/30 transition-colors">
+            <AlertTriangle size={11} className="text-red-400" />
+            <span className="text-xs text-red-400 font-medium">1 DFM</span>
+          </div>
+        </>
+      ) : (
+        <>
+          {['Dashboard', 'Projects', 'Library', 'Templates'].map((item) => (
+            <button
+              key={item}
+              onClick={() => item === 'Projects' && navigate('/')}
+              className={`btn-ghost text-xs px-2.5 py-1 rounded ${item === 'Projects' ? 'text-cadblue-400' : ''}`}
+            >
+              {item}
+            </button>
+          ))}
+
+          <div className="flex-1" />
+
+          <button className="flex items-center gap-1.5 text-xs btn-ghost rounded-md px-2 py-1 border border-cadsurface-700 hover:border-amber-600/50 text-amber-400 hover:text-amber-300 transition-colors">
+            <Package size={13} />
+            Hardware Library
+          </button>
+          <button className="flex items-center gap-1.5 text-xs btn-ghost rounded-md px-2 py-1 text-amber-400 hover:text-amber-300">
+            <Zap size={13} />Upgrade
+          </button>
+        </>
+      )}
+
+      {/* Always-right */}
+      <div className="flex items-center gap-1 ml-1">
+        <button className="btn-ghost p-1.5 rounded" title="Refresh"><RotateCcw size={14} /></button>
+        <button className="btn-ghost p-1.5 rounded" title="Settings" onClick={() => navigate('/settings')}>
+          <Settings size={14} />
+        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowUserMenu(p => !p)}
+            className="w-7 h-7 rounded-full bg-cadblue-600 flex items-center justify-center text-xs font-bold ml-1 cursor-pointer hover:opacity-80"
+          >
+            NK
+          </button>
+          {showUserMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+              <div className="absolute top-full right-0 mt-1 w-48 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
+                <div className="px-3 py-2 border-b border-cadsurface-800">
+                  <p className="text-xs font-semibold text-slate-300">Nazeem K.</p>
+                  <p className="text-xs text-slate-600">Engineer · Admin</p>
+                </div>
+                {[
+                  { label: 'Team & Org', icon: Users, path: '/org-settings' },
+                  { label: 'Analytics', icon: BarChart3, path: '/analytics' },
+                  { label: 'Audit Log', icon: Shield, path: '/audit-log' },
+                  { label: 'Settings', icon: Settings, path: '/settings' },
+                ].map(item => (
+                  <button
+                    key={item.path}
+                    onClick={() => { navigate(item.path); setShowUserMenu(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-cadsurface-800 transition-colors"
+                  >
+                    <item.icon size={13} />
+                    {item.label}
+                  </button>
+                ))}
+                <div className="border-t border-cadsurface-800 mt-1">
+                  <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:text-red-400 hover:bg-cadsurface-800 transition-colors">
+                    <LogOut size={13} />
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

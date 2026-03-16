@@ -1,0 +1,204 @@
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import FeatureTree from '../components/workspace/FeatureTree';
+import Viewport3D from '../components/workspace/Viewport3D';
+import ChatPanel from '../components/workspace/ChatPanel';
+import PropertiesPanel from '../components/workspace/PropertiesPanel';
+import HardwarePanel from '../components/workspace/HardwarePanel';
+import TouchpointPanel from '../components/workspace/TouchpointPanel';
+import ValidationPanel from '../components/workspace/ValidationPanel';
+import DrawingView from '../components/workspace/DrawingView';
+import NodeEditor from '../components/workspace/NodeEditor';
+import TopBar from '../components/layout/TopBar';
+import type { WorkspaceMode } from '../components/layout/TopBar';
+import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
+import { useFixtureGeometry } from '../hooks/useFixtureGeometry';
+import { useRealtimeProject } from '../hooks/useRealtimeProject';
+import { fetchTouchpoints } from '../lib/api';
+import type { ApiTouchpoint } from '../lib/api';
+import {
+  PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
+  SplitSquareHorizontal, Target, ShieldAlert,
+} from 'lucide-react';
+
+type LeftPanel = 'chat' | 'tree' | 'hardware' | 'touchpoints' | 'validation';
+
+// ── Inner workspace with access to WorkspaceContext ───────────────────────────
+
+function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
+  const [leftPanel, setLeftPanel] = useState<LeftPanel>('chat');
+  const [showLeft, setShowLeft]   = useState(true);
+  const [showRight, setShowRight] = useState(true);
+  const [mode, setMode]           = useState<WorkspaceMode>('part');
+  const { state, dispatch }       = useWorkspace();
+
+  // Load fixture geometry + part features
+  const { gltfUrl, partFeatures } = useFixtureGeometry(projectId);
+
+  // Sync gltfUrl into workspace context
+  useEffect(() => {
+    if (gltfUrl) dispatch({ type: 'SET_GLTF_URL', url: gltfUrl });
+  }, [gltfUrl, dispatch]);
+
+  // Sync part features into workspace context
+  useEffect(() => {
+    if (partFeatures) dispatch({ type: 'SET_FEATURES', features: partFeatures });
+  }, [partFeatures, dispatch]);
+
+  // Load initial touchpoints
+  useEffect(() => {
+    if (!projectId) return;
+    fetchTouchpoints(projectId)
+      .then((tps: unknown) => {
+        if (Array.isArray(tps)) {
+          dispatch({ type: 'SET_TOUCHPOINTS', touchpoints: tps as ApiTouchpoint[] });
+        }
+      })
+      .catch(() => {});
+  }, [projectId, dispatch]);
+
+  // Supabase Realtime subscriptions
+  useRealtimeProject(projectId, {
+    onTouchpointChange: () => {
+      // Re-fetch touchpoints on any change
+      if (projectId) {
+        fetchTouchpoints(projectId).then((tps: unknown) => {
+          if (Array.isArray(tps)) {
+            dispatch({ type: 'SET_TOUCHPOINTS', touchpoints: tps as ApiTouchpoint[] });
+          }
+        }).catch(() => {});
+      }
+    },
+    onFixtureGenerated: () => {
+      // Trigger glTF reload
+      dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
+    },
+  });
+
+  const leftButtons: { id: LeftPanel; icon: React.ReactNode; title: string; badge?: number }[] = [
+    { id: 'chat',        icon: <MessageSquare size={15} />, title: 'AI Chat' },
+    { id: 'tree',        icon: <TreePine size={15} />,      title: 'Feature Tree' },
+    { id: 'hardware',    icon: <Package size={15} />,       title: 'Hardware Library' },
+    { id: 'touchpoints', icon: <Target size={15} />,        title: 'Clamping & Locating' },
+    { id: 'validation',  icon: <ShieldAlert size={15} />,   title: 'Validation', badge: 5 },
+  ];
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <TopBar mode={mode} onModeChange={setMode} projectId={projectId} />
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left icon rail — hidden on mobile */}
+        {mode !== 'drawing' && mode !== 'nodes' && (
+          <div className="hidden md:flex flex-col bg-cadsurface-900 border-r border-cadsurface-700 shrink-0">
+            <div className="flex flex-col gap-1 p-1 pt-2">
+              <button title="Toggle left panel" onClick={() => setShowLeft(p => !p)}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                  showLeft ? 'bg-cadsurface-700 text-slate-200' : 'text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300'
+                }`}>
+                <PanelLeftClose size={15} />
+              </button>
+              <div className="h-px bg-cadsurface-700 my-1" />
+              {leftButtons.map(btn => (
+                <button key={btn.id} title={btn.title}
+                  onClick={() => { setLeftPanel(btn.id); setShowLeft(true); }}
+                  className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                    leftPanel === btn.id && showLeft
+                      ? btn.id === 'hardware' ? 'bg-amber-600 text-white'
+                        : btn.id === 'touchpoints' ? 'bg-emerald-700 text-white'
+                        : btn.id === 'validation' ? 'bg-red-700 text-white'
+                        : 'bg-cadblue-600 text-white'
+                      : btn.id === 'validation' ? 'text-red-400 hover:bg-red-950/40'
+                      : 'text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300'
+                  }`}>
+                  {btn.icon}
+                  {btn.badge !== undefined && !(leftPanel === btn.id && showLeft) && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-red-600 text-white font-bold" style={{ fontSize: '8px' }}>
+                      {btn.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+              <div className="h-px bg-cadsurface-700 my-1" />
+              <button title="Split view"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300 transition-all">
+                <SplitSquareHorizontal size={15} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Content area */}
+        {mode === 'nodes' ? (
+          <div className="flex-1 overflow-hidden">
+            <NodeEditor projectId={projectId} />
+          </div>
+        ) : mode === 'drawing' ? (
+          <div className="flex-1 overflow-hidden">
+            <DrawingView projectId={projectId} />
+          </div>
+        ) : (
+          <>
+            {showLeft && (
+              <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
+                {leftPanel === 'chat'        && <ChatPanel projectId={projectId} />}
+                {leftPanel === 'tree'        && <FeatureTree />}
+                {leftPanel === 'hardware'    && <HardwarePanel projectId={projectId} />}
+                {leftPanel === 'touchpoints' && <TouchpointPanel projectId={projectId} />}
+                {leftPanel === 'validation'  && <ValidationPanel projectId={projectId} />}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-hidden relative">
+              <Viewport3D
+                touchpointMode={leftPanel === 'touchpoints' && showLeft}
+                gltfUrl={state.gltfUrl}
+                projectId={projectId}
+              />
+            </div>
+
+            {showRight && (
+              <div className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
+                <PropertiesPanel projectId={projectId} />
+              </div>
+            )}
+
+            <button title="Toggle right panel" onClick={() => setShowRight(p => !p)}
+              className="z-20 w-6 h-10 hidden md:flex items-center justify-center rounded-l-lg border border-r-0 border-cadsurface-700 bg-cadsurface-900 hover:bg-cadsurface-800 text-slate-500 hover:text-slate-200 transition-all"
+              style={{ position: 'fixed', right: showRight ? '16rem' : '0', top: '50%', transform: 'translateY(-50%)' }}>
+              <PanelRightClose size={12} className={showRight ? '' : 'rotate-180'} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Mobile bottom navigation */}
+      <div className="flex md:hidden border-t border-cadsurface-700 bg-cadsurface-900 shrink-0">
+        {leftButtons.map(btn => (
+          <button key={btn.id}
+            onClick={() => { setLeftPanel(btn.id); setShowLeft(p => leftPanel === btn.id ? !p : true); }}
+            className={`flex-1 flex flex-col items-center gap-0.5 py-2 text-xs transition-colors ${
+              leftPanel === btn.id && showLeft
+                ? btn.id === 'validation' ? 'text-red-400' : 'text-cadblue-400'
+                : 'text-slate-600'
+            }`}
+          >
+            {btn.icon}
+            <span style={{ fontSize: '9px' }}>{btn.title.split(' ')[0]}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Exported Workspace page (wraps with provider) ─────────────────────────────
+
+export default function Workspace() {
+  const { id: projectId } = useParams<{ id: string }>();
+  return (
+    <WorkspaceProvider projectId={projectId}>
+      <WorkspaceInner projectId={projectId} />
+    </WorkspaceProvider>
+  );
+}
