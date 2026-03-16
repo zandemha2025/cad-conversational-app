@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
 # Production credentials — NEVER COMMIT
 .env.production
 backend/.env
@@ -27,3 +33,6 @@ backend/.env.production
 *.njsproj
 *.sln
 *.sw?
+
+# Backup files
+*.bak
