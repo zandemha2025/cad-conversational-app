@@ -136,7 +136,7 @@ function FeatureCard({ feature, defaultExpanded = false }: { feature: PartFeatur
           <p className="text-[10px] text-slate-600 mt-0.5">{TYPE_LABELS[feature.type] ?? feature.type}</p>
         </div>
         {feature.location && (
-          <MapPin size={10} className="text-slate-600 shrink-0" title="Has 3D coordinates" />
+          <MapPin size={10} className="text-slate-600 shrink-0" aria-label="Has 3D coordinates" />
         )}
         <span className="text-slate-700 shrink-0">
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}

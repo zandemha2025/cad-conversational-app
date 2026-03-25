@@ -6,7 +6,6 @@ import { useState, useEffect, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewport, Environment, useGLTF } from '@react-three/drei';
-import * as THREE from 'three';
 import { Wrench, Eye, Lock, MessageSquare, Box, AlertTriangle, ExternalLink, Users } from 'lucide-react';
 import { getSharedProject, fetchComments, type SharedProjectResponse, type CommentResponse } from '../lib/api';
 

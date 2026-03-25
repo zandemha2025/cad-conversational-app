@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { addTouchpoint, deleteTouchpoint } from '../../lib/api';
-import { getTouchpoints, saveTouchpoints } from '../../lib/storage';
+import { getTouchpoints } from '../../lib/storage';
 
 type TouchpointType = 'locating' | 'clamping' | 'support';
 

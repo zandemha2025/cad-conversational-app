@@ -74,8 +74,8 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFaceClick }: {
-  gltfUrl?: string | null; touchpointMode: boolean; showAnnotations: boolean;
+function SceneContent({ gltfUrl, touchpointMode, showGrid, onFaceClick }: {
+  gltfUrl?: string | null; touchpointMode: boolean;
   showGrid: boolean; onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
   const { state } = useWorkspace();
@@ -152,7 +152,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
         <Suspense fallback={null}>
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
-            showAnnotations={showAnnotations} showGrid={showGrid} onFaceClick={handleFaceClick} />
+            showGrid={showGrid} onFaceClick={handleFaceClick} />
         </Suspense>
       </Canvas>
 

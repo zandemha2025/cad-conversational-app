@@ -351,7 +351,7 @@ function CommentCard({
             </span>
             <span className="text-xs text-slate-600 shrink-0">{timeAgo}</span>
             {comment.position_json && (
-              <MapPin size={10} className="text-slate-600 shrink-0" title="Pinned to 3D model" />
+              <MapPin size={10} className="text-slate-600 shrink-0" aria-label="Pinned to 3D model" />
             )}
           </div>
           <p className="text-xs text-slate-400 leading-relaxed break-words">{comment.comment}</p>

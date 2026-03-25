@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Send, Paperclip, Mic, Bot, User, ChevronDown, Sparkles,
   Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
-  Target, Wifi, WifiOff, Loader2, X, Lightbulb,
+  Target, Wifi, Loader2, X, Lightbulb,
 } from 'lucide-react';
 import { useChat } from '../../hooks/useChat';
 import type { ChatMessage } from '../../types';
