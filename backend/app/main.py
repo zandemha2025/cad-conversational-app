@@ -36,6 +36,14 @@ from app.api.routes.drawings import router as drawings_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.audit_log import router as audit_router
 from app.api.routes.fea_lite import router as fea_lite_router
+# New manufacturing features (Sprint 5)
+from app.api.routes.approvals import router as approvals_router
+from app.api.routes.constraints import router as constraints_router
+from app.api.routes.interference import router as interference_router
+from app.api.routes.clamping_force import router as clamping_force_router
+from app.api.routes.export_direct import router as export_direct_router
+from app.api.routes.revisions_v2 import router as revisions_v2_router
+from app.api.routes.drawings_v2 import router as drawings_v2_router
 
 API = "/api"
 
@@ -58,6 +66,14 @@ app.include_router(drawings_router)
 app.include_router(analytics_router)
 app.include_router(audit_router)
 app.include_router(fea_lite_router, prefix=API)
+# Manufacturing features (Sprint 5)
+app.include_router(approvals_router,      prefix=API)
+app.include_router(constraints_router,    prefix=API)
+app.include_router(interference_router,   prefix=API)
+app.include_router(clamping_force_router, prefix=API)
+app.include_router(export_direct_router,  prefix=API)
+app.include_router(revisions_v2_router,   prefix=API)
+app.include_router(drawings_v2_router,    prefix=API)
 
 
 # ── Startup validation ────────────────────────────────────────────────────────

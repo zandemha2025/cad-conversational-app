@@ -447,3 +447,213 @@ export async function fetchProactiveSuggestions(projectId: string) {
     `/projects/${projectId}/suggestions`,
   );
 }
+
+// ── Direct export download ─────────────────────────────────────────────────
+
+export function getDirectExportUrl(projectId: string, format: 'step' | 'iges' | 'stl' | 'dxf'): string {
+  const token = getToken();
+  // For direct download we construct the URL — the browser handles download
+  return `${API_URL}/api/projects/${projectId}/export/${format}`;
+}
+
+export async function directExport(projectId: string, format: 'step' | 'iges' | 'stl' | 'dxf'): Promise<Blob | null> {
+  if (!API_URL) return null;
+  const token = getToken();
+  try {
+    const res = await fetch(`${API_URL}/api/projects/${projectId}/export/${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    // Some formats return JSON redirect (STEP with original upload)
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const json = await res.json();
+      if (json.download_url) {
+        window.open(json.download_url, '_blank');
+        return null;
+      }
+    }
+    return res.blob();
+  } catch (e) {
+    console.error('[API] export error:', e);
+    return null;
+  }
+}
+
+// ── Approvals ─────────────────────────────────────────────────────────────────
+
+export interface Approval {
+  id: string;
+  project_id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_by: string;
+  submitted_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  comments: string;
+  revision_ref: string;
+  created_at: string;
+}
+
+export async function fetchApprovals(projectId: string): Promise<Approval[] | null> {
+  return apiFetch<Approval[]>(`/projects/${projectId}/approvals`);
+}
+
+export async function submitForApproval(projectId: string, revisionRef = '', comments = ''): Promise<Approval | null> {
+  return apiFetch<Approval>(`/projects/${projectId}/approvals/submit`, {
+    method: 'POST',
+    body: JSON.stringify({ revision_ref: revisionRef, comments }),
+  });
+}
+
+export async function approveProject(projectId: string, approvalId: string, comments = '') {
+  return apiFetch(`/projects/${projectId}/approvals/${approvalId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ comments }),
+  });
+}
+
+export async function rejectProject(projectId: string, approvalId: string, comments = '') {
+  return apiFetch(`/projects/${projectId}/approvals/${approvalId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ comments }),
+  });
+}
+
+// ── Assembly constraints ───────────────────────────────────────────────────────
+
+export interface AssemblyConstraint {
+  id: string;
+  project_id: string;
+  type: 'fixed' | 'coincident' | 'parallel' | 'perpendicular' | 'distance' | 'angle';
+  part_a: string;
+  part_b: string;
+  params_json: Record<string, unknown>;
+  is_valid: boolean | null;
+  error_msg: string | null;
+  created_at: string;
+}
+
+export async function fetchConstraints(projectId: string): Promise<AssemblyConstraint[] | null> {
+  return apiFetch<AssemblyConstraint[]>(`/projects/${projectId}/constraints`);
+}
+
+export async function createConstraint(
+  projectId: string,
+  body: { type: string; part_a: string; part_b?: string; params?: Record<string, unknown> }
+): Promise<AssemblyConstraint | null> {
+  return apiFetch<AssemblyConstraint>(`/projects/${projectId}/constraints`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteConstraint(projectId: string, constraintId: string) {
+  return apiFetch(`/projects/${projectId}/constraints/${constraintId}`, { method: 'DELETE' });
+}
+
+export async function validateAllConstraints(projectId: string) {
+  return apiFetch(`/projects/${projectId}/constraints/validate-all`, { method: 'POST' });
+}
+
+// ── Interference detection ─────────────────────────────────────────────────────
+
+export interface InterferenceResult {
+  project_id: string;
+  total_pairs_checked: number;
+  interfering_pairs: number;
+  status: 'clean' | 'interference_detected' | 'not_run';
+  ran_at: string;
+  parts_checked: number;
+  issues: Array<{
+    part_a: { id: string; label: string; type: string };
+    part_b: { id: string; label: string; type: string };
+    overlap_volume_mm3: number;
+    severity: 'error' | 'warning';
+    description: string;
+  }>;
+  summary: string;
+}
+
+export async function runInterferenceCheck(projectId: string): Promise<InterferenceResult | null> {
+  return apiFetch<InterferenceResult>(`/projects/${projectId}/interference-check`, { method: 'POST' });
+}
+
+export async function fetchLatestInterference(projectId: string): Promise<InterferenceResult | null> {
+  return apiFetch<InterferenceResult>(`/projects/${projectId}/interference-check/latest`);
+}
+
+// ── Clamping force ─────────────────────────────────────────────────────────────
+
+export interface ClampingForceRequest {
+  material?: string;
+  depth_of_cut_mm?: number;
+  width_of_cut_mm?: number;
+  feed_rate_mm_per_rev?: number;
+  spindle_speed_rpm?: number;
+  tool_diameter_mm?: number;
+  num_clamps?: number;
+  fixture_surface?: string;
+  safety_factor?: number;
+  part_mass_kg?: number;
+  part_contact_area_mm2?: number;
+}
+
+export interface ClampingForceResult {
+  project_id: string;
+  material: string;
+  cutting_force_n: number;
+  friction_force_required_n: number;
+  clamping_force_per_clamp_n: number;
+  total_clamping_force_n: number;
+  safety_factor: number;
+  recommended_clamp_type: string;
+  recommendations: string[];
+  breakdown: Record<string, number | string>;
+}
+
+export async function calculateClampingForce(
+  projectId: string,
+  params: ClampingForceRequest = {}
+): Promise<ClampingForceResult | null> {
+  return apiFetch<ClampingForceResult>(`/projects/${projectId}/clamping-force`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+// ── Project-scoped revisions ───────────────────────────────────────────────────
+
+export async function fetchProjectRevisions(projectId: string) {
+  return apiFetch<import('../types').Revision[]>(`/projects/${projectId}/revisions`);
+}
+
+export async function createProjectRevision(projectId: string, body: {
+  rev_letter: string;
+  description: string;
+  ecr_number?: string;
+  changes?: unknown[];
+}) {
+  return apiFetch<import('../types').Revision>(`/projects/${projectId}/revisions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchRevisionDiff(projectId: string, revisionId: string, compareToId?: string) {
+  const qs = compareToId ? `?compare_to=${compareToId}` : '';
+  return apiFetch(`/projects/${projectId}/revisions/${revisionId}/diff${qs}`);
+}
+
+// ── Project-scoped drawings ────────────────────────────────────────────────────
+
+export async function generateProjectDrawings(projectId: string) {
+  return apiFetch<{ id: string; status: string; drawing: Record<string, unknown> }>(
+    `/projects/${projectId}/drawings/generate`,
+    { method: 'POST' }
+  );
+}
+
+export async function fetchProjectDrawings(projectId: string) {
+  return apiFetch<import('../types').DrawingRecord[]>(`/projects/${projectId}/drawings`);
+}
