@@ -762,6 +762,90 @@ export async function generateQcChecklist(
   });
 }
 
+// ── Collaboration (sharing + comments) ────────────────────────────────────────
+
+export interface ShareResponse {
+  id: string;
+  project_id: string;
+  share_token: string;
+  permission: 'view' | 'edit';
+  email: string | null;
+  expires_at: string | null;
+  created_at: string;
+  share_url: string;
+}
+
+export interface SharedProjectResponse {
+  project_id: string;
+  project_name: string;
+  part_number: string | null;
+  revision: string | null;
+  status: string;
+  permission: 'view' | 'edit';
+  gltf_url: string | null;
+}
+
+export interface CommentResponse {
+  id: string;
+  project_id: string;
+  user_id: string | null;
+  user_name: string | null;
+  user_email: string | null;
+  comment: string;
+  position_json: { x: number; y: number; z: number } | null;
+  fixture_version: number | null;
+  resolved: boolean;
+  created_at: string;
+}
+
+export async function createShareLink(
+  projectId: string,
+  opts: { permission?: 'view' | 'edit'; email?: string; expires_hours?: number } = {}
+): Promise<ShareResponse | null> {
+  return apiFetch<ShareResponse>(`/projects/${projectId}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ permission: opts.permission ?? 'view', email: opts.email, expires_hours: opts.expires_hours }),
+  });
+}
+
+export async function listShares(projectId: string): Promise<ShareResponse[] | null> {
+  return apiFetch<ShareResponse[]>(`/projects/${projectId}/shares`);
+}
+
+export async function revokeShare(projectId: string, shareId: string) {
+  return apiFetch(`/projects/${projectId}/shares/${shareId}`, { method: 'DELETE' });
+}
+
+export async function getSharedProject(shareToken: string): Promise<SharedProjectResponse | null> {
+  return apiFetch<SharedProjectResponse>(`/shared/${shareToken}`);
+}
+
+export async function fetchComments(projectId: string, resolved?: boolean): Promise<CommentResponse[] | null> {
+  const qs = resolved !== undefined ? `?resolved=${resolved}` : '';
+  return apiFetch<CommentResponse[]>(`/projects/${projectId}/comments${qs}`);
+}
+
+export async function addComment(
+  projectId: string,
+  body: { comment: string; position_json?: { x: number; y: number; z: number }; fixture_version?: number }
+): Promise<CommentResponse | null> {
+  return apiFetch<CommentResponse>(`/projects/${projectId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function resolveComment(projectId: string, commentId: string, resolved: boolean): Promise<CommentResponse | null> {
+  return apiFetch<CommentResponse>(`/projects/${projectId}/comments/${commentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ resolved }),
+  });
+}
+
+export async function deleteComment(projectId: string, commentId: string) {
+  return apiFetch(`/projects/${projectId}/comments/${commentId}`, { method: 'DELETE' });
+}
+
 // ── Tolerance stack-up ─────────────────────────────────────────────────────────
 
 export interface ToleranceStackRequest {

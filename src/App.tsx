@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import TopBar from './components/layout/TopBar';
 import Home from './pages/Home';
 import Workspace from './pages/Workspace';
+import SharedView from './pages/SharedView';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import OrgSettings from './pages/OrgSettings';
@@ -14,7 +15,17 @@ const FULL_SCREEN_ROUTES = ['/settings', '/login', '/org-settings', '/audit-log'
 function AppInner() {
   const location = useLocation();
   const isWorkspace = location.pathname.startsWith('/workspace');
+  const isShared = location.pathname.startsWith('/shared');
   const isFullScreen = FULL_SCREEN_ROUTES.includes(location.pathname);
+
+  // SharedView is fully self-contained — no TopBar, no auth required
+  if (isShared) {
+    return (
+      <Routes>
+        <Route path="/shared/:token" element={<SharedView />} />
+      </Routes>
+    );
+  }
 
   if (isFullScreen) {
     return (

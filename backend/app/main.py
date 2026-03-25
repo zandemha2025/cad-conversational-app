@@ -51,6 +51,8 @@ from app.api.routes.work_instructions import router as work_instructions_router
 from app.api.routes.qc_checklist import router as qc_checklist_router
 from app.api.routes.materials import router as materials_router
 from app.api.routes.tolerance_stack import router as tolerance_stack_router
+# Real-time collaboration (Sprint 7)
+from app.api.routes.collaboration import router as collaboration_router
 
 API = "/api"
 
@@ -86,11 +88,16 @@ app.include_router(work_instructions_router,  prefix=API)
 app.include_router(qc_checklist_router,       prefix=API)
 app.include_router(materials_router,          prefix=API)  # public, no auth
 app.include_router(tolerance_stack_router,    prefix=API)
+# Real-time collaboration (Sprint 7)
+app.include_router(collaboration_router,      prefix=API)
 
 
-# ── Startup validation ────────────────────────────────────────────────────────
+# ── Startup validation + migrations ──────────────────────────────────────────
 @app.on_event("startup")
 async def validate_config():
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
     missing = []
     if not settings.SUPABASE_URL:
         missing.append("SUPABASE_URL")
@@ -99,15 +106,13 @@ async def validate_config():
     if not settings.SUPABASE_JWT_SECRET:
         missing.append("SUPABASE_JWT_SECRET")
     if missing:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Missing env vars (auth will fail): %s", ", ".join(missing)
-        )
+        _log.warning("Missing env vars (auth will fail): %s", ", ".join(missing))
     if not settings.GEMINI_API_KEY:
-        import logging
-        logging.getLogger(__name__).warning(
-            "GEMINI_API_KEY not set — AI features will use stub responses"
-        )
+        _log.warning("GEMINI_API_KEY not set — AI features will use stub responses")
+
+    # Create collaboration tables if they don't exist yet
+    from app.api.routes.collaboration import ensure_collab_tables
+    await ensure_collab_tables()
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

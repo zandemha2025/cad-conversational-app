@@ -16,6 +16,7 @@ export interface RealtimeCallbacks {
   onFixtureGenerated?: (payload: unknown) => void;
   onNewMessage?: (payload: unknown) => void;
   onPresenceChange?: (users: PresenceUser[]) => void;
+  onCommentChange?: (payload: unknown) => void;
 }
 
 export interface PresenceUser {
@@ -66,7 +67,13 @@ export function useRealtimeProject(
           schema: 'public',
           table: 'conversation_messages',
           filter: `project_id=eq.${projectId}`,
-        }, (payload: unknown) => callbacks.onNewMessage?.(payload));
+        }, (payload: unknown) => callbacks.onNewMessage?.(payload))
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'project_comments',
+          filter: `project_id=eq.${projectId}`,
+        }, (payload: unknown) => callbacks.onCommentChange?.(payload));
 
       // ── Presence ──────────────────────────────────────────────────────────
       channel.on('presence', { event: 'sync' }, () => {
