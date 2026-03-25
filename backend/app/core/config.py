@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174,https://scalecad.app,https://www.scalecad.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174,https://scalecad.app,https://www.scalecad.app,https://eager-euler.vercel.app"
 
     @computed_field
     @property
