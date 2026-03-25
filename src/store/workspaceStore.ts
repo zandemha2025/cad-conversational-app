@@ -4,7 +4,7 @@
  * between Viewport3D, FeatureTree, PropertiesPanel, and TouchpointPanel.
  */
 import { createContext, useContext, useReducer, useCallback } from 'react';
-import type { ApiTouchpoint } from '../lib/api';
+import type { ApiTouchpoint, Machine, CostEstimate, ShoppingListItem, InventoryItem } from '../lib/api';
 import type { PartFeatures } from '../types';
 
 export interface SelectedFeature {
@@ -27,6 +27,10 @@ interface WorkspaceState {
   gltfUrl: string | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
+  machines: Machine[];
+  costEstimate: CostEstimate | null;
+  shoppingList: ShoppingListItem[];
+  inventory: InventoryItem[];
 }
 
 type Action =
@@ -38,7 +42,11 @@ type Action =
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
-  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
+  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean }
+  | { type: 'SET_MACHINES'; machines: Machine[] }
+  | { type: 'SET_COST_ESTIMATE'; estimate: CostEstimate | null }
+  | { type: 'SET_SHOPPING_LIST'; items: ShoppingListItem[] }
+  | { type: 'SET_INVENTORY'; items: InventoryItem[] };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -60,6 +68,14 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
       return { ...state, touchpointMode: action.active };
+    case 'SET_MACHINES':
+      return { ...state, machines: action.machines };
+    case 'SET_COST_ESTIMATE':
+      return { ...state, costEstimate: action.estimate };
+    case 'SET_SHOPPING_LIST':
+      return { ...state, shoppingList: action.items };
+    case 'SET_INVENTORY':
+      return { ...state, inventory: action.items };
     default:
       return state;
   }
@@ -73,6 +89,10 @@ const initialState: WorkspaceState = {
   gltfUrl: null,
   generationProgress: null,
   touchpointMode: false,
+  machines: [],
+  costEstimate: null,
+  shoppingList: [],
+  inventory: [],
 };
 
 import React from 'react';
@@ -117,5 +137,5 @@ export function useWorkspace() {
 }
 
 // Re-export types so components can import from here
-export type { ApiTouchpoint } from '../lib/api';
+export type { ApiTouchpoint, Machine, CostEstimate, ShoppingListItem, InventoryItem } from '../lib/api';
 export type { PartFeatures } from '../types';
