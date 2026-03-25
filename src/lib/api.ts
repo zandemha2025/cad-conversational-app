@@ -762,6 +762,44 @@ export async function generateQcChecklist(
   });
 }
 
+// ── Feature Search ─────────────────────────────────────────────────────────────
+
+export interface PartFeature {
+  id: string;
+  type: 'face' | 'hole' | 'bounding_box' | 'summary' | string;
+  name: string;
+  params: Record<string, unknown>;
+  location: number[] | null;
+  dependencies: string[];
+}
+
+export interface FeatureListResult {
+  features: PartFeature[];
+  total: number;
+  status: string;
+}
+
+export interface FeatureSearchResult {
+  results: PartFeature[];
+  query: string;
+  total: number;
+  status: string;
+}
+
+export async function fetchFeatures(projectId: string): Promise<FeatureListResult | null> {
+  return apiFetch<FeatureListResult>(`/projects/${projectId}/features`);
+}
+
+export async function searchFeatures(projectId: string, q: string): Promise<FeatureSearchResult | null> {
+  return apiFetch<FeatureSearchResult>(
+    `/projects/${projectId}/features/search?q=${encodeURIComponent(q)}`,
+  );
+}
+
+export async function fetchFeatureById(projectId: string, featureId: string): Promise<PartFeature | null> {
+  return apiFetch<PartFeature>(`/projects/${projectId}/features/${featureId}`);
+}
+
 // ── Tolerance stack-up ─────────────────────────────────────────────────────────
 
 export interface ToleranceStackRequest {

@@ -17,6 +17,7 @@ import ClampingForcePanel from '../components/workspace/ClampingForcePanel';
 import WorkInstructionsPanel from '../components/workspace/WorkInstructionsPanel';
 import QcChecklistPanel from '../components/workspace/QcChecklistPanel';
 import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
+import FeatureSearch from '../components/workspace/FeatureSearch';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
@@ -27,7 +28,7 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Search,
 } from 'lucide-react';
 
 type LeftPanel =
@@ -43,7 +44,8 @@ type LeftPanel =
   | 'clamping'
   | 'work_instructions'
   | 'qc_checklist'
-  | 'tolerance_stack';
+  | 'tolerance_stack'
+  | 'features';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -116,6 +118,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'work_instructions', icon: <FileText size={15} />,     title: 'Work Instructions' },
     { id: 'qc_checklist',      icon: <Microscope size={15} />,   title: 'QC Checklist' },
     { id: 'tolerance_stack',   icon: <Ruler size={15} />,        title: 'Tolerance Stack-Up' },
+    { id: 'features',          icon: <Search size={15} />,       title: 'Feature Search' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -135,6 +138,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'work_instructions': return 'bg-cadblue-700 text-white';
       case 'qc_checklist':      return 'bg-emerald-700 text-white';
       case 'tolerance_stack':   return 'bg-violet-700 text-white';
+      case 'features':          return 'bg-cadblue-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -218,6 +222,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
                 {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
                 {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
+                {leftPanel === 'features'          && <FeatureSearch projectId={projectId} />}
               </div>
             )}
 
