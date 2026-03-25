@@ -106,6 +106,8 @@ async def run_tolerance_stack(
         "total_nominal_mm": round(total_nominal, 4),
         "worst_case_mm": round(wc_tolerance, 4),
         "rss_mm": round(rss_tolerance, 4),
+        "gap_min_mm": round(wc_min, 4),
+        "gap_max_mm": round(wc_max, 4),
         "gap_min_wc_mm": round(wc_min, 4),
         "gap_max_wc_mm": round(wc_max, 4),
         "gap_min_rss_mm": round(rss_min, 4),

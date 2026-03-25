@@ -50,7 +50,7 @@ function PhaseCard({ phase }: { phase: WorkInstructionsResult['phases'][0] }) {
       {open && (
         <div className="px-3 py-2.5 space-y-2.5 bg-cadsurface-900">
           <div className="grid grid-cols-2 gap-1.5">
-            {Object.entries(phase.parameters).map(([key, val]) => (
+            {Object.entries(phase.parameters ?? {}).map(([key, val]) => (
               <div key={key} className="bg-cadsurface-800 rounded-lg px-2 py-1.5">
                 <p className="text-xs text-slate-500 capitalize">{key.replace(/_/g, ' ')}</p>
                 <p className="text-xs font-mono text-cadblue-300 font-semibold">{String(val)}</p>
@@ -238,12 +238,12 @@ export default function WorkInstructionsPanel({ projectId = 'demo' }: { projectI
               <p className="text-xs text-slate-500 leading-relaxed">{result.summary}</p>
             </div>
 
-            {result.phases.map(phase => (
+            {(result.phases ?? []).map(phase => (
               <PhaseCard key={phase.phase} phase={phase} />
             ))}
 
             <p className="text-xs text-slate-700 text-center pt-1">
-              {result.phases.length} phases · Generated {new Date(result.generated_at).toLocaleTimeString()}
+              {(result.phases ?? []).length} phases · Generated {new Date(result.generated_at).toLocaleTimeString()}
             </p>
           </>
         ) : !loading && (

@@ -164,7 +164,7 @@ export default function QcChecklistPanel({ projectId = 'demo' }: { projectId?: s
   };
 
   const categories = result
-    ? [...new Set(result.items.map(i => i.category))]
+    ? [...new Set((result.items ?? []).map(i => i.category))]
     : [];
 
   return (
