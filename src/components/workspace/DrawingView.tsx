@@ -35,7 +35,7 @@ const TITLE_BLOCK = {
   standard: 'ASME Y14.5-2018 / AS9100 Rev D',
 };
 
-export default function DrawingView({ projectId = 'demo' }: { projectId?: string }) {
+export default function DrawingView({ projectId = 'demo', projectName }: { projectId?: string; projectName?: string }) {
   const [zoom, setZoom] = useState(100);
   const [showBOM, setShowBOM] = useState(true);
   const [showAnnotations, setShowAnnotations] = useState(true);
@@ -209,7 +209,7 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
                   <BOMTable />
                 </div>
               )}
-              <TitleBlock />
+              <TitleBlock projectName={projectName} />
             </div>
           </div>
         )}
@@ -359,7 +359,7 @@ function BOMTable() {
   );
 }
 
-function TitleBlock() {
+function TitleBlock({ projectName }: { projectName?: string }) {
   return (
     <div className="absolute bottom-0 right-0 border-t border-l border-gray-700" style={{ width: '38%', height: '14%', fontSize: '6.5px' }}>
       <div className="flex h-full text-gray-800">
@@ -388,7 +388,7 @@ function TitleBlock() {
         <div className="flex-1">
           <div className="border-b border-gray-600 px-1 py-0.5">
             <p className="font-bold text-gray-500" style={{ fontSize: '5.5px' }}>{TITLE_BLOCK.company}</p>
-            <p className="font-bold text-gray-800" style={{ fontSize: '8px', lineHeight: 1.1 }}>{TITLE_BLOCK.title}</p>
+            <p className="font-bold text-gray-800" style={{ fontSize: '8px', lineHeight: 1.1 }}>{projectName ? projectName.toUpperCase() : TITLE_BLOCK.title}</p>
           </div>
           <div className="flex" style={{ height: 'calc(100% - 28px)' }}>
             <div className="flex-1 border-r border-gray-400 px-1 py-0.5 flex flex-col justify-around">

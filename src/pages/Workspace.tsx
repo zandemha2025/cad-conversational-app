@@ -26,7 +26,7 @@ import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
 import { useFixtureGeometry } from '../hooks/useFixtureGeometry';
 import { useRealtimeProject } from '../hooks/useRealtimeProject';
 import { useAuth } from '../hooks/useAuth';
-import { fetchTouchpoints } from '../lib/api';
+import { fetchTouchpoints, fetchProject } from '../lib/api';
 import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
@@ -59,6 +59,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [showRight, setShowRight] = useState(true);
   const [mode, setMode]           = useState<WorkspaceMode>('part');
   const [showTour, setShowTour]   = useState(false);
+  const [projectName, setProjectName] = useState<string>('');
   const { state, dispatch }       = useWorkspace();
   const { user } = useAuth();
   const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
@@ -72,8 +73,16 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     }
   }, []);
 
+  // Load project metadata
+  useEffect(() => {
+    if (!projectId) return;
+    fetchProject(projectId)
+      .then((p) => { if (p?.name) setProjectName(p.name); })
+      .catch(() => {});
+  }, [projectId]);
+
   // Load fixture geometry + part features
-  const { gltfUrl, partFeatures } = useFixtureGeometry(projectId);
+  const { gltfUrl, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {
@@ -110,6 +119,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     },
     onFixtureGenerated: () => {
       dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
+      refetchGeometry();
     },
     onPresenceChange: (users) => setViewers(users),
     onCommentChange: () => {
@@ -234,7 +244,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           </div>
         ) : mode === 'drawing' ? (
           <div className="flex-1 overflow-hidden">
-            <DrawingView projectId={projectId} />
+            <DrawingView projectId={projectId} projectName={projectName} />
           </div>
         ) : (
           <>

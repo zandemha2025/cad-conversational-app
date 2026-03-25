@@ -4,83 +4,11 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, 
 import * as THREE from 'three';
 import {
   Maximize2, Grid3x3, Eye, Sun, Box, Layers, RefreshCw,
-  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, AlertTriangle,
+  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
 import { addTouchpoint } from '../../lib/api';
 import type { ApiTouchpoint } from '../../lib/api';
-
-// ── Parametric jig plate scene (fallback / demo) ──────────────────────────────
-
-function JigScene({ showAnnotations }: { showAnnotations: boolean }) {
-  return (
-    <group>
-      <mesh receiveShadow castShadow position={[0, 0, 0]}>
-        <boxGeometry args={[8, 0.5, 5]} />
-        <meshStandardMaterial color="#1a3a5c" metalness={0.6} roughness={0.4} />
-      </mesh>
-      {([-3, 0, 3] as number[]).map((x) => (
-        <mesh key={x} position={[x, 0.28, 0]} castShadow>
-          <boxGeometry args={[0.4, 0.08, 5]} />
-          <meshStandardMaterial color="#0f2236" metalness={0.8} roughness={0.2} />
-        </mesh>
-      ))}
-      {([[-2.5, 0.55, -1.5], [-2.5, 0.55, 1.5]] as [number, number, number][]).map(([x, y, z], i) => (
-        <group key={`loc-${i}`} position={[x, y, z]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.18, 0.18, 0.55, 16]} />
-            <meshStandardMaterial color="#22c55e" metalness={0.7} roughness={0.2} />
-          </mesh>
-        </group>
-      ))}
-      {([[-1.5, 0.3, -1.8], [0, 0.3, -1.8], [1.5, 0.3, -1.8],
-         [-1.5, 0.3, 1.8], [0, 0.3, 1.8], [1.5, 0.3, 1.8]] as [number, number, number][]).map(([x, y, z], i) => (
-        <mesh key={`sup-${i}`} position={[x, y, z]} castShadow>
-          <cylinderGeometry args={[0.22, 0.22, 0.12, 12]} />
-          <meshStandardMaterial color="#0891b2" metalness={0.5} roughness={0.3} />
-        </mesh>
-      ))}
-      <group position={[2.8, 0.5, 0]}>
-        <mesh castShadow>
-          <boxGeometry args={[0.6, 0.3, 1.4]} />
-          <meshStandardMaterial color="#f59e0b" metalness={0.6} roughness={0.3} />
-        </mesh>
-        <mesh position={[-0.5, 0.22, 0]} rotation={[0, 0, Math.PI / 5]}>
-          <boxGeometry args={[1.0, 0.12, 0.35]} />
-          <meshStandardMaterial color="#d97706" metalness={0.5} roughness={0.4} />
-        </mesh>
-      </group>
-      <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
-        <boxGeometry args={[4.5, 0.6, 2.8]} />
-        <meshStandardMaterial color="#9ca3af" metalness={0.85} roughness={0.15} transparent opacity={0.7} />
-      </mesh>
-      {([[-1, 0.85, -0.7], [1, 0.85, -0.7], [-1, 0.85, 0.7], [1, 0.85, 0.7]] as [number, number, number][]).map(([x, y, z], i) => (
-        <mesh key={`b-${i}`} position={[x, y, z]}>
-          <cylinderGeometry args={[0.18, 0.18, 0.65, 16]} />
-          <meshStandardMaterial color="#111827" />
-        </mesh>
-      ))}
-      {showAnnotations && (
-        <>
-          <DatumArrow pos={[-5, 0.25, 0]} rot={[0, Math.PI / 2, 0]} color="#f59e0b" />
-          <DatumArrow pos={[0, 0.25, -3.5]} rot={[0, 0, 0]} color="#3b82f6" />
-          <DatumArrow pos={[0, 1.6, 0]} rot={[Math.PI / 2, 0, 0]} color="#10b981" />
-        </>
-      )}
-    </group>
-  );
-}
-
-function DatumArrow({ pos, rot, color }: {
-  pos: [number, number, number]; rot: [number, number, number]; color: string;
-}) {
-  return (
-    <group position={pos} rotation={rot}>
-      <mesh><cylinderGeometry args={[0.05, 0.05, 0.7, 8]} /><meshStandardMaterial color={color} /></mesh>
-      <mesh position={[0, 0.45, 0]}><coneGeometry args={[0.12, 0.25, 8]} /><meshStandardMaterial color={color} /></mesh>
-    </group>
-  );
-}
 
 // ── Real glTF model ───────────────────────────────────────────────────────────
 
@@ -99,20 +27,6 @@ function GltfModel({ url, touchpointMode, onFaceClick }: {
         onFaceClick?.(e.point.clone());
       }}
     />
-  );
-}
-
-// ── Demo click plane ──────────────────────────────────────────────────────────
-
-function DemoClickPlane({ touchpointMode, onFaceClick }: {
-  touchpointMode: boolean; onFaceClick?: (worldPos: THREE.Vector3) => void;
-}) {
-  if (!touchpointMode) return null;
-  return (
-    <mesh position={[0, 0.85, 0]} onClick={(e) => { e.stopPropagation(); onFaceClick?.(e.point.clone()); }}>
-      <boxGeometry args={[4.5, 0.6, 2.8]} />
-      <meshStandardMaterial transparent opacity={0} />
-    </mesh>
   );
 }
 
@@ -173,13 +87,8 @@ function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFa
       <directionalLight position={[-8, 8, -5]} intensity={0.45} color="#aaccff" />
       <Environment preset="warehouse" />
 
-      {gltfUrl ? (
+      {gltfUrl && (
         <GltfModel url={gltfUrl} touchpointMode={touchpointMode} onFaceClick={onFaceClick} />
-      ) : (
-        <>
-          <JigScene showAnnotations={showAnnotations} />
-          <DemoClickPlane touchpointMode={touchpointMode} onFaceClick={onFaceClick} />
-        </>
       )}
 
       {touchpointMode && state.touchpoints.map((tp, i) => (
@@ -250,6 +159,23 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(8,14,26,0.5) 100%)' }} />
 
+      {/* Empty state — shown when no model has been generated yet */}
+      {!resolvedGltfUrl && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-center animate-pulse">
+            <div className="w-16 h-16 rounded-2xl bg-cadsurface-800/80 border border-cadsurface-700 flex items-center justify-center">
+              <Box size={28} className="text-slate-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-400">No model yet</p>
+              <p className="text-xs text-slate-600 mt-1 max-w-[200px] leading-relaxed">
+                Describe your fixture in the chat to generate a 3D model
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left toolbar */}
       <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
         {([{ icon: Move, label: 'Pan' }, { icon: RotateCw, label: 'Rotate' }, { icon: ZoomIn, label: 'Zoom In' },
@@ -278,15 +204,15 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       {/* Part info */}
       <div className="absolute top-3 left-3 bg-cadsurface-900/80 border border-cadsurface-700 rounded-lg px-3 py-2 backdrop-blur-sm z-10">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-medium text-slate-200">{resolvedGltfUrl ? 'Fixture Model' : 'wing_panel_drill_jig'}</p>
-          <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
-            {resolvedGltfUrl ? 'Live' : 'Rev B'}
-          </span>
+          <p className="text-xs font-medium text-slate-200">{resolvedGltfUrl ? 'Fixture Model' : 'No model'}</p>
+          {resolvedGltfUrl && (
+            <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
+              Live
+            </span>
+          )}
         </div>
-        {features ? (
+        {features && (
           <p className="text-xs text-slate-500 mt-0.5">{features.face_count} faces · {features.hole_count} holes · {Math.round(features.volume_mm3 / 1000)} cm³</p>
-        ) : (
-          <p className="text-xs text-slate-500 mt-0.5">Part · TL-4471-A · Al 6061-T6 · 14 features</p>
         )}
       </div>
 
@@ -297,14 +223,6 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
           <span className="text-xs text-cadblue-300">
             {state.selectedFeature.label}{state.selectedFeature.area_mm2 ? ` · ${Math.round(state.selectedFeature.area_mm2)} mm²` : ''}
           </span>
-        </div>
-      )}
-
-      {/* DFM warning */}
-      {!touchpointMode && !state.selectedFeature && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-red-900/30 border border-red-700/50 rounded-full px-3 py-1 backdrop-blur-sm z-10">
-          <AlertTriangle size={11} className="text-red-400" />
-          <span className="text-xs text-red-300">DFM: Clamp slots suppressed — unsuppress before release</span>
         </div>
       )}
 
