@@ -72,7 +72,6 @@ export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?
       } else {
         const res = await runToleranceStack(projectId, {
           dimensions: dims.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
-          method: 'both',
         });
         if (res) setResult(res);
         else setError('Stack-up failed. Check that all dimension values are valid.');

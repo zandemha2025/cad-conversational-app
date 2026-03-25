@@ -403,10 +403,10 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
           <Section title="Material Library">
             <div className="space-y-1.5">
               {(liveMaterials.length > 0 ? liveMaterials : mockMaterials.map(m => ({
-                id: m.id, display_name: m.name, category: m.category ?? 'alloy',
+                id: m.id, display_name: m.name, category: 'alloy',
                 density_kg_m3: parseFloat(String(m.density).replace(/[^\d.]/g, '')) * 1000,
                 yield_strength_mpa: m.yield, ultimate_strength_mpa: m.yield * 1.3,
-                hardness_hb: m.hardness ?? 100, youngs_modulus_gpa: m.youngsModulus,
+                hardness_hb: 100, youngs_modulus_gpa: m.youngsModulus,
                 poissons_ratio: 0.33, thermal_conductivity_w_mk: 150,
                 machinability_rating: 80, kc1_1: 700, mc: 0.27, notes: '',
               } as MaterialProperties))).map(mat => (
