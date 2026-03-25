@@ -4,7 +4,7 @@
  * between Viewport3D, FeatureTree, PropertiesPanel, and TouchpointPanel.
  */
 import { createContext, useContext, useReducer, useCallback } from 'react';
-import type { ApiTouchpoint, ApiStudy } from '../lib/api';
+import type { ApiTouchpoint, ApiStudy, Machine, CostEstimate, ShoppingListItem, InventoryItem } from '../lib/api';
 import type { PartFeatures } from '../types';
 
 export interface SelectedFeature {
@@ -31,6 +31,11 @@ interface WorkspaceState {
   studies: ApiStudy[];
   activeStudy: ApiStudy | null;
   studiesLoading: boolean;
+  // Manufacturing state
+  machines: Machine[];
+  costEstimate: CostEstimate | null;
+  shoppingList: ShoppingListItem[];
+  inventory: InventoryItem[];
 }
 
 type Action =
@@ -47,7 +52,12 @@ type Action =
   | { type: 'SET_STUDIES'; studies: ApiStudy[] }
   | { type: 'ADD_STUDY'; study: ApiStudy }
   | { type: 'SET_ACTIVE_STUDY'; study: ApiStudy | null }
-  | { type: 'SET_STUDIES_LOADING'; loading: boolean };
+  | { type: 'SET_STUDIES_LOADING'; loading: boolean }
+  // Manufacturing actions
+  | { type: 'SET_MACHINES'; machines: Machine[] }
+  | { type: 'SET_COST_ESTIMATE'; estimate: CostEstimate | null }
+  | { type: 'SET_SHOPPING_LIST'; items: ShoppingListItem[] }
+  | { type: 'SET_INVENTORY'; items: InventoryItem[] };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -78,6 +88,15 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, activeStudy: action.study };
     case 'SET_STUDIES_LOADING':
       return { ...state, studiesLoading: action.loading };
+    // Manufacturing cases
+    case 'SET_MACHINES':
+      return { ...state, machines: action.machines };
+    case 'SET_COST_ESTIMATE':
+      return { ...state, costEstimate: action.estimate };
+    case 'SET_SHOPPING_LIST':
+      return { ...state, shoppingList: action.items };
+    case 'SET_INVENTORY':
+      return { ...state, inventory: action.items };
     default:
       return state;
   }
@@ -94,6 +113,10 @@ const initialState: WorkspaceState = {
   studies: [],
   activeStudy: null,
   studiesLoading: false,
+  machines: [],
+  costEstimate: null,
+  shoppingList: [],
+  inventory: [],
 };
 
 import React from 'react';
@@ -138,5 +161,5 @@ export function useWorkspace() {
 }
 
 // Re-export types so components can import from here
-export type { ApiTouchpoint, ApiStudy } from '../lib/api';
+export type { ApiTouchpoint, ApiStudy, Machine, CostEstimate, ShoppingListItem, InventoryItem } from '../lib/api';
 export type { PartFeatures } from '../types';

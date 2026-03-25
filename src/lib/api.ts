@@ -882,6 +882,113 @@ export async function fetchFeatureById(projectId: string, featureId: string): Pr
   return apiFetch<PartFeature>(`/projects/${projectId}/features/${featureId}`);
 }
 
+// ── Manufacturing ──────────────────────────────────────────────────────────────
+
+export interface Machine {
+  id: string;
+  name: string;
+  machine_type: 'fdm_printer' | 'sla_printer' | 'cnc_3axis' | 'cnc_5axis' | 'laser_cutter' | 'manual_shop';
+  make_model?: string;
+  build_volume_json?: { x_mm: number; y_mm: number; z_mm: number };
+  materials_available: string[];
+  hourly_rate: number;
+  setup_time_minutes: number;
+}
+
+export type MachineInput = Omit<Machine, 'id'>;
+
+export interface MachinePreset extends MachineInput {
+  id: string;
+  description?: string;
+}
+
+export interface CostEstimate {
+  recommended_method: string;
+  recommended_machine: string;
+  recommended_material: string;
+  reasoning: string;
+  material_cost_usd: number;
+  machine_time_hours: number;
+  machine_cost_usd: number;
+  hardware_cost_usd: number;
+  total_cost_usd: number;
+  fits_build_volume: boolean;
+  alternative_methods: { method: string; machine: string; estimated_cost: number; tradeoff: string }[];
+}
+
+export interface ShoppingListItem {
+  description: string;
+  quantity: number;
+  mcmaster_pn?: string;
+  estimated_cost: number;
+  category: string;
+}
+
+export interface ShoppingList {
+  items: ShoppingListItem[];
+  total_cost_usd: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  description: string;
+  part_number?: string;
+  quantity_on_hand: number;
+  unit?: string;
+}
+
+export interface InventoryUploadResult {
+  items_parsed: number;
+  items: InventoryItem[];
+}
+
+export interface InventoryMatch {
+  matched: { item: ShoppingListItem; inventory_item: InventoryItem; quantity_available: number }[];
+  missing: ShoppingListItem[];
+  summary: { total_items: number; in_stock: number; need_ordering: number };
+}
+
+export async function fetchMachines(): Promise<Machine[] | null> {
+  return apiFetch<Machine[]>('/manufacturing/machines');
+}
+
+export async function addMachine(machine: MachineInput): Promise<Machine | null> {
+  return apiFetch<Machine>('/manufacturing/machines', {
+    method: 'POST',
+    body: JSON.stringify(machine),
+  });
+}
+
+export async function deleteMachine(id: string): Promise<void> {
+  await apiFetch(`/manufacturing/machines/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchMachinePresets(): Promise<MachinePreset[] | null> {
+  return apiFetch<MachinePreset[]>('/manufacturing/machines/presets');
+}
+
+export async function estimateManufacturingCost(projectId: string): Promise<CostEstimate | null> {
+  return apiFetch<CostEstimate>(`/projects/${projectId}/manufacturing/cost-estimate`, { method: 'POST' });
+}
+
+export async function fetchShoppingList(projectId: string): Promise<ShoppingList | null> {
+  return apiFetch<ShoppingList>(`/projects/${projectId}/manufacturing/shopping-list`);
+}
+
+export async function uploadInventory(file: File): Promise<InventoryUploadResult | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return apiUpload<InventoryUploadResult>('/manufacturing/inventory/upload', fd);
+}
+
+export async function fetchInventory(): Promise<InventoryItem[] | null> {
+  return apiFetch<InventoryItem[]>('/manufacturing/inventory');
+}
+
+export async function matchInventory(projectId: string): Promise<InventoryMatch | null> {
+  return apiFetch<InventoryMatch>(`/projects/${projectId}/manufacturing/inventory-match`);
+}
+
 // ── Tolerance stack-up ─────────────────────────────────────────────────────────
 
 export interface ToleranceStackRequest {
