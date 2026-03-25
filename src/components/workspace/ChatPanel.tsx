@@ -2,12 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Send, Paperclip, Mic, Bot, User, ChevronDown, Sparkles,
   Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
-  Target, Wifi, WifiOff, Loader2, X, Lightbulb,
+  Target, Wifi, WifiOff, Loader2, X, Lightbulb, FileBox,
 } from 'lucide-react';
 import { mockChatMessages } from '../../data/mockData';
 import { useChat } from '../../hooks/useChat';
 import { IS_DEMO } from '../../lib/api';
 import type { ChatMessage } from '../../types';
+import type { UploadPartResult } from '../../lib/api';
+import PartUpload from './PartUpload';
+import { useWorkspace } from '../../store/workspaceStore';
 
 const SUGGESTION_CHIPS = [
   'Verify 3-2-1 locating scheme',
@@ -45,6 +48,28 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>(IS_DEMO ? DEMO_PROACTIVE : []);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const { state, dispatch } = useWorkspace();
+  const uploadedPart = state.uploadedPart;
+
+  const handlePartUpload = (result: UploadPartResult) => {
+    // Persist to workspace state so Viewport3D can access the file URL
+    dispatch({
+      type: 'SET_UPLOADED_PART',
+      part: {
+        partId:        result.part_id,
+        fileName:      result.file_name,
+        fileType:      result.file_type,
+        fileUrl:       result.file_url,
+        aiDescription: result.ai_description,
+      },
+    });
+    // Inject a system message so the chat history shows the upload event
+    sendMessage(
+      `I've uploaded my part file: ${result.file_name}. ` +
+      (result.ai_description ? `${result.ai_description} ` : '') +
+      'Please design a fixture that holds and supports this part securely.'
+    );
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -101,13 +126,22 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
         </button>
       </div>
 
-      {/* Context banner */}
+      {/* Context banner — shows uploaded part if present */}
       <div className="px-3 py-1.5 bg-cadblue-950/40 border-b border-cadblue-900/50 shrink-0">
-        <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
-          <Target size={11} />
-          <span className="font-medium">Context:</span>
-          <span className="text-slate-400">Drill Jig · 3-2-1 Locating · ASME Y14.5 · AS9100</span>
-        </div>
+        {uploadedPart ? (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <FileBox size={11} />
+            <span className="font-medium">Part:</span>
+            <span className="text-slate-400 truncate">{uploadedPart.fileName}</span>
+            <span className="text-emerald-600 uppercase font-mono">{uploadedPart.fileType}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
+            <Target size={11} />
+            <span className="font-medium">Context:</span>
+            <span className="text-slate-400">Drill Jig · 3-2-1 Locating · ASME Y14.5 · AS9100</span>
+          </div>
+        )}
       </div>
 
       {/* Quick action bar */}
@@ -195,6 +229,11 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
 
         <div ref={bottomRef} />
       </div>
+
+      {/* Part file upload — drop zone above input */}
+      {!uploadedPart && (
+        <PartUpload projectId={projectId} onUploadComplete={handlePartUpload} />
+      )}
 
       {/* Suggestion chips */}
       <div className="px-3 pb-2 flex gap-1.5 overflow-x-auto shrink-0 no-scrollbar">

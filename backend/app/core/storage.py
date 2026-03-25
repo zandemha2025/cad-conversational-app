@@ -46,6 +46,12 @@ def upload_gltf(project_id: str, filename: str, data: bytes) -> str:
     return _upload(key, data, "model/gltf-binary")
 
 
+def upload_part_file(project_id: str, filename: str, data: bytes, content_type: str = "application/octet-stream") -> str:
+    """Upload a user-supplied part file (STEP/STL/OBJ) to R2. Returns public URL."""
+    key = f"projects/{project_id}/parts/{filename}"
+    return _upload(key, data, content_type)
+
+
 def upload_export(project_id: str, filename: str, data: bytes, fmt: str) -> str:
     ct_map = {
         "step": "application/octet-stream",

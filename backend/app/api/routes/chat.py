@@ -89,6 +89,24 @@ async def chat_ws(websocket: WebSocket, project_id: str):
             proj_res = sb.table("projects").select("*").eq("id", project_id).single().execute()
             project_ctx = proj_res.data or {}
 
+            # Enrich context with uploaded part info (stored in features_json._file_info)
+            try:
+                part_res = (
+                    sb.table("part_geometries")
+                    .select("features_json,step_file_url")
+                    .eq("project_id", project_id)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if part_res.data:
+                    fj = part_res.data[0].get("features_json") or {}
+                    fi = fj.get("_file_info") if isinstance(fj, dict) else None
+                    if fi:
+                        project_ctx["uploaded_part"] = fi
+            except Exception as _e:
+                log.warning("Could not fetch uploaded part context: %s", _e)
+
             # Classify intent (quick Flash call, non-streaming)
             intent = await gemini.classify_intent(content, project_ctx)
             log.info("project=%s intent=%s", project_id, intent)

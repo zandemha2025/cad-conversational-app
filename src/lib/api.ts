@@ -175,6 +175,25 @@ export async function uploadStepFile(projectId: string, file: File) {
   );
 }
 
+export interface UploadPartResult {
+  part_id: string;
+  file_url: string;
+  file_name: string;
+  file_type: string;
+  ai_description: string | null;
+}
+
+export async function uploadPartFile(projectId: string, file: File): Promise<UploadPartResult | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return apiUpload<UploadPartResult>(`/projects/${projectId}/upload-part`, fd);
+}
+
+export async function fetchUploadedPart(projectId: string): Promise<UploadPartResult | null> {
+  // Fetches the latest uploaded part for a project from part_geometries
+  return apiFetch<UploadPartResult>(`/projects/${projectId}/uploaded-part`);
+}
+
 // ── Geometry ──────────────────────────────────────────────────────────────────
 
 export async function fetchPartGeometry(projectId: string) {

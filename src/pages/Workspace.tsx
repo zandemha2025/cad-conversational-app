@@ -225,6 +225,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               <Viewport3D
                 touchpointMode={leftPanel === 'touchpoints' && showLeft}
                 gltfUrl={state.gltfUrl}
+                uploadedPartUrl={state.uploadedPart?.fileUrl ?? null}
                 projectId={projectId}
               />
             </div>

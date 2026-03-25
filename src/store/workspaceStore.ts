@@ -19,6 +19,14 @@ export interface SelectedFeature {
   depth?: number;
 }
 
+export interface UploadedPart {
+  partId: string;
+  fileName: string;
+  fileType: string;
+  fileUrl: string;
+  aiDescription?: string | null;
+}
+
 interface WorkspaceState {
   projectId: string | null;
   selectedFeature: SelectedFeature | null;
@@ -27,6 +35,7 @@ interface WorkspaceState {
   gltfUrl: string | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
+  uploadedPart: UploadedPart | null;
 }
 
 type Action =
@@ -38,7 +47,8 @@ type Action =
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
-  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
+  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean }
+  | { type: 'SET_UPLOADED_PART'; part: UploadedPart | null };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -60,6 +70,8 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
       return { ...state, touchpointMode: action.active };
+    case 'SET_UPLOADED_PART':
+      return { ...state, uploadedPart: action.part };
     default:
       return state;
   }
@@ -73,6 +85,7 @@ const initialState: WorkspaceState = {
   gltfUrl: null,
   generationProgress: null,
   touchpointMode: false,
+  uploadedPart: null,
 };
 
 import React from 'react';

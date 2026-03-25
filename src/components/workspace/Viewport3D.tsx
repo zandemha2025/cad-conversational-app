@@ -1,6 +1,7 @@
 import { useState, Suspense, useCallback } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useLoader } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, Html } from '@react-three/drei';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import * as THREE from 'three';
 import {
   Maximize2, Grid3x3, Eye, Sun, Box, Layers, RefreshCw,
@@ -82,6 +83,18 @@ function DatumArrow({ pos, rot, color }: {
   );
 }
 
+// ── Uploaded part rendered from STL ──────────────────────────────────────────
+
+function StlModel({ url }: { url: string }) {
+  const geometry = useLoader(STLLoader, url);
+  return (
+    <mesh geometry={geometry} castShadow>
+      {/* Blue semi-transparent material to distinguish from fixture (orange) */}
+      <meshStandardMaterial color="#3b82f6" metalness={0.3} roughness={0.6} transparent opacity={0.75} />
+    </mesh>
+  );
+}
+
 // ── Real glTF model ───────────────────────────────────────────────────────────
 
 function GltfModel({ url, touchpointMode, onFaceClick }: {
@@ -160,8 +173,8 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFaceClick }: {
-  gltfUrl?: string | null; touchpointMode: boolean; showAnnotations: boolean;
+function SceneContent({ gltfUrl, uploadedPartUrl, touchpointMode, showAnnotations, showGrid, onFaceClick }: {
+  gltfUrl?: string | null; uploadedPartUrl?: string | null; touchpointMode: boolean; showAnnotations: boolean;
   showGrid: boolean; onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
   const { state } = useWorkspace();
@@ -172,6 +185,13 @@ function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFa
       <directionalLight position={[10, 15, 8]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
       <directionalLight position={[-8, 8, -5]} intensity={0.45} color="#aaccff" />
       <Environment preset="warehouse" />
+
+      {/* Uploaded part — rendered in blue so engineers can see the fixture wrapping around it */}
+      {uploadedPartUrl && uploadedPartUrl.toLowerCase().endsWith('.stl') && (
+        <Suspense fallback={null}>
+          <StlModel url={uploadedPartUrl} />
+        </Suspense>
+      )}
 
       {gltfUrl ? (
         <GltfModel url={gltfUrl} touchpointMode={touchpointMode} onFaceClick={onFaceClick} />
@@ -210,12 +230,13 @@ type ViewAngle = 'isometric' | 'front' | 'top' | 'right';
 interface Viewport3DProps {
   touchpointMode?: boolean;
   gltfUrl?: string | null;
+  uploadedPartUrl?: string | null;
   projectId?: string;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId }: Viewport3DProps) {
+export default function Viewport3D({ touchpointMode = false, gltfUrl, uploadedPartUrl, projectId }: Viewport3DProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('shaded');
   const [viewAngle, setViewAngle] = useState<ViewAngle>('isometric');
   const [showGrid, setShowGrid] = useState(true);
@@ -250,8 +271,9 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       <Canvas shadows camera={{ position: [10, 7, 10], fov: 45, near: 0.1, far: 200 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
         <Suspense fallback={null}>
-          <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
-            showAnnotations={showAnnotations} showGrid={showGrid} onFaceClick={handleFaceClick} />
+          <SceneContent gltfUrl={resolvedGltfUrl} uploadedPartUrl={uploadedPartUrl}
+            touchpointMode={touchpointMode} showAnnotations={showAnnotations}
+            showGrid={showGrid} onFaceClick={handleFaceClick} />
         </Suspense>
       </Canvas>
 

@@ -283,5 +283,14 @@ SELECT * FROM (VALUES
 ) AS v(part_number, name, category, supplier, specs_json, price_usd, in_stock, preferred)
 WHERE NOT EXISTS (SELECT 1 FROM hardware_catalog LIMIT 1);
 
+-- ── Feature #2: Part file upload (optional extra columns on part_geometries) ──
+-- The backend stores file info in features_json._file_info when these columns
+-- are absent.  Running this migration makes queries and filtering easier.
+ALTER TABLE part_geometries ADD COLUMN IF NOT EXISTS file_url         TEXT;
+ALTER TABLE part_geometries ADD COLUMN IF NOT EXISTS file_type        TEXT;
+ALTER TABLE part_geometries ADD COLUMN IF NOT EXISTS file_name        TEXT;
+ALTER TABLE part_geometries ADD COLUMN IF NOT EXISTS file_size_bytes  BIGINT;
+ALTER TABLE part_geometries ADD COLUMN IF NOT EXISTS ai_description   TEXT;
+
 -- Done
 SELECT 'ScaleCAD migrations applied successfully' AS result;

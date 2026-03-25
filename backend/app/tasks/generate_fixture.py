@@ -57,7 +57,7 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     printer = proj.get("printer_profile_json") or {}
     template_id = proj.get("template_id", "generic_fixture")
 
-    # Part features
+    # Part features + uploaded part file info
     geom_res = (
         sb.table("part_geometries")
         .select("features_json")
@@ -67,8 +67,27 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         .execute()
     )
     features = {}
+    uploaded_part_info: dict | None = None
     if geom_res.data:
         features = geom_res.data[0].get("features_json") or {}
+        if isinstance(features, dict):
+            # Extract file info stored by upload-part endpoint
+            uploaded_part_info = features.pop("_file_info", None)
+
+    # Augment the user prompt with uploaded part context
+    if uploaded_part_info:
+        part_name = uploaded_part_info.get("file_name", "uploaded part")
+        part_desc = uploaded_part_info.get("ai_description", "")
+        part_type = uploaded_part_info.get("file_type", "").upper()
+        part_note = (
+            f"\n\nThe engineer has uploaded a {part_type} part file: '{part_name}'. "
+            + (f"Part description: {part_desc}. " if part_desc else "")
+            + "Design a fixture that holds and supports this part securely. "
+            "Size the fixture base with at least 20 mm margin on each side of the part's bounding box. "
+            "Use the 3-2-1 locating principle: three support pads on the primary datum, "
+            "two locating pins against the secondary datum, one stop against the tertiary datum."
+        )
+        user_prompt = (user_prompt or "") + part_note
 
     # Touchpoints
     tp_res = sb.table("touchpoints").select("*").eq("project_id", project_id).execute()
