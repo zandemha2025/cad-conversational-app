@@ -55,6 +55,8 @@ from app.api.routes.tolerance_stack import router as tolerance_stack_router
 from app.api.routes.collaboration import router as collaboration_router
 # Manufacturing planning (Sprint 7)
 from app.routers.manufacturing import router as manufacturing_router
+# Study mode (Sprint 7)
+from app.api.routes.studies import router as studies_router
 
 API = "/api"
 
@@ -94,6 +96,8 @@ app.include_router(tolerance_stack_router,    prefix=API)
 app.include_router(collaboration_router,      prefix=API)
 # Manufacturing planning (Sprint 7)
 app.include_router(manufacturing_router,      prefix=API)
+# Study mode (Sprint 7)
+app.include_router(studies_router,            prefix=API)
 
 
 # ── Startup validation + DB migrations ────────────────────────────────────────
@@ -118,7 +122,7 @@ async def validate_config():
     from app.api.routes.collaboration import ensure_collab_tables
     await ensure_collab_tables()
 
-    # Run idempotent DB migrations for manufacturing planning
+    # Run idempotent DB migrations
     _MIGRATIONS = [
         """
         CREATE TABLE IF NOT EXISTS machine_profiles (
@@ -150,6 +154,31 @@ async def validate_config():
           created_at TIMESTAMPTZ DEFAULT now()
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS studies (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            project_id  UUID        NOT NULL,
+            user_id     UUID        NOT NULL,
+            base_prompt TEXT        NOT NULL,
+            num_variations INTEGER  NOT NULL DEFAULT 5,
+            status      TEXT        NOT NULL DEFAULT 'pending',
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS study_variations (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            study_id        UUID        NOT NULL,
+            project_id      UUID        NOT NULL,
+            variation_index INTEGER     NOT NULL,
+            variation_label TEXT        NOT NULL,
+            prompt          TEXT        NOT NULL,
+            status          TEXT        NOT NULL DEFAULT 'pending',
+            fixture_id      UUID,
+            job_id          TEXT,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
     ]
     try:
         from sqlalchemy import text
@@ -158,7 +187,7 @@ async def validate_config():
         async with engine.begin() as conn:
             for sql in _MIGRATIONS:
                 await conn.execute(text(sql))
-        _log.info("DB migrations applied (machine_profiles, user_inventory)")
+        _log.info("DB migrations applied OK")
     except Exception as exc:
         _log.warning("DB migration skipped: %s", exc)
 

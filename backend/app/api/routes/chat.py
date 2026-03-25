@@ -96,11 +96,35 @@ async def chat_ws(websocket: WebSocket, project_id: str):
             # Notify client we're responding
             await websocket.send_json({"type": "thinking", "intent": intent})
 
-            # If fixture generation is requested → queue Celery job and notify
-            if intent == "fixture_generation":
+            # If fixture generation or AI modification is requested → queue Celery job
+            if intent in ("fixture_generation", "geometry_modification", "kcl_revision"):
                 from app.tasks.generate_fixture import generate_fixture_task
+
+                task_prompt = content
+
+                # For modification intents, fetch previous KCL for iterative editing
+                if intent in ("geometry_modification", "kcl_revision"):
+                    fixture_res = (
+                        sb.table("fixture_geometries")
+                        .select("kcl,version")
+                        .eq("project_id", project_id)
+                        .order("generated_at", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    if fixture_res.data and fixture_res.data[0].get("kcl"):
+                        prev_kcl = fixture_res.data[0]["kcl"]
+                        prev_ver = fixture_res.data[0].get("version", 1)
+                        task_prompt = (
+                            f"MODIFICATION REQUEST: {content}\n\n"
+                            f"PREVIOUS FIXTURE (v{prev_ver}) KCL CODE TO MODIFY:\n"
+                            f"```kcl\n{prev_kcl}\n```\n\n"
+                            f"Apply the modification request to the KCL code above. "
+                            f"Preserve all existing features not mentioned in the modification."
+                        )
+
                 job = generate_fixture_task.apply_async(
-                    args=[project_id, content],
+                    args=[project_id, task_prompt],
                     queue="normal",
                 )
                 await websocket.send_json({

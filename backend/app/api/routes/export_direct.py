@@ -210,14 +210,51 @@ async def export_direct(
     )
     has_kcl = bool(fixture_res.data and fixture_res.data[0].get("kcl"))
 
+    # Fetch fixture KCL if available (for Zoo.dev conversion)
+    fixture_kcl = None
+    if fixture_res.data and fixture_res.data[0].get("kcl"):
+        fixture_kcl = fixture_res.data[0]["kcl"]
+
     # Generate the export file
     if fmt == "stl":
+        # Prefer real geometry from Zoo.dev if KCL is available
+        if fixture_kcl:
+            from app.services.zoo_service import compile_kcl_to_format
+            stl_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "stl")
+            if stl_bytes:
+                stl_fn = f"{part_number}_{project_name}.stl".replace(" ", "_")
+                return Response(
+                    content=stl_bytes,
+                    media_type=MIME_TYPES["stl"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{stl_fn}"',
+                        "X-Export-Format": "stl",
+                        "X-Project-Name": project_name,
+                        "X-Source": "zoo_kcl",
+                    },
+                )
         content = _generate_stl_from_features(project_name, features)
         mime = MIME_TYPES["stl"]
         filename = f"{part_number}_{project_name}.stl".replace(" ", "_")
 
     elif fmt == "step":
-        # If we have actual STEP upload, redirect to it
+        # 1. Try Zoo.dev KCL → STEP (real geometry from fixture)
+        if fixture_kcl:
+            from app.services.zoo_service import compile_kcl_to_format
+            step_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "step")
+            if step_bytes:
+                step_fn = f"{part_number}_{project_name}.step".replace(" ", "_")
+                return Response(
+                    content=step_bytes,
+                    media_type=MIME_TYPES["step"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{step_fn}"',
+                        "X-Export-Format": "step",
+                        "X-Project-Name": project_name,
+                        "X-Source": "zoo_kcl",
+                    },
+                )
+        # 2. Fall back to original uploaded STEP file
         if geom_res.data and geom_res.data[0].get("step_file_url"):
             step_url = geom_res.data[0]["step_file_url"]
             return JSONResponse({
@@ -226,16 +263,49 @@ async def export_direct(
                 "source": "original_upload",
                 "note": "Redirecting to original uploaded STEP file",
             })
+        # 3. Last resort: stub
         content = _generate_step_stub(project_name, part_number)
         mime = MIME_TYPES["step"]
         filename = f"{part_number}_{project_name}.step".replace(" ", "_")
 
     elif fmt == "iges":
+        # Try Zoo.dev KCL → IGES if available
+        if fixture_kcl:
+            from app.services.zoo_service import compile_kcl_to_format
+            iges_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "iges")
+            if iges_bytes:
+                iges_fn = f"{part_number}_{project_name}.igs".replace(" ", "_")
+                return Response(
+                    content=iges_bytes,
+                    media_type=MIME_TYPES["iges"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{iges_fn}"',
+                        "X-Export-Format": "iges",
+                        "X-Project-Name": project_name,
+                        "X-Source": "zoo_kcl",
+                    },
+                )
         content = _generate_iges_stub(project_name, part_number)
         mime = MIME_TYPES["iges"]
         filename = f"{part_number}_{project_name}.igs".replace(" ", "_")
 
     elif fmt == "dxf":
+        # Try Zoo.dev KCL → DXF if available
+        if fixture_kcl:
+            from app.services.zoo_service import compile_kcl_to_format
+            dxf_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "dxf")
+            if dxf_bytes:
+                dxf_fn = f"{part_number}_{project_name}.dxf".replace(" ", "_")
+                return Response(
+                    content=dxf_bytes,
+                    media_type=MIME_TYPES["dxf"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{dxf_fn}"',
+                        "X-Export-Format": "dxf",
+                        "X-Project-Name": project_name,
+                        "X-Source": "zoo_kcl",
+                    },
+                )
         content = _generate_dxf_stub(project_name, features)
         mime = MIME_TYPES["dxf"]
         filename = f"{part_number}_{project_name}.dxf".replace(" ", "_")
