@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
+    "@supabase/supabase-js": "^2.100.0",
     "@types/three": "^0.183.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
