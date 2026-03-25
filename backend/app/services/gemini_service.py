@@ -84,13 +84,16 @@ class GeminiService:
         contents.append({"role": "user", "parts": [{"text": user_message}]})
 
         try:
-            model = self._get_flash()
+            # system_instruction must be set on the model, not generate_content()
+            model = genai.GenerativeModel(
+                settings.GEMINI_FLASH_MODEL,
+                system_instruction=system_prompt,
+            )
             loop = asyncio.get_event_loop()
 
             def _run_stream():
                 return model.generate_content(
                     contents,
-                    system_instruction=system_prompt,
                     stream=True,
                 )
 

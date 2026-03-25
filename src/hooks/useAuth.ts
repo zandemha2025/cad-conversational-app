@@ -25,7 +25,8 @@ export function useAuth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, nameHint?: string) => {
+    if (IS_DEMO) return true;
     setLoading(true);
     setError(null);
     try {
@@ -35,7 +36,13 @@ export function useAuth() {
         return false;
       }
       setAuthToken(res.access_token);
-      setUser({ email, name: email.split('@')[0] });
+      // Try to extract name from JWT payload; fall back to hint or email prefix
+      let name = nameHint ?? email.split('@')[0];
+      try {
+        const payload = JSON.parse(atob(res.access_token.split('.')[1]));
+        name = payload.name ?? payload.full_name ?? nameHint ?? email.split('@')[0];
+      } catch { /* ignore decode errors */ }
+      setUser({ email, name });
       return true;
     } catch {
       setError('Login failed. Please try again.');
@@ -46,6 +53,7 @@ export function useAuth() {
   }, []);
 
   const register = useCallback(async (email: string, password: string, fullName: string) => {
+    if (IS_DEMO) return true;
     setLoading(true);
     setError(null);
     try {
@@ -54,8 +62,8 @@ export function useAuth() {
         setError('Registration failed');
         return false;
       }
-      // Auto-login after register
-      return await login(email, password);
+      // Auto-login after register, passing fullName as hint so name displays immediately
+      return await login(email, password, fullName);
     } catch {
       setError('Registration failed. Please try again.');
       return false;
