@@ -9,6 +9,7 @@ import TouchpointPanel from '../components/workspace/TouchpointPanel';
 import ValidationPanel from '../components/workspace/ValidationPanel';
 import DrawingView from '../components/workspace/DrawingView';
 import NodeEditor from '../components/workspace/NodeEditor';
+import StudyMode from '../components/workspace/StudyMode';
 import ExportPanel from '../components/workspace/ExportPanel';
 import ApprovalPanel from '../components/workspace/ApprovalPanel';
 import InterferencePanel from '../components/workspace/InterferencePanel';
@@ -186,7 +187,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left icon rail — hidden on mobile */}
-        {mode !== 'drawing' && mode !== 'nodes' && (
+        {mode !== 'drawing' && mode !== 'nodes' && mode !== 'studies' && (
           <div className="hidden md:flex flex-col bg-cadsurface-900 border-r border-cadsurface-700 shrink-0">
             <div className="flex flex-col gap-1 p-1 pt-2">
               <button
@@ -241,6 +242,10 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
         {mode === 'nodes' ? (
           <div className="flex-1 overflow-hidden">
             <NodeEditor projectId={projectId} />
+          </div>
+        ) : mode === 'studies' ? (
+          <div className="flex-1 overflow-hidden">
+            <StudyMode projectId={projectId} />
           </div>
         ) : mode === 'drawing' ? (
           <div className="flex-1 overflow-hidden">

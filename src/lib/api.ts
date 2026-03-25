@@ -239,6 +239,9 @@ export async function runValidation(projectId: string, methods?: string[]) {
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
 export async function fetchNodeGraph(projectId: string) {
+  // Try the /node-graph endpoint (node_graphs table), fall back to /nodes
+  const result = await apiFetch(`/projects/${projectId}/node-graph`);
+  if (result) return result;
   return apiFetch(`/projects/${projectId}/nodes`);
 }
 
@@ -907,4 +910,60 @@ export async function runToleranceStack(
     method: 'POST',
     body: JSON.stringify(params),
   });
+}
+
+// ── Studies ────────────────────────────────────────────────────────────────────
+
+export interface ApiStudyVariation {
+  id: string;
+  study_id: string;
+  variant_index: number;
+  status: 'generating' | 'ready' | 'failed';
+  goals: string[];
+  metrics: {
+    estimated_weight_g: number;
+    material_usage_cc: number;
+    print_time_min: number;
+  };
+  gltf_url: string | null;
+  score: number;
+}
+
+export interface ApiStudy {
+  id: string;
+  project_id: string;
+  status: 'running' | 'complete' | 'failed';
+  count: number;
+  goals: string[];
+  variations: ApiStudyVariation[];
+  created_at: string;
+}
+
+export async function createStudy(
+  projectId: string,
+  body: { count: number; goals: string[] }
+): Promise<ApiStudy | null> {
+  return apiFetch<ApiStudy>(`/projects/${projectId}/studies`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchStudies(projectId: string): Promise<ApiStudy[] | null> {
+  return apiFetch<ApiStudy[]>(`/projects/${projectId}/studies`);
+}
+
+export async function fetchStudy(projectId: string, studyId: string): Promise<ApiStudy | null> {
+  return apiFetch<ApiStudy>(`/projects/${projectId}/studies/${studyId}`);
+}
+
+export async function selectStudyVariation(
+  projectId: string,
+  studyId: string,
+  variationId: string,
+): Promise<{ status: string } | null> {
+  return apiFetch<{ status: string }>(
+    `/projects/${projectId}/studies/${studyId}/variations/${variationId}/select`,
+    { method: 'POST' },
+  );
 }

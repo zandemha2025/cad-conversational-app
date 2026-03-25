@@ -4,7 +4,7 @@
  * between Viewport3D, FeatureTree, PropertiesPanel, and TouchpointPanel.
  */
 import { createContext, useContext, useReducer, useCallback } from 'react';
-import type { ApiTouchpoint } from '../lib/api';
+import type { ApiTouchpoint, ApiStudy } from '../lib/api';
 import type { PartFeatures } from '../types';
 
 export interface SelectedFeature {
@@ -27,6 +27,10 @@ interface WorkspaceState {
   gltfUrl: string | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
+  // Study state
+  studies: ApiStudy[];
+  activeStudy: ApiStudy | null;
+  studiesLoading: boolean;
 }
 
 type Action =
@@ -38,7 +42,12 @@ type Action =
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
-  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
+  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean }
+  // Study actions
+  | { type: 'SET_STUDIES'; studies: ApiStudy[] }
+  | { type: 'ADD_STUDY'; study: ApiStudy }
+  | { type: 'SET_ACTIVE_STUDY'; study: ApiStudy | null }
+  | { type: 'SET_STUDIES_LOADING'; loading: boolean };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -60,6 +69,15 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
       return { ...state, touchpointMode: action.active };
+    // Study cases
+    case 'SET_STUDIES':
+      return { ...state, studies: action.studies };
+    case 'ADD_STUDY':
+      return { ...state, studies: [action.study, ...state.studies] };
+    case 'SET_ACTIVE_STUDY':
+      return { ...state, activeStudy: action.study };
+    case 'SET_STUDIES_LOADING':
+      return { ...state, studiesLoading: action.loading };
     default:
       return state;
   }
@@ -73,6 +91,9 @@ const initialState: WorkspaceState = {
   gltfUrl: null,
   generationProgress: null,
   touchpointMode: false,
+  studies: [],
+  activeStudy: null,
+  studiesLoading: false,
 };
 
 import React from 'react';
@@ -117,5 +138,5 @@ export function useWorkspace() {
 }
 
 // Re-export types so components can import from here
-export type { ApiTouchpoint } from '../lib/api';
+export type { ApiTouchpoint, ApiStudy } from '../lib/api';
 export type { PartFeatures } from '../types';
