@@ -5,7 +5,7 @@ import type { ApiNodeDef, ApiConnection, ApiNodeParam } from '../../types';
 import {
   FileInput, Printer, Crosshair, AlertTriangle,
   CheckCircle2, FileOutput, RefreshCw, ZoomIn, ZoomOut, Maximize2, Sparkles,
-  Cpu, Info, Loader2, Pencil, Check, X,
+  Cpu, Info, Loader2, Pencil, Check, X, Move,
 } from 'lucide-react';
 
 // ── Category styling ──────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   'output':     <FileOutput size={13} />,
 };
 
-// ── Hardcoded fallback nodes (used in demo or when API returns nothing) ────────
+// ── Fallback demo nodes ───────────────────────────────────────────────────────
 
 const DEMO_NODES: ApiNodeDef[] = [
   { id: 'part-import', label: 'Part Import', category: 'input', x: 20, y: 20, w: 220, h: 155, ai_generated: false,
@@ -55,14 +55,30 @@ const DEMO_NODES: ApiNodeDef[] = [
 ];
 
 const DEMO_CONNECTIONS: ApiConnection[] = [
-  { from_node: 'part-import', from_port: 'out', to_node: 'base-plate', to_port: 'in' },
-  { from_node: 'part-import', from_port: 'out', to_node: 'constraint-321', to_port: 'in' },
-  { from_node: 'base-plate', from_port: 'out', to_node: 'bushing-seats', to_port: 'in' },
+  { from_node: 'part-import',    from_port: 'out', to_node: 'base-plate',    to_port: 'in' },
+  { from_node: 'part-import',    from_port: 'out', to_node: 'constraint-321', to_port: 'in' },
+  { from_node: 'base-plate',     from_port: 'out', to_node: 'bushing-seats', to_port: 'in' },
   { from_node: 'constraint-321', from_port: 'out', to_node: 'bushing-seats', to_port: 'in' },
-  { from_node: 'layer-profile', from_port: 'out', to_node: 'step-export', to_port: 'in' },
+  { from_node: 'layer-profile',  from_port: 'out', to_node: 'step-export',   to_port: 'in' },
 ];
 
 function portY(node: ApiNodeDef) { return node.y + node.h / 2; }
+
+// ── Dependency path calculator ─────────────────────────────────────────────────
+
+function getDependencyPath(nodeId: string, conns: ApiConnection[]): Set<string> {
+  const visited = new Set<string>();
+  const queue = [nodeId];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    if (visited.has(curr)) continue;
+    visited.add(curr);
+    conns.filter(c => c.from_node === curr).forEach(c => {
+      if (!visited.has(c.to_node)) queue.push(c.to_node);
+    });
+  }
+  return visited;
+}
 
 // ── Inline-editable param row ─────────────────────────────────────────────────
 
@@ -96,7 +112,10 @@ function ParamRow({ param, nodeId, projectId, onUpdated }: {
   const isOk = String(param.value).toLowerCase().includes('ok') || String(param.value).toLowerCase().includes('constrained');
 
   return (
-    <div className="flex items-center justify-between gap-2 group">
+    <div
+      className="flex items-center justify-between gap-2 group"
+      onMouseDown={e => e.stopPropagation()} // prevent drag from param rows
+    >
       <span className="text-slate-600 shrink-0" style={{ fontSize: '10px' }}>{param.name}</span>
       {editing ? (
         <div className="flex items-center gap-1">
@@ -135,9 +154,10 @@ function ParamRow({ param, nodeId, projectId, onUpdated }: {
 
 // ── Node card ─────────────────────────────────────────────────────────────────
 
-function NodeCard({ node, selected, onSelect, projectId, onParamUpdated }: {
-  node: ApiNodeDef; selected: boolean; onSelect: (id: string) => void;
+function NodeCard({ node, selected, inDepPath, projectId, onParamUpdated, onDragStart }: {
+  node: ApiNodeDef; selected: boolean; inDepPath: boolean;
   projectId: string; onParamUpdated: (nodeId: string, key: string, value: string | number) => void;
+  onDragStart: (e: React.MouseEvent, nodeId: string) => void;
 }) {
   const cat = CAT[node.category as Category] ?? CAT.input;
   const categoryIcon = CATEGORY_ICONS[node.category] ?? <Cpu size={13} />;
@@ -145,13 +165,21 @@ function NodeCard({ node, selected, onSelect, projectId, onParamUpdated }: {
 
   return (
     <div
-      onClick={() => onSelect(node.id)}
-      className={`absolute rounded-xl border-l-[3px] border border-cadsurface-700 overflow-hidden cursor-pointer transition-all select-none ${cat.accent} ${
-        selected ? 'shadow-lg shadow-cadblue-950/80 ring-1 ring-cadblue-500/50' : 'hover:border-cadsurface-600'
+      className={`absolute rounded-xl border-l-[3px] border overflow-hidden select-none transition-shadow ${cat.accent} ${
+        selected
+          ? 'shadow-lg shadow-cadblue-950/80 ring-1 ring-cadblue-500/50 border-cadsurface-600'
+          : inDepPath && !selected
+          ? 'border-emerald-700/60 ring-1 ring-emerald-500/20 shadow-md shadow-emerald-950/50'
+          : 'border-cadsurface-700 hover:border-cadsurface-600'
       }`}
-      style={{ left: node.x, top: node.y, width: node.w, background: '#0d1424' }}
+      style={{ left: node.x, top: node.y, width: node.w, background: '#0d1424', cursor: 'grab' }}
     >
-      <div className={`flex items-center justify-between px-3 py-2 ${cat.headerBg} border-b border-cadsurface-700/60`}>
+      {/* Draggable header */}
+      <div
+        className={`flex items-center justify-between px-3 py-2 ${cat.headerBg} border-b border-cadsurface-700/60`}
+        onMouseDown={e => onDragStart(e, node.id)}
+        style={{ cursor: 'grab' }}
+      >
         <div className="flex items-center gap-1.5">
           <span className={`${{ input: 'text-slate-400', foundation: 'text-cadblue-400', geometry: 'text-emerald-400', print: 'text-amber-400', output: 'text-purple-400' }[node.category] ?? 'text-slate-400'}`}>
             {categoryIcon}
@@ -163,6 +191,7 @@ function NodeCard({ node, selected, onSelect, projectId, onParamUpdated }: {
             <span className="text-xs px-1.5 py-0 rounded bg-violet-900/50 border border-violet-700/50 text-violet-300 font-mono" style={{ fontSize: '9px' }}>AI</span>
           )}
           <span className="text-xs rounded px-1 text-slate-700 font-mono" style={{ fontSize: '8px' }}>{cat.badge}</span>
+          <Move size={9} className="text-slate-700 ml-0.5" />
         </div>
       </div>
       <div className="px-3 py-2 space-y-1">
@@ -203,9 +232,18 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
   const [regenerating, setRegenerating] = useState(false);
   const { graph, loading, refetch } = useNodeGraph(projectId);
 
-  // Local node state for optimistic param edits
   const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>(DEMO_NODES);
   const [localConns, setLocalConns] = useState<ApiConnection[]>(DEMO_CONNECTIONS);
+
+  // Dragging ref — avoids stale closures and keeps perf high
+  const dragRef = useRef<{
+    nodeId: string;
+    startMouseX: number;
+    startMouseY: number;
+    startNodeX: number;
+    startNodeY: number;
+    hasMoved: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (graph) {
@@ -227,12 +265,62 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
     setLocalNodes(prev => prev.map(n => n.id === nodeId ? {
       ...n, params: n.params.map(p => p.name === key ? { ...p, value } : p),
     } : n));
-    // Trigger partial regen
     if (!IS_DEMO) regenerateNodeGraph(projectId).catch(() => {});
   }, [projectId]);
 
-  const CANVAS_W = Math.max(1360, localNodes.reduce((m, n) => Math.max(m, n.x + n.w + 60), 1360));
-  const CANVAS_H = Math.max(640, localNodes.reduce((m, n) => Math.max(m, n.y + n.h + 60), 640));
+  // ── Drag handlers ────────────────────────────────────────────────────────────
+
+  const handleNodeDragStart = useCallback((e: React.MouseEvent, nodeId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const node = localNodes.find(n => n.id === nodeId);
+    if (!node) return;
+    dragRef.current = {
+      nodeId,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startNodeX: node.x,
+      startNodeY: node.y,
+      hasMoved: false,
+    };
+  }, [localNodes]);
+
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const scale = zoom / 100;
+    const dx = (e.clientX - drag.startMouseX) / scale;
+    const dy = (e.clientY - drag.startMouseY) / scale;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+      drag.hasMoved = true;
+      const newX = Math.max(0, drag.startNodeX + dx);
+      const newY = Math.max(0, drag.startNodeY + dy);
+      setLocalNodes(prev => prev.map(n =>
+        n.id === drag.nodeId ? { ...n, x: newX, y: newY } : n,
+      ));
+    }
+  }, [zoom]);
+
+  const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    // Treat as click-to-select if no drag movement
+    if (drag && !drag.hasMoved) {
+      setSelected(drag.nodeId);
+    }
+    e.stopPropagation();
+  }, []);
+
+  const handleCanvasBackground = useCallback(() => {
+    if (!dragRef.current) setSelected(null);
+  }, []);
+
+  // ── Dependency path ──────────────────────────────────────────────────────────
+  const depPath = selected ? getDependencyPath(selected, localConns) : new Set<string>();
+  const hasSelection = selected !== null;
+
+  const CANVAS_W = Math.max(1400, localNodes.reduce((m, n) => Math.max(m, n.x + n.w + 80), 1400));
+  const CANVAS_H = Math.max(700,  localNodes.reduce((m, n) => Math.max(m, n.y + n.h + 80), 700));
 
   const selectedNode = localNodes.find(n => n.id === selected);
 
@@ -253,20 +341,44 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
           <RefreshCw size={12} className={regenerating ? 'animate-spin' : ''} />
           {regenerating ? 'Regenerating…' : 'Regenerate'}
         </button>
+
+        {/* Dep path indicator */}
+        {selected && (
+          <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-700/30 text-emerald-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            {depPath.size} nodes in path
+          </div>
+        )}
+
         <div className="flex-1" />
         <div className="flex items-center gap-1 bg-cadsurface-800 rounded-lg border border-cadsurface-700 px-1 py-1">
-          <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-200"><ZoomOut size={12} /></button>
+          <button onClick={() => setZoom(z => Math.max(40, z - 10))} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-200"><ZoomOut size={12} /></button>
           <span className="text-xs font-mono text-slate-400 w-10 text-center">{zoom}%</span>
-          <button onClick={() => setZoom(z => Math.min(150, z + 10))} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-200"><ZoomIn size={12} /></button>
+          <button onClick={() => setZoom(z => Math.min(160, z + 10))} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-200"><ZoomIn size={12} /></button>
           <button onClick={() => setZoom(100)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-200"><Maximize2 size={11} /></button>
         </div>
       </div>
 
       {/* Canvas + detail panel */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto">
-          <div className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom / 100})` }}>
-            <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        {/* Scrollable canvas */}
+        <div
+          className="flex-1 overflow-auto"
+          style={{ cursor: dragRef.current ? 'grabbing' : 'default' }}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={() => { dragRef.current = null; }}
+        >
+          <div
+            className="relative origin-top-left"
+            style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom / 100})` }}
+            onClick={handleCanvasBackground}
+          >
+            {/* Dot-grid background */}
+            <div className="absolute inset-0" style={{
+              backgroundImage: 'radial-gradient(circle, #1e293b 1px, transparent 1px)',
+              backgroundSize: '24px 24px',
+            }} />
 
             {/* SVG connections */}
             <svg className="absolute inset-0 overflow-visible pointer-events-none" width={CANVAS_W} height={CANVAS_H}>
@@ -275,25 +387,50 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
                 if (!path) return null;
                 const fromNode = localNodes.find(n => n.id === c.from_node);
                 const cat = fromNode ? CAT[fromNode.category as Category] : CAT.input;
-                return <path key={i} d={path} stroke={cat.wireColor} strokeWidth="1.5" fill="none" opacity={0.55} />;
+                const isHighlighted = hasSelection && depPath.has(c.from_node) && depPath.has(c.to_node);
+                const dimmed = hasSelection && !isHighlighted;
+                return (
+                  <path
+                    key={i}
+                    d={path}
+                    stroke={isHighlighted ? cat.wireColor : dimmed ? '#1e293b' : cat.wireColor}
+                    strokeWidth={isHighlighted ? 2.5 : 1.5}
+                    fill="none"
+                    opacity={isHighlighted ? 1.0 : dimmed ? 0.15 : 0.55}
+                  />
+                );
               })}
+
               {/* Port dots */}
               {localNodes.map(node => {
                 const cat = CAT[node.category as Category] ?? CAT.input;
                 const isInput = node.category === 'input';
                 const isOutput = node.category === 'output';
+                const dimmed = hasSelection && !depPath.has(node.id);
                 return (
-                  <g key={node.id}>
+                  <g key={node.id} opacity={dimmed ? 0.25 : 1}>
                     {!isOutput && <circle cx={node.x + node.w} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
-                    {!isInput && <circle cx={node.x} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
+                    {!isInput  && <circle cx={node.x}          cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
                   </g>
                 );
               })}
             </svg>
 
+            {/* Node cards */}
             {localNodes.map(node => (
-              <NodeCard key={node.id} node={node} selected={selected === node.id} onSelect={setSelected}
-                projectId={projectId} onParamUpdated={handleParamUpdated} />
+              <div
+                key={node.id}
+                style={{ opacity: hasSelection && !depPath.has(node.id) && selected !== node.id ? 0.4 : 1, transition: 'opacity 0.15s' }}
+              >
+                <NodeCard
+                  node={node}
+                  selected={selected === node.id}
+                  inDepPath={depPath.has(node.id) && selected !== node.id}
+                  projectId={projectId}
+                  onParamUpdated={handleParamUpdated}
+                  onDragStart={handleNodeDragStart}
+                />
+              </div>
             ))}
           </div>
         </div>
@@ -323,6 +460,17 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
                   <p className="text-xs text-violet-300 leading-relaxed">Generated by AI from template + touchpoints</p>
                 </div>
               )}
+
+              {/* Dependency path info */}
+              {depPath.size > 1 && (
+                <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-700/25 rounded-lg p-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1 shrink-0" />
+                  <p className="text-xs text-emerald-300 leading-relaxed">
+                    Downstream: {depPath.size - 1} node{depPath.size !== 2 ? 's' : ''} highlighted
+                  </p>
+                </div>
+              )}
+
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Parameters</p>
                 <div className="space-y-2">
@@ -336,17 +484,18 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
               </div>
               <div className="flex items-start gap-1.5">
                 <Info size={11} className="text-slate-600 mt-0.5 shrink-0" />
-                <p className="text-xs text-slate-600 leading-relaxed">Hover a param row and click the pencil to edit inline</p>
+                <p className="text-xs text-slate-600 leading-relaxed">Drag header to move · hover param to edit</p>
               </div>
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-xs text-slate-700 text-center px-4">Select a node to view and edit its parameters</p>
+              <p className="text-xs text-slate-700 text-center px-4">Select a node to inspect and edit its parameters</p>
             </div>
           )}
         </div>
       </div>
 
+      {/* Status bar */}
       <div className="flex items-center gap-3 px-4 py-1.5 border-t border-cadsurface-700 shrink-0 bg-cadsurface-900/60">
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -354,6 +503,8 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
         </div>
         <span className="text-slate-700">·</span>
         <span className="text-xs text-slate-600">{IS_DEMO ? 'Demo mode' : `Project ${projectId.slice(0, 8)}`}</span>
+        <span className="text-slate-700">·</span>
+        <span className="text-xs text-slate-600">Drag node header to reposition · scroll to pan</span>
         <div className="flex-1" />
         <span className="text-xs text-slate-700 font-mono">
           {graph?.generated_at ? new Date(graph.generated_at).toLocaleTimeString() : 'Last generated: just now'}

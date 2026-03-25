@@ -27,6 +27,7 @@ import {
   Check,
   X,
   Link2,
+  FlaskConical,
 } from 'lucide-react';
 import { fetchProject, createShareLink, type ApiProject, type ShareResponse } from '../../lib/api';
 
@@ -149,7 +150,7 @@ function ShareModal({ projectId, onClose }: { projectId?: string; onClose: () =>
   );
 }
 
-export type WorkspaceMode = 'part' | 'assembly' | 'drawing' | 'nodes';
+export type WorkspaceMode = 'part' | 'assembly' | 'drawing' | 'nodes' | 'studies';
 
 interface TopBarProps {
   mode?: WorkspaceMode;
@@ -218,10 +219,11 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
           {/* Mode switcher */}
           <div className="flex items-center bg-cadsurface-800 rounded-md p-0.5 gap-0.5 shrink-0">
             {([
-              { id: 'part'     as const, icon: Box,       label: 'Part' },
-              { id: 'assembly' as const, icon: Layers,    label: 'Assembly' },
-              { id: 'drawing'  as const, icon: Grid2x2,   label: 'Drawing' },
-              { id: 'nodes'    as const, icon: GitBranch, label: 'Nodes' },
+              { id: 'part'     as const, icon: Box,           label: 'Part'     },
+              { id: 'assembly' as const, icon: Layers,        label: 'Assembly' },
+              { id: 'drawing'  as const, icon: Grid2x2,       label: 'Drawing'  },
+              { id: 'nodes'    as const, icon: GitBranch,     label: 'Nodes'    },
+              { id: 'studies'  as const, icon: FlaskConical,  label: 'Studies'  },
             ] as const).map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
