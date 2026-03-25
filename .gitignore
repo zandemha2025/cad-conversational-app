@@ -36,3 +36,4 @@ backend/.env.production
 
 # Backup files
 *.bak
+.vercel

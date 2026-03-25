@@ -451,17 +451,15 @@ export async function fetchProactiveSuggestions(projectId: string) {
 // ── Direct export download ─────────────────────────────────────────────────
 
 export function getDirectExportUrl(projectId: string, format: 'step' | 'iges' | 'stl' | 'dxf'): string {
-  const token = getToken();
-  // For direct download we construct the URL — the browser handles download
   return `${API_URL}/api/projects/${projectId}/export/${format}`;
 }
 
 export async function directExport(projectId: string, format: 'step' | 'iges' | 'stl' | 'dxf'): Promise<Blob | null> {
   if (!API_URL) return null;
-  const token = getToken();
+  const tok = getToken();
   try {
     const res = await fetch(`${API_URL}/api/projects/${projectId}/export/${format}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
     });
     if (!res.ok) return null;
     // Some formats return JSON redirect (STEP with original upload)

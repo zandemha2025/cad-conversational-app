@@ -422,7 +422,7 @@ export default function Home() {
               Recently Opened
             </h3>
             <div className="space-y-2">
-              {projects.slice(0, 4).map((p) => (
+              {allProjects.slice(0, 4).map((p) => (
                 <button
                   key={p.id}
                   onClick={() => navigate(`/workspace/${p.id}`)}

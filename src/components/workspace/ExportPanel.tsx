@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { Download, FileDown, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { directExport, requestExport, IS_DEMO } from '../../lib/api';
+import { directExport, IS_DEMO } from '../../lib/api';
 
 type ExportFormat = 'step' | 'iges' | 'stl' | 'dxf';
 

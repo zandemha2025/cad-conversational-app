@@ -360,4 +360,5 @@ export interface DfmFrequency {
   rule: string;
   count: number;
   severity: string;
+  process?: string;
 }

@@ -55,11 +55,6 @@ kill_timeout = 30
     method       = "GET"
     path         = "/api/health"
 
-[mounts]
-  # Uncomment if you need ephemeral scratch storage for large STEP files
-  # source      = "scalecad_scratch"
-  # destination = "/tmp/scratch"
-
 [[vm]]
   cpu_kind = "shared"
   cpus     = 2

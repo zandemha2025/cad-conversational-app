@@ -116,8 +116,8 @@ export default function ConstraintsPanel({ projectId }: Props) {
       return;
     }
     setValidating(true);
-    const result = await validateAllConstraints(projectId);
-    if (result && result.constraints) {
+    const result = await validateAllConstraints(projectId) as Record<string, unknown> | null;
+    if (result && Array.isArray(result.constraints)) {
       setConstraints(result.constraints as AssemblyConstraint[]);
     }
     setValidating(false);
