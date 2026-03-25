@@ -105,6 +105,39 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
 
+    # ── Assembly component identification ──────────────────────────────────────
+    _publish(project_id, {"status": "generating", "message": "Identifying assembly components…", "progress": 0.62})
+
+    components = _run_async(gemini.identify_assembly_components(
+        kcl_code=kcl,
+        part_features=features,
+        user_prompt=user_prompt or f"Generate a {template_id} fixture",
+    ))
+
+    comp_now = datetime.now(timezone.utc).isoformat()
+    saved_components = []
+    for comp in components:
+        comp_id = str(uuid.uuid4())
+        try:
+            sb.table("assembly_components").insert({
+                "id": comp_id,
+                "fixture_id": fixture_id,
+                "project_id": project_id,
+                "name": comp.get("name", "Component"),
+                "component_type": comp.get("component_type", "custom"),
+                "description": comp.get("description", ""),
+                "material": comp.get("material", ""),
+                "gltf_url": gltf_url,       # share main model URL for now
+                "position_json": {"x": 0, "y": 0, "z": 0},
+                "rotation_json": {"x": 0, "y": 0, "z": 0},
+                "created_at": comp_now,
+            }).execute()
+            saved_components.append(comp_id)
+        except Exception as e:
+            log.warning("Failed to save assembly component '%s': %s", comp.get("name"), e)
+
+    log.info("Saved %d assembly components for fixture %s", len(saved_components), fixture_id)
+
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.70})
 

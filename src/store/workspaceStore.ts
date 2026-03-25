@@ -19,6 +19,20 @@ export interface SelectedFeature {
   depth?: number;
 }
 
+export interface AssemblyComponent {
+  id: string;
+  fixture_id: string;
+  project_id: string;
+  name: string;
+  component_type: 'base' | 'clamp' | 'pin' | 'spacer' | 'bracket' | 'bushing' | 'custom';
+  description: string;
+  gltf_url: string | null;
+  position_json: { x: number; y: number; z: number } | null;
+  rotation_json: { x: number; y: number; z: number } | null;
+  material: string;
+  created_at: string;
+}
+
 interface WorkspaceState {
   projectId: string | null;
   selectedFeature: SelectedFeature | null;
@@ -27,6 +41,8 @@ interface WorkspaceState {
   gltfUrl: string | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
+  assemblyComponents: AssemblyComponent[];
+  hoveredComponentId: string | null;
 }
 
 type Action =
@@ -38,7 +54,9 @@ type Action =
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
-  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
+  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean }
+  | { type: 'SET_ASSEMBLY_COMPONENTS'; components: AssemblyComponent[] }
+  | { type: 'SET_HOVERED_COMPONENT'; id: string | null };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -60,6 +78,10 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
       return { ...state, touchpointMode: action.active };
+    case 'SET_ASSEMBLY_COMPONENTS':
+      return { ...state, assemblyComponents: action.components };
+    case 'SET_HOVERED_COMPONENT':
+      return { ...state, hoveredComponentId: action.id };
     default:
       return state;
   }
@@ -73,6 +95,8 @@ const initialState: WorkspaceState = {
   gltfUrl: null,
   generationProgress: null,
   touchpointMode: false,
+  assemblyComponents: [],
+  hoveredComponentId: null,
 };
 
 import React from 'react';

@@ -235,6 +235,50 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Assembly component identification (Flash) ─────────────────────────────
+    async def identify_assembly_components(
+        self,
+        kcl_code: str,
+        part_features: dict,
+        user_prompt: str,
+    ) -> list[dict]:
+        """
+        Given a generated KCL fixture, ask Gemini to identify the logical
+        assembly components (base plate, clamps, pins, etc.) and return a
+        structured list.  Returns a list of dicts with keys:
+            name, component_type, description, material
+        """
+        prompt = (
+            "You are a manufacturing fixture engineer. Given this KCL fixture code and part context, "
+            "identify the logical assembly components that make up the fixture.\n\n"
+            "Return ONLY a JSON array (no markdown fences) of objects with these fields:\n"
+            "  - name: short component name (e.g. 'Base Plate', 'Left Clamp', 'Locating Pin')\n"
+            "  - component_type: one of base, clamp, pin, spacer, bracket, bushing, custom\n"
+            "  - description: one sentence describing the component's function\n"
+            "  - material: recommended material (e.g. '6061-T6 Aluminum', 'D2 Tool Steel')\n\n"
+            f"User request: {user_prompt}\n\n"
+            f"Part features: {json.dumps(part_features, default=str)[:800]}\n\n"
+            f"KCL code (first 1500 chars):\n{kcl_code[:1500]}\n\n"
+            "Identify 2–6 components. Return JSON array only."
+        )
+
+        if not settings.GEMINI_API_KEY:
+            return _stub_assembly_components(part_features)
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            components = json.loads(raw)
+            if isinstance(components, list):
+                return components[:6]
+        except Exception as e:
+            log.error("identify_assembly_components error: %s", e)
+        return _stub_assembly_components(part_features)
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -307,6 +351,22 @@ const base = startSketchOn('XY')
   |> close(%)
   |> extrude(length=baseHeight, %)
 """
+
+
+def _stub_assembly_components(part_features: dict) -> list[dict]:
+    """Fallback component list when Gemini is not configured."""
+    return [
+        {"name": "Base Plate", "component_type": "base",
+         "description": "Primary fixture base that mounts to the machine table.", "material": "6061-T6 Aluminum"},
+        {"name": "Left Clamp", "component_type": "clamp",
+         "description": "Toggle clamp securing the left side of the workpiece.", "material": "6061-T6 Aluminum"},
+        {"name": "Right Clamp", "component_type": "clamp",
+         "description": "Toggle clamp securing the right side of the workpiece.", "material": "6061-T6 Aluminum"},
+        {"name": "Locating Pin ×2", "component_type": "pin",
+         "description": "Precision round/diamond pin pair establishing datum B and C.", "material": "D2 Tool Steel"},
+        {"name": "Spacer Block", "component_type": "spacer",
+         "description": "Sets workpiece height above base plate for clearance.", "material": "6061-T6 Aluminum"},
+    ]
 
 
 def _stub_node_graph() -> dict:
