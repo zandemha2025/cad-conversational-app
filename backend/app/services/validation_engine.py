@@ -279,6 +279,67 @@ def run_standards(features: dict, project: dict) -> list[dict]:
     return issues
 
 
+# ── Inventory Rules ───────────────────────────────────────────────────────────
+
+def run_inventory(bom_items: list[dict], inventory: list[dict]) -> list[dict]:
+    """Check BOM items against user inventory; flag missing or low-stock items."""
+    issues = []
+
+    if not bom_items:
+        issues.append(_issue(
+            "inventory", "info",
+            "No BOM items to check",
+            "Add BOM items to the project to enable inventory validation.",
+        ))
+        return issues
+
+    for bom in bom_items:
+        desc = (bom.get("description") or "").lower()
+        qty_needed = int(bom.get("quantity", 1))
+
+        best = None
+        best_score = 0.0
+        for inv in inventory:
+            inv_desc = (inv.get("description") or "").lower()
+            bom_words = set(desc.split())
+            inv_words = set(inv_desc.split())
+            if not bom_words:
+                continue
+            score = len(bom_words & inv_words) / len(bom_words)
+            if score > best_score and score > 0.4:
+                best_score = score
+                best = inv
+
+        item_label = bom.get("description", "Unknown item")
+
+        if best:
+            qty_on_hand = int(best.get("quantity_on_hand") or 0)
+            supplier = best.get("supplier", "supplier")
+            if qty_on_hand >= qty_needed:
+                issues.append(_issue(
+                    "inventory", "ok",
+                    f"{item_label} in stock ({qty_on_hand} on hand)",
+                    f"Sufficient quantity: need {qty_needed}, have {qty_on_hand}.",
+                ))
+            else:
+                shortage = qty_needed - qty_on_hand
+                issues.append(_issue(
+                    "inventory", "warning",
+                    f"Low stock: {item_label} (have {qty_on_hand}, need {qty_needed})",
+                    f"Short by {shortage} unit(s).",
+                    fix=f"Order {shortage}× {item_label} from {supplier}.",
+                ))
+        else:
+            issues.append(_issue(
+                "inventory", "info",
+                f"Not in inventory: {item_label}",
+                f"Quantity needed: {qty_needed}. Not found in user inventory — needs to be sourced.",
+                fix="Use the Shopping List feature to generate a procurement list.",
+            ))
+
+    return issues
+
+
 # ── Full run ───────────────────────────────────────────────────────────────────
 
 def run_all(
@@ -286,11 +347,16 @@ def run_all(
     printer_profile: dict,
     touchpoints: list[dict],
     project: dict,
+    bom_items: list[dict] | None = None,
+    inventory: list[dict] | None = None,
 ) -> dict[str, list[dict]]:
-    return {
+    result = {
         "fdm":        run_fdm(features, printer_profile),
         "cnc":        run_cnc(features),
         "laser":      run_laser(features),
         "functional": run_functional(features, touchpoints),
         "standards":  run_standards(features, project),
     }
+    if bom_items is not None and inventory is not None:
+        result["inventory"] = run_inventory(bom_items, inventory)
+    return result

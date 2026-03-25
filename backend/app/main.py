@@ -53,6 +53,8 @@ from app.api.routes.materials import router as materials_router
 from app.api.routes.tolerance_stack import router as tolerance_stack_router
 # Real-time collaboration (Sprint 7)
 from app.api.routes.collaboration import router as collaboration_router
+# Manufacturing planning (Sprint 7)
+from app.routers.manufacturing import router as manufacturing_router
 
 API = "/api"
 
@@ -90,9 +92,11 @@ app.include_router(materials_router,          prefix=API)  # public, no auth
 app.include_router(tolerance_stack_router,    prefix=API)
 # Real-time collaboration (Sprint 7)
 app.include_router(collaboration_router,      prefix=API)
+# Manufacturing planning (Sprint 7)
+app.include_router(manufacturing_router,      prefix=API)
 
 
-# ── Startup validation + migrations ──────────────────────────────────────────
+# ── Startup validation + DB migrations ────────────────────────────────────────
 @app.on_event("startup")
 async def validate_config():
     import logging as _logging
@@ -113,6 +117,50 @@ async def validate_config():
     # Create collaboration tables if they don't exist yet
     from app.api.routes.collaboration import ensure_collab_tables
     await ensure_collab_tables()
+
+    # Run idempotent DB migrations for manufacturing planning
+    _MIGRATIONS = [
+        """
+        CREATE TABLE IF NOT EXISTS machine_profiles (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID,
+          name TEXT NOT NULL,
+          machine_type TEXT NOT NULL,
+          make_model TEXT,
+          build_volume_json JSONB,
+          materials_available TEXT[],
+          hourly_rate DECIMAL,
+          setup_time_minutes INT DEFAULT 30,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT now()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_inventory (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID,
+          part_number TEXT,
+          description TEXT NOT NULL,
+          category TEXT,
+          quantity_on_hand INT DEFAULT 0,
+          unit_cost DECIMAL,
+          supplier TEXT,
+          supplier_part_number TEXT,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT now()
+        )
+        """,
+    ]
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_engine
+        engine = get_engine()
+        async with engine.begin() as conn:
+            for sql in _MIGRATIONS:
+                await conn.execute(text(sql))
+        _log.info("DB migrations applied (machine_profiles, user_inventory)")
+    except Exception as exc:
+        _log.warning("DB migration skipped: %s", exc)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

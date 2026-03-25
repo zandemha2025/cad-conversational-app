@@ -1,4 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+import asyncio
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends
 from app.models.validation import (
     ValidationResult, ValidationSummary, ValidationRunRequest, ValidationMethod
 )
@@ -43,7 +47,7 @@ async def get_validation_summary(
     last_ran   = rows[0]["ran_at"] if rows else None
     return ValidationSummary(
         project_id=project_id,
-        geometry_ok=True,   # set by OCCT task
+        geometry_ok=True,
         dfm_errors=dfm_errors,
         functional_warnings=func_warn,
         standards_warnings=std_warn,
@@ -57,14 +61,72 @@ async def run_validation(
     body: ValidationRunRequest | None = None,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Queue a full (or selective) re-validation run."""
-    import uuid
-    try:
-        from app.tasks.run_validation import run_full_validation
-        methods = [m.value for m in body.methods] if body and body.methods else None
-        job = run_full_validation.apply_async(args=[project_id, methods], queue="normal")
-        return {"job_id": job.id, "status": "queued"}
-    except Exception:
-        # Redis/Celery unavailable — return a synchronous stub response
-        job_id = str(uuid.uuid4())
-        return {"job_id": job_id, "status": "queued"}
+    """Run validation directly (not via Celery) using asyncio.to_thread."""
+    from app.services.validation_engine import (
+        run_fdm, run_cnc, run_laser, run_functional, run_standards, run_inventory,
+    )
+
+    sb = get_supabase_client()
+
+    # Load project + geometry + touchpoints
+    proj_res = sb.table("projects").select("*").eq("id", project_id).single().execute()
+    proj = proj_res.data or {}
+    printer = proj.get("printer_profile_json") or {}
+
+    geom_res = (
+        sb.table("part_geometries")
+        .select("features_json")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    features = geom_res.data[0].get("features_json") or {} if geom_res.data else {}
+
+    tp_res = sb.table("touchpoints").select("*").eq("project_id", project_id).execute()
+    touchpoints = tp_res.data or []
+
+    # BOM + inventory for inventory validation
+    bom_res = sb.table("bom_items").select("*").eq("project_id", project_id).execute()
+    bom_items = bom_res.data or []
+
+    inv_res = sb.table("user_inventory").select("*").eq("user_id", user_id).execute()
+    inventory = inv_res.data or []
+
+    method_fns = {
+        "fdm":        lambda: run_fdm(features, printer),
+        "cnc":        lambda: run_cnc(features),
+        "laser":      lambda: run_laser(features),
+        "functional": lambda: run_functional(features, touchpoints),
+        "standards":  lambda: run_standards(features, proj),
+        "inventory":  lambda: run_inventory(bom_items, inventory),
+    }
+
+    target_methods = (
+        [m.value for m in body.methods] if body and body.methods
+        else list(method_fns.keys())
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    results = []
+
+    for method in target_methods:
+        fn = method_fns.get(method)
+        if not fn:
+            continue
+        issues = await asyncio.to_thread(fn)
+        errors   = sum(1 for i in issues if i["severity"] == "error")
+        warnings = sum(1 for i in issues if i["severity"] == "warning")
+        record = {
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "method": method,
+            "issues_json": issues,
+            "error_count": errors,
+            "warning_count": warnings,
+            "ran_at": now,
+        }
+        sb.table(TABLE).insert(record).execute()
+        results.append({"method": method, "error_count": errors, "warning_count": warnings})
+
+    job_id = str(uuid.uuid4())
+    return {"job_id": job_id, "status": "completed", "methods_run": target_methods, "results": results}
