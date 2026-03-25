@@ -14,6 +14,9 @@ import ApprovalPanel from '../components/workspace/ApprovalPanel';
 import InterferencePanel from '../components/workspace/InterferencePanel';
 import ConstraintsPanel from '../components/workspace/ConstraintsPanel';
 import ClampingForcePanel from '../components/workspace/ClampingForcePanel';
+import WorkInstructionsPanel from '../components/workspace/WorkInstructionsPanel';
+import QcChecklistPanel from '../components/workspace/QcChecklistPanel';
+import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
@@ -24,7 +27,7 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler,
 } from 'lucide-react';
 
 type LeftPanel =
@@ -37,7 +40,10 @@ type LeftPanel =
   | 'approvals'
   | 'interference'
   | 'constraints'
-  | 'clamping';
+  | 'clamping'
+  | 'work_instructions'
+  | 'qc_checklist'
+  | 'tolerance_stack';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -104,9 +110,12 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'validation',   icon: <ShieldAlert size={15} />,     title: 'Validation', badge: 5 },
     { id: 'export',       icon: <Download size={15} />,        title: 'Export (STEP/IGES/STL/DXF)' },
     { id: 'approvals',    icon: <ClipboardCheck size={15} />,  title: 'Approval Workflow' },
-    { id: 'interference', icon: <Scan size={15} />,            title: 'Interference Check' },
-    { id: 'constraints',  icon: <Link2 size={15} />,           title: 'Assembly Constraints' },
-    { id: 'clamping',     icon: <Gauge size={15} />,           title: 'Clamping Force Calculator' },
+    { id: 'interference',      icon: <Scan size={15} />,         title: 'Interference Check' },
+    { id: 'constraints',       icon: <Link2 size={15} />,        title: 'Assembly Constraints' },
+    { id: 'clamping',          icon: <Gauge size={15} />,        title: 'Clamping Force Calculator' },
+    { id: 'work_instructions', icon: <FileText size={15} />,     title: 'Work Instructions' },
+    { id: 'qc_checklist',      icon: <Microscope size={15} />,   title: 'QC Checklist' },
+    { id: 'tolerance_stack',   icon: <Ruler size={15} />,        title: 'Tolerance Stack-Up' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -120,9 +129,12 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'validation':   return 'bg-red-700 text-white';
       case 'export':       return 'bg-violet-600 text-white';
       case 'approvals':    return 'bg-sky-700 text-white';
-      case 'interference': return 'bg-orange-700 text-white';
-      case 'constraints':  return 'bg-teal-700 text-white';
-      case 'clamping':     return 'bg-pink-700 text-white';
+      case 'interference':      return 'bg-orange-700 text-white';
+      case 'constraints':       return 'bg-teal-700 text-white';
+      case 'clamping':          return 'bg-pink-700 text-white';
+      case 'work_instructions': return 'bg-cadblue-700 text-white';
+      case 'qc_checklist':      return 'bg-emerald-700 text-white';
+      case 'tolerance_stack':   return 'bg-violet-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -202,7 +214,10 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'approvals'    && <ApprovalPanel projectId={projectId} />}
                 {leftPanel === 'interference' && <InterferencePanel projectId={projectId} />}
                 {leftPanel === 'constraints'  && <ConstraintsPanel projectId={projectId} />}
-                {leftPanel === 'clamping'     && <ClampingForcePanel projectId={projectId} />}
+                {leftPanel === 'clamping'          && <ClampingForcePanel projectId={projectId} />}
+                {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
+                {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
+                {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
               </div>
             )}
 

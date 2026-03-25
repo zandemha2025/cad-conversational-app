@@ -7,8 +7,9 @@ import { mockMaterials } from '../../data/mockData';
 import { useWorkspace } from '../../store/workspaceStore';
 import {
   runFeaLite, IS_DEMO, fetchValidationResults, fetchProject,
-  fetchRevisions,
+  fetchRevisions, fetchMaterials,
 } from '../../lib/api';
+import type { MaterialProperties } from '../../lib/api';
 import type { FeaLiteResult, ApiProject } from '../../lib/api';
 import type { Revision } from '../../types';
 
@@ -90,8 +91,15 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const [project, setProject] = useState<ApiProject | null>(null);
   const [dfmIssues, setDfmIssues] = useState<DfmIssue[]>([]);
   const [revisions, setRevisions] = useState<Revision[]>([]);
+  const [liveMaterials, setLiveMaterials] = useState<MaterialProperties[]>([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('aluminum_6061');
 
   const isLive = !IS_DEMO && projectId !== 'demo';
+
+  // Fetch materials from live API (no auth needed)
+  useEffect(() => {
+    fetchMaterials().then(mats => { if (mats && mats.length > 0) setLiveMaterials(mats); });
+  }, []);
 
   useEffect(() => {
     if (!isLive) return;
@@ -394,23 +402,55 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
         {activeTab === 'materials' && (
           <Section title="Material Library">
             <div className="space-y-1.5">
-              {mockMaterials.map(mat => (
-                <button key={mat.id}
+              {(liveMaterials.length > 0 ? liveMaterials : mockMaterials.map(m => ({
+                id: m.id, display_name: m.name, category: m.category ?? 'alloy',
+                density_kg_m3: parseFloat(String(m.density).replace(/[^\d.]/g, '')) * 1000,
+                yield_strength_mpa: m.yield, ultimate_strength_mpa: m.yield * 1.3,
+                hardness_hb: m.hardness ?? 100, youngs_modulus_gpa: m.youngsModulus,
+                poissons_ratio: 0.33, thermal_conductivity_w_mk: 150,
+                machinability_rating: 80, kc1_1: 700, mc: 0.27, notes: '',
+              } as MaterialProperties))).map(mat => (
+                <button
+                  key={mat.id}
+                  onClick={() => setSelectedMaterialId(mat.id)}
                   className={`w-full flex items-center gap-3 p-2 rounded-lg border text-left transition-all ${
-                    mat.id === 'mat1'
+                    selectedMaterialId === mat.id
                       ? 'bg-cadblue-900/30 border-cadblue-600/50'
                       : 'bg-cadsurface-800 border-cadsurface-700 hover:border-cadsurface-600'
-                  }`}>
-                  <div className="w-5 h-5 rounded-full border border-cadsurface-600 shrink-0" style={{ backgroundColor: mat.color }} />
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full border border-cadsurface-600 shrink-0 bg-slate-400" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-slate-200 truncate">{mat.name}</p>
-                    <p className="text-xs text-slate-500">ρ {mat.density} · E {mat.youngsModulus} GPa · Sy {mat.yield} MPa</p>
+                    <p className="text-xs font-medium text-slate-200 truncate">{mat.display_name}</p>
+                    <p className="text-xs text-slate-500">
+                      E {mat.youngs_modulus_gpa} GPa · Sy {mat.yield_strength_mpa} MPa · HB {mat.hardness_hb}
+                    </p>
                   </div>
-                  {mat.id === 'mat1' && <span className="text-xs text-cadblue-400 shrink-0">Active</span>}
+                  {selectedMaterialId === mat.id && (
+                    <span className="text-xs text-cadblue-400 shrink-0">Active</span>
+                  )}
                 </button>
               ))}
             </div>
-            <button className="btn-primary w-full mt-3 text-xs">Browse Full Library</button>
+            {selectedMaterialId && liveMaterials.length > 0 && (() => {
+              const m = liveMaterials.find(x => x.id === selectedMaterialId);
+              if (!m) return null;
+              return (
+                <div className="mt-3 bg-cadsurface-800 border border-cadsurface-700 rounded-xl p-2.5 space-y-1">
+                  <p className="text-xs font-semibold text-slate-300">{m.display_name}</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                    <span className="text-slate-500">Density</span><span className="text-slate-300 font-mono">{m.density_kg_m3} kg/m³</span>
+                    <span className="text-slate-500">Yield</span><span className="text-slate-300 font-mono">{m.yield_strength_mpa} MPa</span>
+                    <span className="text-slate-500">UTS</span><span className="text-slate-300 font-mono">{m.ultimate_strength_mpa} MPa</span>
+                    <span className="text-slate-500">Hardness</span><span className="text-slate-300 font-mono">{m.hardness_hb} HB</span>
+                    <span className="text-slate-500">E (Young's)</span><span className="text-slate-300 font-mono">{m.youngs_modulus_gpa} GPa</span>
+                    <span className="text-slate-500">Machinability</span><span className="text-slate-300 font-mono">{m.machinability_rating}%</span>
+                    <span className="text-slate-500">Kc1,1</span><span className="text-slate-300 font-mono">{m.kc1_1} N/mm²</span>
+                  </div>
+                  {m.notes && <p className="text-xs text-slate-600 mt-1 leading-relaxed">{m.notes}</p>}
+                </div>
+              );
+            })()}
           </Section>
         )}
 

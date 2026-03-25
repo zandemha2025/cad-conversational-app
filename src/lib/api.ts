@@ -5,8 +5,15 @@
  * so callers can fall back to mock data seamlessly.
  */
 
-const API_URL = import.meta.env.VITE_API_URL as string | undefined;
-export const WS_URL = import.meta.env.VITE_WS_URL as string | undefined;
+// In production (Vercel), default to Fly.io backend when VITE_API_URL is not set.
+// In dev, stay undefined so the Vite proxy (/api → localhost:8000) handles calls.
+const _envApiUrl = import.meta.env.VITE_API_URL as string | undefined;
+const API_URL: string | undefined = _envApiUrl ??
+  (import.meta.env.PROD ? 'https://scalecad-api.fly.dev' : undefined);
+
+const _envWsUrl = import.meta.env.VITE_WS_URL as string | undefined;
+export const WS_URL: string | undefined = _envWsUrl ??
+  (import.meta.env.PROD ? 'wss://scalecad-api.fly.dev' : undefined);
 
 export const IS_DEMO = !API_URL;
 
@@ -654,4 +661,134 @@ export async function generateProjectDrawings(projectId: string) {
 
 export async function fetchProjectDrawings(projectId: string) {
   return apiFetch<import('../types').DrawingRecord[]>(`/projects/${projectId}/drawings`);
+}
+
+// ── Materials library ──────────────────────────────────────────────────────────
+
+export interface MaterialProperties {
+  id: string;
+  display_name: string;
+  category: string;
+  density_kg_m3: number;
+  yield_strength_mpa: number;
+  ultimate_strength_mpa: number;
+  hardness_hb: number;
+  youngs_modulus_gpa: number;
+  poissons_ratio: number;
+  thermal_conductivity_w_mk: number;
+  machinability_rating: number;
+  kc1_1: number;
+  mc: number;
+  notes: string;
+}
+
+export async function fetchMaterials(): Promise<MaterialProperties[] | null> {
+  return apiFetch<MaterialProperties[]>('/materials');
+}
+
+export async function fetchMaterialById(materialId: string): Promise<MaterialProperties | null> {
+  return apiFetch<MaterialProperties>(`/materials/${materialId}`);
+}
+
+// ── Work instructions ──────────────────────────────────────────────────────────
+
+export interface WorkInstructionsRequest {
+  material?: string;
+  process?: string; // 'cnc_milling' | 'turning' | 'grinding' | 'inspection'
+  include_speeds_feeds?: boolean;
+}
+
+export interface WorkInstructionsResult {
+  project_id: string;
+  material: string;
+  process: string;
+  phases: Array<{
+    phase: number;
+    title: string;
+    operation: string;
+    tool: string;
+    setup: string;
+    parameters: Record<string, string | number>;
+    notes: string;
+    quality_check: string;
+  }>;
+  summary: string;
+  generated_at: string;
+}
+
+export async function generateWorkInstructions(
+  projectId: string,
+  params: WorkInstructionsRequest = {}
+): Promise<WorkInstructionsResult | null> {
+  return apiFetch<WorkInstructionsResult>(`/projects/${projectId}/work-instructions`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+// ── QC checklist ───────────────────────────────────────────────────────────────
+
+export interface QcChecklistRequest {
+  material?: string;
+  standard?: string; // 'asme_y14_5' | 'iso_1101' | 'as9100'
+  include_cmm?: boolean;
+}
+
+export interface QcChecklistResult {
+  project_id: string;
+  standard: string;
+  items: Array<{
+    id: string;
+    category: string;
+    characteristic: string;
+    nominal: string;
+    tolerance: string;
+    method: string;
+    instrument: string;
+    frequency: string;
+    accept_criteria: string;
+    reference: string;
+  }>;
+  summary: string;
+  generated_at: string;
+}
+
+export async function generateQcChecklist(
+  projectId: string,
+  params: QcChecklistRequest = {}
+): Promise<QcChecklistResult | null> {
+  return apiFetch<QcChecklistResult>(`/projects/${projectId}/qc-checklist`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+// ── Tolerance stack-up ─────────────────────────────────────────────────────────
+
+export interface ToleranceStackRequest {
+  dimensions: Array<{ name: string; nominal_mm: number; tolerance_mm: number; bilateral?: boolean }>;
+  method?: 'worst_case' | 'rss';
+}
+
+export interface ToleranceStackResult {
+  project_id: string;
+  method: string;
+  dimensions: Array<{ name: string; nominal_mm: number; tolerance_mm: number }>;
+  total_nominal_mm: number;
+  worst_case_mm: number;
+  rss_mm: number;
+  gap_min_mm: number;
+  gap_max_mm: number;
+  assembly_ok: boolean;
+  summary: string;
+}
+
+export async function runToleranceStack(
+  projectId: string,
+  params: ToleranceStackRequest
+): Promise<ToleranceStackResult | null> {
+  return apiFetch<ToleranceStackResult>(`/projects/${projectId}/tolerance-stack`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 }

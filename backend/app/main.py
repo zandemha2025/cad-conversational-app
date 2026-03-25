@@ -49,6 +49,7 @@ from app.api.routes.drawings_v2 import router as drawings_v2_router
 from app.api.routes.work_instructions import router as work_instructions_router
 from app.api.routes.qc_checklist import router as qc_checklist_router
 from app.api.routes.materials import router as materials_router
+from app.api.routes.tolerance_stack import router as tolerance_stack_router
 
 API = "/api"
 
@@ -83,6 +84,7 @@ app.include_router(drawings_v2_router,        prefix=API)
 app.include_router(work_instructions_router,  prefix=API)
 app.include_router(qc_checklist_router,       prefix=API)
 app.include_router(materials_router,          prefix=API)  # public, no auth
+app.include_router(tolerance_stack_router,    prefix=API)
 
 
 # ── Startup validation ────────────────────────────────────────────────────────
