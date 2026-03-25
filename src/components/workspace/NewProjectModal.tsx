@@ -387,10 +387,11 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
         )}
 
         {/* ── STEP: CONFIGURE ── */}
-        {step === 'configure' && selectedTemplate && (
+        {step === 'configure' && (
           <div className="flex-1 overflow-y-auto">
-            <div className="flex divide-x divide-cadsurface-700">
-              {/* Left: template summary */}
+            <div className={`flex ${selectedTemplate ? 'divide-x divide-cadsurface-700' : ''}`}>
+              {/* Left: template summary (only when a template is selected) */}
+              {selectedTemplate && (
               <div className={`w-64 shrink-0 p-5 ${selectedTemplate.bg}`}>
                 <div className={`w-12 h-12 rounded-xl bg-cadsurface-800/60 flex items-center justify-center ${selectedTemplate.color} mb-3`}>
                   {selectedTemplate.icon}
@@ -415,6 +416,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Right: config form */}
               <div className="flex-1 p-6">
@@ -424,7 +426,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
                     <input
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
-                      placeholder={`e.g. Wing Panel ${selectedTemplate.label}`}
+                      placeholder={selectedTemplate ? `e.g. Wing Panel ${selectedTemplate.label}` : 'e.g. CNC Aluminum Bracket'}
                       className="w-full bg-cadsurface-800 border border-cadsurface-700 focus:border-cadblue-500/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder-slate-600 transition-colors"
                     />
                   </div>
@@ -443,7 +445,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
                     <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Material</label>
                     <div className="flex items-center gap-2">
                       <input
-                        defaultValue={selectedTemplate.suggestedMaterial}
+                        defaultValue={selectedTemplate?.suggestedMaterial ?? 'Al 6061-T6'}
                         className="flex-1 bg-cadsurface-800 border border-cadsurface-700 focus:border-cadblue-500/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none transition-colors"
                       />
                       <span className="text-xs text-slate-600">Suggested</span>
@@ -490,7 +492,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
                     <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Initial Prompt (optional)</label>
                     <textarea
                       rows={3}
-                      placeholder={`e.g. "Create a ${selectedTemplate.label.toLowerCase()} for 150×100mm aluminum panels with 4 bushing positions…"`}
+                      placeholder={`e.g. "Create a ${selectedTemplate ? selectedTemplate.label.toLowerCase() : 'fixture'} for 150×100mm aluminum panels with 4 bushing positions…"`}
                       className="w-full bg-cadsurface-800 border border-cadsurface-700 focus:border-cadblue-500/60 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none placeholder-slate-600 resize-none transition-colors"
                     />
                   </div>
