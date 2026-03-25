@@ -158,6 +158,17 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
 
+    # ── Dimension extraction ────────────────────────────────────────────────────
+    _publish(project_id, {"status": "generating", "message": "Extracting dimensions…", "progress": 0.78})
+
+    dimensions = _run_async(gemini.extract_dimensions(
+        kcl=kcl,
+        design_description=user_prompt or "",
+    ))
+    sb.table("fixture_geometries").update({
+        "dimensions_json": dimensions,
+    }).eq("id", fixture_id).execute()
+
     # ── Validation ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "validating", "message": "Running DFM validation…", "progress": 0.85})
 

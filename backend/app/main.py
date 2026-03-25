@@ -66,6 +66,8 @@ from app.api.routes.feature_search import router as feature_search_router
 from app.api.routes.assembly import router as assembly_router
 # Standards component library (Feature 7)
 from app.api.routes.components import router as components_router
+# Dimension overlay (Feature 3)
+from app.api.routes.dimensions import router as dimensions_router
 
 API = "/api"
 
@@ -113,6 +115,8 @@ app.include_router(feature_search_router,     prefix=API)
 app.include_router(assembly_router,           prefix=API)
 # Standards component library (Feature 7)
 app.include_router(components_router,         prefix=API)
+# Dimension overlay (Feature 3)
+app.include_router(dimensions_router,         prefix=API)
 
 
 # ── Startup migrations ────────────────────────────────────────────────────────
@@ -169,7 +173,6 @@ async def run_migrations():
 async def validate_config():
     import logging as _logging
     _log = _logging.getLogger(__name__)
-
     missing = []
     if not settings.SUPABASE_URL:
         missing.append("SUPABASE_URL")
@@ -254,6 +257,22 @@ async def validate_config():
         _log.info("DB migrations applied OK")
     except Exception as exc:
         _log.warning("DB migration skipped: %s", exc)
+
+    # Schema migration: add dimensions_json column if missing
+    try:
+        from sqlalchemy import text as sa_text
+        from app.core.database import get_engine
+        engine = get_engine()
+        if engine:
+            async with engine.connect() as conn:
+                await conn.execute(sa_text(
+                    "ALTER TABLE fixture_geometries "
+                    "ADD COLUMN IF NOT EXISTS dimensions_json JSONB"
+                ))
+                await conn.commit()
+            _log.info("Schema migration: dimensions_json column ensured")
+    except Exception as e:
+        _log.warning("Schema migration skipped (column may already exist or DATABASE_URL not set): %s", e)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────
