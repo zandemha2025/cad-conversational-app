@@ -305,7 +305,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold text-white">
               {step === 'pick'        && 'New Tooling Design'}
-              {step === 'configure'   && `Configure: ${selectedTemplate?.label}`}
+              {step === 'configure'   && `Configure: ${selectedTemplate?.label ?? 'Blank Design'}`}
               {step === 'environment' && 'Environment Context'}
               {step === 'printer'     && 'Printer Profile'}
             </h2>
@@ -371,7 +371,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
               ))}
 
               <button
-                onClick={() => { onClose(); navigate('/workspace/new'); }}
+                onClick={() => { setSelectedTemplate(null); setStep('configure'); }}
                 className="flex flex-col gap-3 p-4 rounded-xl border border-dashed border-cadsurface-600 hover:border-cadblue-600/50 text-left transition-all hover:bg-cadsurface-800/50 group"
               >
                 <div className="w-10 h-10 rounded-xl bg-cadsurface-800 flex items-center justify-center text-slate-600 group-hover:text-cadblue-400 transition-colors">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import NewProjectModal from '../components/workspace/NewProjectModal';
 import {
   Plus,
@@ -259,6 +260,7 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
 
+  const { user } = useAuth();
   const { projects: allProjects, addProject } = useProjects(search || undefined);
 
   const filtered = allProjects.filter((p) => {
@@ -285,7 +287,7 @@ export default function Home() {
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               <Wrench size={20} className="text-cadblue-400" />
-              Welcome back, Nazeem
+              Welcome back, {user?.name ?? 'there'}
             </h1>
             <p className="text-sm text-slate-400 mt-1">
               <span className="text-cadblue-400 font-medium">
