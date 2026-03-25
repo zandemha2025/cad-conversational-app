@@ -117,7 +117,9 @@ export default function Analytics() {
   }, []);
 
   const totalProjects = velocity.reduce((s, v) => s + v.projects, 0);
-  const avgVelocity = velocity.reduce((s, v) => s + v.avg_days * v.projects, 0) / totalProjects;
+  const avgVelocity = totalProjects > 0
+    ? velocity.reduce((s, v) => s + v.avg_days * v.projects, 0) / totalProjects
+    : 0;
   const latestErrors = trends[trends.length - 1]?.errors ?? 0;
   const latestWarnings = trends[trends.length - 1]?.warnings ?? 0;
   const maxDfm = Math.max(...dfm.map((d) => d.count), 1);
@@ -228,9 +230,11 @@ export default function Analytics() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-slate-700 mt-4">
-            Address "Small hole diameter" and "Depth-to-diameter" warnings first — they account for {Math.round((dfm[0].count + dfm[1].count) / dfm.reduce((s, d) => s + d.count, 0) * 100)}% of all DFM issues.
-          </p>
+          {dfm.length >= 2 && (
+            <p className="text-xs text-slate-700 mt-4">
+              Address "{dfm[0].rule}" and "{dfm[1].rule}" first — they account for {Math.round((dfm[0].count + dfm[1].count) / dfm.reduce((s, d) => s + d.count, 0) * 100)}% of all DFM issues.
+            </p>
+          )}
         </div>
       </div>
     </div>

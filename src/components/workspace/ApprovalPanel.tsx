@@ -204,7 +204,7 @@ export default function ApprovalPanel({ projectId }: Props) {
                   <p className="text-[10px] text-slate-300 leading-relaxed">{appr.comments}</p>
                 )}
                 <p className="text-[10px] text-slate-500">
-                  {new Date(appr.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {new Date(appr.submitted_at ?? appr.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
 
                 {/* Review actions */}

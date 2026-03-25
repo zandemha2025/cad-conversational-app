@@ -229,7 +229,7 @@ export default function QcChecklistPanel({ projectId = 'demo' }: { projectId?: s
               <div className="flex items-center gap-2 mb-1">
                 <Microscope size={12} className="text-emerald-400" />
                 <span className="text-xs font-semibold text-slate-300">
-                  {STANDARDS.find(s => s.value === result.standard)?.label} · {result.items.length} checks
+                  {STANDARDS.find(s => s.value === result.standard)?.label ?? result.standard} · {result.items.length} checks
                 </span>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">{result.summary}</p>
