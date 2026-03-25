@@ -7,12 +7,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# ── Supabase client (for auth + simple queries) ───────────────────────────────
+# ── Supabase clients ──────────────────────────────────────────────────────────
+# Two separate singletons to prevent auth.sign_in_with_password() contaminating
+# the service-role client's PostgREST session (which would re-enable RLS).
 
-_supabase_client: Client | None = None
+_supabase_client: Client | None = None   # service-role: bypasses RLS (DB ops)
+_supabase_auth_client: Client | None = None  # anon-key: for auth sign-in/sign-up
 
 
 def get_supabase() -> Client:
+    """Return the service-role Supabase client (RLS bypassed)."""
     global _supabase_client
     if _supabase_client is None:
         if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
@@ -22,6 +26,20 @@ def get_supabase() -> Client:
             settings.SUPABASE_SERVICE_KEY,
         )
     return _supabase_client
+
+
+def get_supabase_auth() -> Client:
+    """Return the anon-key Supabase client for auth operations (sign-in/sign-up).
+    Kept separate so that sign_in_with_password() doesn't set a user-level JWT
+    on the service-role client, which would re-enable RLS for subsequent queries.
+    """
+    global _supabase_auth_client
+    if _supabase_auth_client is None:
+        key = settings.SUPABASE_ANON_KEY or settings.SUPABASE_SERVICE_KEY
+        if not settings.SUPABASE_URL or not key:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
+        _supabase_auth_client = create_client(settings.SUPABASE_URL, key)
+    return _supabase_auth_client
 
 
 # ── SQLAlchemy async engine (for complex queries) ─────────────────────────────

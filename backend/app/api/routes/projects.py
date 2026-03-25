@@ -63,10 +63,14 @@ async def get_project(
     user_id: str = Depends(get_current_user_id),
 ):
     sb = get_supabase_client()
-    res = sb.table(TABLE).select("*").eq("id", project_id).eq("user_id", user_id).single().execute()
+    try:
+        res = sb.table(TABLE).select("*").eq("id", project_id).eq("user_id", user_id).execute()
+    except Exception as e:
+        log.error("get_project error: %s", e)
+        raise HTTPException(status_code=404, detail="Project not found")
     if not res.data:
         raise HTTPException(status_code=404, detail="Project not found")
-    return ProjectResponse(**res.data)
+    return ProjectResponse(**res.data[0])
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

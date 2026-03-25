@@ -21,31 +21,25 @@ async def search_catalog(
     category: str = Query("", description="Filter by category"),
     supplier: str = Query("", description="Filter by supplier"),
     limit: int = Query(50, le=200),
-    db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
     """Search hardware catalog with optional filters."""
+    from app.core.database import get_supabase_client
     try:
-        where_clauses = ["1=1"]
-        params: dict = {"limit": limit}
-
-        if q:
-            where_clauses.append("search_vec @@ to_tsquery('english', :q)")
-            params["q"] = " & ".join(q.split())
+        sb = get_supabase_client()
+        query = sb.table("hardware_catalog").select(
+            "id,part_number,name,category,supplier,specs_json,price_usd,in_stock,preferred"
+        ).order("preferred", desc=True).order("name").limit(limit)
         if category:
-            where_clauses.append("category = :category")
-            params["category"] = category
+            query = query.eq("category", category)
         if supplier:
-            where_clauses.append("supplier ILIKE :supplier")
-            params["supplier"] = f"%{supplier}%"
-
-        where_str = " AND ".join(where_clauses)
-        result = await db.execute(
-            text(f"SELECT id, part_number, name, category, supplier, specs_json, price_usd, in_stock, preferred FROM hardware_catalog WHERE {where_str} ORDER BY preferred DESC, name LIMIT :limit"),
-            params,
-        )
-        rows = result.mappings().all()
-        return [dict(r) for r in rows]
+            query = query.ilike("supplier", f"%{supplier}%")
+        res = query.execute()
+        rows = res.data or []
+        if q:
+            q_lower = q.lower()
+            rows = [r for r in rows if q_lower in (r.get("name") or "").lower() or q_lower in (r.get("part_number") or "").lower()]
+        return rows
     except Exception as e:
         log.error("hardware catalog error: %s", e)
         return []

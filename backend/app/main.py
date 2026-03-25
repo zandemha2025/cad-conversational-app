@@ -11,6 +11,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
+    redirect_slashes=False,
 )
 
 # ── CORS ───────────────────────────────────────────────────────────────────────
@@ -44,6 +45,10 @@ from app.api.routes.clamping_force import router as clamping_force_router
 from app.api.routes.export_direct import router as export_direct_router
 from app.api.routes.revisions_v2 import router as revisions_v2_router
 from app.api.routes.drawings_v2 import router as drawings_v2_router
+# Manufacturing docs + materials library (Sprint 6)
+from app.api.routes.work_instructions import router as work_instructions_router
+from app.api.routes.qc_checklist import router as qc_checklist_router
+from app.api.routes.materials import router as materials_router
 
 API = "/api"
 
@@ -56,6 +61,7 @@ app.include_router(validation.router,  prefix=API)
 app.include_router(nodes.router,       prefix=API)
 app.include_router(chat.router,        prefix=API)
 app.include_router(generation.router,  prefix=API)
+app.include_router(export_direct_router,  prefix=API)   # must precede export.router (same URL pattern)
 app.include_router(export.router,      prefix=API)
 app.include_router(bom.router,         prefix=API)
 # New
@@ -71,9 +77,12 @@ app.include_router(approvals_router,      prefix=API)
 app.include_router(constraints_router,    prefix=API)
 app.include_router(interference_router,   prefix=API)
 app.include_router(clamping_force_router, prefix=API)
-app.include_router(export_direct_router,  prefix=API)
-app.include_router(revisions_v2_router,   prefix=API)
-app.include_router(drawings_v2_router,    prefix=API)
+app.include_router(revisions_v2_router,       prefix=API)
+app.include_router(drawings_v2_router,        prefix=API)
+# Manufacturing docs + materials library (Sprint 6)
+app.include_router(work_instructions_router,  prefix=API)
+app.include_router(qc_checklist_router,       prefix=API)
+app.include_router(materials_router,          prefix=API)  # public, no auth
 
 
 # ── Startup validation ────────────────────────────────────────────────────────

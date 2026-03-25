@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from app.models.user import UserCreate, UserLogin, UserResponse, TokenResponse
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, get_supabase_auth
 from app.core.security import create_access_token
 import logging
 
@@ -10,10 +10,18 @@ log = logging.getLogger(__name__)
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: UserCreate):
-    """Register with Supabase Auth."""
+    """Register via Supabase Admin API — auto-confirms email, accepts any valid email format."""
+    # Use the service-role client for admin.create_user (bypasses email domain restrictions)
     sb = get_supabase_client()
     try:
-        res = sb.auth.sign_up({"email": body.email, "password": body.password})
+        res = sb.auth.admin.create_user(
+            {
+                "email": body.email,
+                "password": body.password,
+                "email_confirm": True,
+                "user_metadata": {"full_name": body.full_name or ""},
+            }
+        )
         user = res.user
         if not user:
             raise HTTPException(status_code=400, detail="Registration failed")
@@ -22,15 +30,19 @@ async def register(body: UserCreate):
             email=user.email,
             full_name=body.full_name,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         log.error("register error: %s", e)
-        raise HTTPException(status_code=400, detail="Registration failed")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: UserLogin):
     """Sign in via Supabase Auth → returns access token."""
-    sb = get_supabase_client()
+    # Use the ANON-KEY auth client so sign_in_with_password() doesn't contaminate
+    # the service-role client's session, which would re-enable RLS on DB queries.
+    sb = get_supabase_auth()
     try:
         res = sb.auth.sign_in_with_password({"email": body.email, "password": body.password})
         session = res.session

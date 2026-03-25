@@ -3,8 +3,8 @@ from app.core.config import settings
 
 celery_app = Celery(
     "scalecad",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=settings.celery_broker,
+    backend=settings.celery_backend,
     include=[
         "app.tasks.process_step",
         "app.tasks.generate_fixture",

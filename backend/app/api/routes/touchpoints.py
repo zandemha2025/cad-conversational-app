@@ -62,9 +62,12 @@ async def add_touchpoint(
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to save touchpoint")
 
-    # Async constraint re-solve
-    from app.tasks.run_validation import run_constraint_check
-    run_constraint_check.delay(project_id)
+    # Async constraint re-solve (best-effort, Redis may not be available)
+    try:
+        from app.tasks.run_validation import run_constraint_check
+        run_constraint_check.delay(project_id)
+    except Exception:
+        pass
 
     return TouchpointResponse(**res.data[0])
 
