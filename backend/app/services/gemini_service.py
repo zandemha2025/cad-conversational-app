@@ -103,7 +103,11 @@ class GeminiService:
                     yield chunk.text
         except Exception as e:
             log.error("stream_chat error: %s", e)
-            yield f"Sorry, I encountered an error: {e}"
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
+                yield "⚠️ AI rate limit reached — please wait a moment and try again."
+            else:
+                yield f"Sorry, I encountered an error processing your request."
 
     # ── KCL code generation (Pro) ──────────────────────────────────────────────
     async def generate_kcl(
