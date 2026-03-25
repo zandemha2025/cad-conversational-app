@@ -39,9 +39,11 @@ export function useRealtimeProject(
     let cleanup = () => {};
 
     import('@supabase/supabase-js').then(({ createClient }) => {
-      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const supabase = (createClient as any)(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-      const channel = supabase.channel(`project:${projectId}`, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const channel = (supabase as any).channel(`project:${projectId}`, {
         config: { presence: { key: currentUserId ?? 'anon' } },
       });
 
@@ -52,19 +54,19 @@ export function useRealtimeProject(
           schema: 'public',
           table: 'touchpoints',
           filter: `project_id=eq.${projectId}`,
-        }, (payload) => callbacks.onTouchpointChange?.(payload))
+        }, (payload: unknown) => callbacks.onTouchpointChange?.(payload))
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'fixture_geometries',
           filter: `project_id=eq.${projectId}`,
-        }, (payload) => callbacks.onFixtureGenerated?.(payload))
+        }, (payload: unknown) => callbacks.onFixtureGenerated?.(payload))
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'conversation_messages',
           filter: `project_id=eq.${projectId}`,
-        }, (payload) => callbacks.onNewMessage?.(payload));
+        }, (payload: unknown) => callbacks.onNewMessage?.(payload));
 
       // ── Presence ──────────────────────────────────────────────────────────
       channel.on('presence', { event: 'sync' }, () => {
@@ -73,7 +75,7 @@ export function useRealtimeProject(
         callbacks.onPresenceChange?.(users);
       });
 
-      channel.subscribe((status) => {
+      channel.subscribe((status: string) => {
         if (status === 'SUBSCRIBED' && currentUserId) {
           channel.track({
             user_id: currentUserId,

@@ -95,7 +95,7 @@ export default function Analytics() {
         setDfm(dfmData.map((d) => ({
           rule: d.rule,
           count: d.count,
-          process: d.process ?? 'General',
+          process: d.severity ?? 'General',
         })));
       } else {
         setDfm(DEMO_DFM);
