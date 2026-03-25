@@ -4,7 +4,7 @@
  * between Viewport3D, FeatureTree, PropertiesPanel, and TouchpointPanel.
  */
 import { createContext, useContext, useReducer, useCallback } from 'react';
-import type { ApiTouchpoint } from '../lib/api';
+import type { ApiTouchpoint, FixtureVersion } from '../lib/api';
 import type { PartFeatures } from '../types';
 
 export interface SelectedFeature {
@@ -27,6 +27,8 @@ interface WorkspaceState {
   gltfUrl: string | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
+  versions: FixtureVersion[];
+  selectedVersion: number | null;
 }
 
 type Action =
@@ -38,7 +40,9 @@ type Action =
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
-  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
+  | { type: 'SET_TOUCHPOINT_MODE'; active: boolean }
+  | { type: 'SET_VERSIONS'; versions: FixtureVersion[] }
+  | { type: 'SELECT_VERSION'; version: number | null };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -60,6 +64,10 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
       return { ...state, touchpointMode: action.active };
+    case 'SET_VERSIONS':
+      return { ...state, versions: action.versions };
+    case 'SELECT_VERSION':
+      return { ...state, selectedVersion: action.version };
     default:
       return state;
   }
@@ -73,6 +81,8 @@ const initialState: WorkspaceState = {
   gltfUrl: null,
   generationProgress: null,
   touchpointMode: false,
+  versions: [],
+  selectedVersion: null,
 };
 
 import React from 'react';
@@ -117,5 +127,5 @@ export function useWorkspace() {
 }
 
 // Re-export types so components can import from here
-export type { ApiTouchpoint } from '../lib/api';
+export type { ApiTouchpoint, FixtureVersion } from '../lib/api';
 export type { PartFeatures } from '../types';

@@ -791,3 +791,38 @@ export async function runToleranceStack(
     body: JSON.stringify(params),
   });
 }
+
+// ── Version history ────────────────────────────────────────────────────────────
+
+export interface FixtureVersion {
+  id: string;
+  version: number;
+  gltf_url: string | null;
+  generation_prompt: string | null;
+  generated_at: string;
+}
+
+export interface VersionDiff {
+  from_version: number;
+  to_version: number;
+  changes: Array<{
+    type: 'added' | 'modified' | 'removed';
+    feature: string;
+    detail: string;
+  }>;
+  summary: string;
+}
+
+export async function fetchVersions(projectId: string): Promise<FixtureVersion[] | null> {
+  return apiFetch<FixtureVersion[]>(`/projects/${projectId}/versions`);
+}
+
+export async function fetchVersionDiff(
+  projectId: string,
+  toVersion: number,
+  compareFrom: number,
+): Promise<VersionDiff | null> {
+  return apiFetch<VersionDiff>(
+    `/projects/${projectId}/versions/${toVersion}/diff?compare_to=${compareFrom}`,
+  );
+}

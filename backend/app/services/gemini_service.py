@@ -235,6 +235,53 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Version diff (Flash) ──────────────────────────────────────────────────
+    async def generate_version_diff(
+        self,
+        from_version: int,
+        to_version: int,
+        from_prompt: str,
+        to_prompt: str,
+        from_kcl: str,
+        to_kcl: str,
+    ) -> dict:
+        if not settings.GEMINI_API_KEY:
+            return _stub_version_diff(from_version, to_version, from_prompt, to_prompt)
+
+        prompt = (
+            f"You are a CAD fixture design analyst. Compare two versions of a fixture design.\n\n"
+            f"Version {from_version} (older):\n"
+            f"User prompt: {from_prompt or 'No prompt recorded'}\n"
+            f"KCL code (first 2000 chars):\n{from_kcl[:2000]}\n\n"
+            f"Version {to_version} (newer):\n"
+            f"User prompt: {to_prompt or 'No prompt recorded'}\n"
+            f"KCL code (first 2000 chars):\n{to_kcl[:2000]}\n\n"
+            "Analyze the differences and return ONLY valid JSON in this exact format:\n"
+            "{\"from_version\": " + str(from_version) + ", "
+            "\"to_version\": " + str(to_version) + ", "
+            "\"changes\": [{\"type\": \"modified|added|removed\", \"feature\": \"name\", \"detail\": \"description\"}], "
+            "\"summary\": \"one sentence summary\"}\n\n"
+            "Focus on geometric and functional changes: dimensions, features added/removed, mounting holes, etc. "
+            "Return only JSON, no markdown fences."
+        )
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            result = json.loads(raw)
+            result.setdefault("from_version", from_version)
+            result.setdefault("to_version", to_version)
+            result.setdefault("changes", [])
+            result.setdefault("summary", f"Changes from v{from_version} to v{to_version}")
+            return result
+        except Exception as e:
+            log.error("generate_version_diff error: %s", e)
+            return _stub_version_diff(from_version, to_version, from_prompt, to_prompt)
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -307,6 +354,18 @@ const base = startSketchOn('XY')
   |> close(%)
   |> extrude(length=baseHeight, %)
 """
+
+
+def _stub_version_diff(from_version: int, to_version: int, from_prompt: str, to_prompt: str) -> dict:
+    detail = f"Updated per: \"{to_prompt[:80]}\"" if to_prompt else "Geometry regenerated"
+    return {
+        "from_version": from_version,
+        "to_version": to_version,
+        "changes": [
+            {"type": "modified", "feature": "Fixture Geometry", "detail": detail},
+        ],
+        "summary": f"v{from_version} → v{to_version}: design iteration based on user feedback",
+    }
 
 
 def _stub_node_graph() -> dict:
