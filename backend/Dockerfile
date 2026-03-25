@@ -3,7 +3,6 @@ FROM python:3.12-slim
 # Build deps for pythonocc-core
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
-    libgl1-mesa-glx \
     libgl1-mesa-dev \
     libx11-dev \
     libxt-dev \
