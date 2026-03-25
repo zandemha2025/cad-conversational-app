@@ -106,7 +106,14 @@ async def run_migrations():
     try:
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy import text
-        engine = create_async_engine(db_url, pool_pre_ping=True)
+        # Ensure URL uses asyncpg driver and has SSL for Supabase pooler
+        if db_url.startswith("postgresql://") and "asyncpg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            connect_args={"ssl": "require"} if "supabase.com" in db_url else {},
+        )
         async with engine.begin() as conn:
             await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS assembly_components (
