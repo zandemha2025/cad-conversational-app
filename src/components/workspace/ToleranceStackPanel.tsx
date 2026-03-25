@@ -73,6 +73,12 @@ export default function ToleranceStackPanel({ projectId = '' }: { projectId?: st
             <Plus size={11} /> Add
           </button>
         </div>
+        {dims.length === 0 && (
+          <div className="py-4 px-2 text-center">
+            <p className="text-xs text-slate-400 font-medium mb-1">Add dimensions to analyze your stack-up</p>
+            <p className="text-xs text-slate-600">Enter each dimension and bilateral tolerance, then run to get Worst Case and RSS results.</p>
+          </div>
+        )}
         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
           {dims.map(d => (
             <div key={d.id} className="flex gap-1.5 items-center">
@@ -194,12 +200,11 @@ export default function ToleranceStackPanel({ projectId = '' }: { projectId?: st
           </>
         )}
 
-        {!result && !loading && (
+        {!result && !loading && dims.length > 0 && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Ruler size={28} className="text-slate-700" />
             <p className="text-xs text-slate-600 text-center leading-relaxed">
-              Add dimensions with their bilateral tolerances, then run the stack-up.
-              Supports Worst Case and RSS methods.
+              Click Run Stack-Up to calculate Worst Case and RSS analysis.
             </p>
           </div>
         )}

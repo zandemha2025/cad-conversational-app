@@ -9,6 +9,7 @@ class ValidationMethod(str, Enum):
     laser      = "laser"
     functional = "functional"
     standards  = "standards"
+    inventory  = "inventory"
 
 
 class IssueSeverity(str, Enum):

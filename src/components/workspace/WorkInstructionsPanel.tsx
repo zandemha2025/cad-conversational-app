@@ -195,10 +195,16 @@ export default function WorkInstructionsPanel({ projectId = '' }: { projectId?: 
           </>
         ) : !loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
-            <FileText size={32} className="text-slate-700" />
-            <p className="text-xs text-slate-600 text-center leading-relaxed">
-              Select material and process, then generate machinist-ready work instructions with cutting parameters.
-            </p>
+            <div className="w-10 h-10 rounded-xl bg-cadblue-900/30 border border-cadblue-700/30 flex items-center justify-center">
+              <FileText size={16} className="text-cadblue-500" />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-300 font-medium mb-1">Generate your work instructions</p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Select material and process above, then click Generate.<br />
+                Produces machinist-ready steps with Vc, fz, ap parameters.
+              </p>
+            </div>
           </div>
         )}
       </div>

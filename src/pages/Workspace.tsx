@@ -17,17 +17,20 @@ import ClampingForcePanel from '../components/workspace/ClampingForcePanel';
 import WorkInstructionsPanel from '../components/workspace/WorkInstructionsPanel';
 import QcChecklistPanel from '../components/workspace/QcChecklistPanel';
 import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
+import CollaborationPanel from '../components/workspace/CollaborationPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
+import OnboardingTour from '../components/OnboardingTour';
 import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
 import { useFixtureGeometry } from '../hooks/useFixtureGeometry';
 import { useRealtimeProject } from '../hooks/useRealtimeProject';
+import { useAuth } from '../hooks/useAuth';
 import { fetchTouchpoints } from '../lib/api';
 import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users,
 } from 'lucide-react';
 
 type LeftPanel =
@@ -43,7 +46,8 @@ type LeftPanel =
   | 'clamping'
   | 'work_instructions'
   | 'qc_checklist'
-  | 'tolerance_stack';
+  | 'tolerance_stack'
+  | 'team';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -52,7 +56,19 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [showLeft, setShowLeft]   = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [mode, setMode]           = useState<WorkspaceMode>('part');
+  const [showTour, setShowTour]   = useState(false);
   const { state, dispatch }       = useWorkspace();
+  const { user } = useAuth();
+  const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
+
+  // Show tour automatically on first visit
+  useEffect(() => {
+    if (!OnboardingTour.isCompleted()) {
+      // Slight delay so layout is fully rendered
+      const t = setTimeout(() => setShowTour(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   // Load fixture geometry + part features
   const { gltfUrl, partFeatures } = useFixtureGeometry(projectId);
@@ -93,7 +109,11 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     onFixtureGenerated: () => {
       dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
     },
-  });
+    onPresenceChange: (users) => setViewers(users),
+    onCommentChange: () => {
+      // CollaborationPanel reloads comments itself; this could trigger a badge refresh
+    },
+  }, user?.id);
 
   // ── Left panel definitions ──────────────────────────────────────────────────
   const leftButtons: {
@@ -116,6 +136,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'work_instructions', icon: <FileText size={15} />,     title: 'Work Instructions' },
     { id: 'qc_checklist',      icon: <Microscope size={15} />,   title: 'QC Checklist' },
     { id: 'tolerance_stack',   icon: <Ruler size={15} />,        title: 'Tolerance Stack-Up' },
+    { id: 'team',              icon: <Users size={15} />,        title: 'Team & Collaboration', badge: viewers.length > 1 ? viewers.length : undefined },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -135,13 +156,19 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'work_instructions': return 'bg-cadblue-700 text-white';
       case 'qc_checklist':      return 'bg-emerald-700 text-white';
       case 'tolerance_stack':   return 'bg-violet-700 text-white';
+      case 'team':              return 'bg-cadblue-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <TopBar mode={mode} onModeChange={setMode} projectId={projectId} />
+      <TopBar
+        mode={mode}
+        onModeChange={setMode}
+        projectId={projectId}
+        onStartTour={() => setShowTour(true)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left icon rail — hidden on mobile */}
@@ -162,9 +189,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               <div className="h-px bg-cadsurface-700 my-1" />
               {leftButtons.map(btn => {
                 const isActive = leftPanel === btn.id && showLeft;
+                const tourId =
+                  btn.id === 'chat'   ? 'tour-chat-btn'   :
+                  btn.id === 'export' ? 'tour-export-btn' : undefined;
                 return (
                   <button
                     key={btn.id}
+                    id={tourId}
                     title={btn.title}
                     onClick={() => { setLeftPanel(btn.id); setShowLeft(true); }}
                     className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${getPanelColor(btn.id, isActive)}`}
@@ -218,10 +249,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
                 {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
                 {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
+                {leftPanel === 'team'              && (
+                  <CollaborationPanel projectId={projectId} viewers={viewers} currentUserId={user?.id} />
+                )}
               </div>
             )}
 
-            <div className="flex-1 overflow-hidden relative">
+            <div id="tour-viewport" className="flex-1 overflow-hidden relative">
               <Viewport3D
                 touchpointMode={leftPanel === 'touchpoints' && showLeft}
                 gltfUrl={state.gltfUrl}
@@ -230,7 +264,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
             </div>
 
             {showRight && (
-              <div className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
+              <div id="tour-right-panel" className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
                 <PropertiesPanel projectId={projectId} />
               </div>
             )}
@@ -264,6 +298,9 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           </button>
         ))}
       </div>
+
+      {/* Onboarding tour */}
+      <OnboardingTour active={showTour} onDone={() => setShowTour(false)} />
     </div>
   );
 }

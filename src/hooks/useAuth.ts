@@ -3,6 +3,7 @@ import { login as apiLogin, register as apiRegister } from '../lib/api';
 import { getAuthToken, setAuthToken, clearAuthToken } from '../lib/storage';
 
 export interface AuthUser {
+  id?: string;
   email: string;
   name: string;
 }
@@ -16,7 +17,8 @@ export function useAuth() {
       const payload = JSON.parse(atob(token.split('.')[1]));
       const email = payload.email ?? '';
       const name = payload.name ?? payload.full_name ?? payload.user_metadata?.full_name ?? email.split('@')[0] ?? '';
-      return { email, name };
+      const id = payload.sub ?? undefined;
+      return { id, email, name };
     } catch {
       return null;
     }
@@ -36,11 +38,13 @@ export function useAuth() {
       setAuthToken(res.access_token);
       // Try to extract name from JWT payload; fall back to hint or email prefix
       let name = nameHint ?? email.split('@')[0];
+      let id: string | undefined;
       try {
         const payload = JSON.parse(atob(res.access_token.split('.')[1]));
         name = payload.name ?? payload.full_name ?? nameHint ?? email.split('@')[0];
+        id = payload.sub ?? undefined;
       } catch { /* ignore decode errors */ }
-      setUser({ email, name });
+      setUser({ id, email, name });
       return true;
     } catch {
       setError('Login failed. Please try again.');

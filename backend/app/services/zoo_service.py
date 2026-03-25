@@ -58,3 +58,41 @@ async def compile_kcl_to_gltf(project_id: str, kcl_code: str, version: int) -> s
     except Exception as e:
         log.error("Zoo.dev error project=%s: %s", project_id, e)
         return None
+
+
+async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: str) -> bytes | None:
+    """
+    Convert KCL source to the requested format via Zoo.dev.
+    Returns raw bytes of the converted file, or None on failure.
+    output_format: "step", "stl", "iges", "dxf", etc.
+    """
+    if not settings.ZOO_API_KEY:
+        log.warning("ZOO_API_KEY not set — cannot convert KCL to %s", output_format)
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {settings.ZOO_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "src_format": "kcl",
+        "output_format": output_format,
+        "body": kcl_code,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.post(ZOO_CONVERT_URL, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.content
+            if not data:
+                log.error("Zoo.dev returned empty %s for project=%s", output_format, project_id)
+                return None
+            log.info("Zoo.dev KCL→%s OK for project=%s (%d bytes)", output_format, project_id, len(data))
+            return data
+    except httpx.HTTPStatusError as e:
+        log.error("Zoo.dev HTTP %d KCL→%s project=%s: %s", e.response.status_code, output_format, project_id, e.response.text[:200])
+        return None
+    except Exception as e:
+        log.error("Zoo.dev KCL→%s error project=%s: %s", output_format, project_id, e)
+        return None

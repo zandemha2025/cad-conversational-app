@@ -190,10 +190,16 @@ export default function QcChecklistPanel({ projectId = '' }: { projectId?: strin
           </>
         ) : !loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
-            <ClipboardCheck size={32} className="text-slate-700" />
-            <p className="text-xs text-slate-600 text-center leading-relaxed">
-              Generate an inspection plan with CMM routines, Go/No-Go gauges, and surface roughness checks per your selected quality standard.
-            </p>
+            <div className="w-10 h-10 rounded-xl bg-emerald-900/30 border border-emerald-700/30 flex items-center justify-center">
+              <ClipboardCheck size={16} className="text-emerald-500" />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-300 font-medium mb-1">Generate your QC checklist</p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Select a quality standard above and click Generate.<br />
+                Produces an inspection plan with CMM routines and Go/No-Go gauges.
+              </p>
+            </div>
           </div>
         )}
       </div>
