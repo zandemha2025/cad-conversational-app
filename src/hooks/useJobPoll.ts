@@ -3,7 +3,7 @@
  * In demo mode (no API_URL), resolves immediately with a fake "done" status.
  */
 import { useState, useEffect, useRef } from 'react';
-import { getJobStatus, IS_DEMO } from '../lib/api';
+import { getJobStatus } from '../lib/api';
 
 export type JobStatus = 'idle' | 'queued' | 'running' | 'done' | 'failed';
 
@@ -32,14 +32,6 @@ export function useJobPoll(projectId: string | null, jobId: string | null) {
     }
 
     setState(s => ({ ...s, status: 'queued' }));
-
-    if (IS_DEMO) {
-      // Simulate processing delay
-      const t = setTimeout(() => {
-        setState({ status: 'done', result: null, downloadUrl: null, error: null });
-      }, 1500);
-      return () => clearTimeout(t);
-    }
 
     const poll = async () => {
       const res = await getJobStatus(projectId, jobId);

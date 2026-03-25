@@ -2,14 +2,6 @@ import { useState, useEffect } from 'react';
 import { Building2, Users, Plus, Trash2, Shield, AlertTriangle, Loader2 } from 'lucide-react';
 import { fetchOrgMembers, inviteOrgMember, removeOrgMember, updateOrgMemberRole } from '../lib/api';
 import type { OrgMember, OrgRole } from '../types';
-import { IS_DEMO } from '../lib/api';
-
-const DEMO_MEMBERS: OrgMember[] = [
-  { id: 'm1', org_id: 'org1', user_id: 'u1', role: 'admin', email: 'jsmith@boeing.com', full_name: 'James Smith', invited_at: '2026-01-15T00:00:00Z' },
-  { id: 'm2', org_id: 'org1', user_id: 'u2', role: 'engineer', email: 'kwatson@boeing.com', full_name: 'Karen Watson', invited_at: '2026-02-01T00:00:00Z' },
-  { id: 'm3', org_id: 'org1', user_id: 'u3', role: 'reviewer', email: 'mlee@boeing.com', full_name: 'Michael Lee', invited_at: '2026-02-15T00:00:00Z' },
-  { id: 'm4', org_id: 'org1', user_id: 'u4', role: 'viewer', email: 'achen@boeing.com', full_name: 'Alice Chen', invited_at: '2026-03-01T00:00:00Z' },
-];
 
 const ROLE_CONFIG: Record<OrgRole, { label: string; color: string; desc: string }> = {
   admin:    { label: 'Admin',    color: 'bg-red-900/40 border-red-700/40 text-red-400',       desc: 'Full access + manage members' },
@@ -21,7 +13,7 @@ const ROLE_CONFIG: Record<OrgRole, { label: string; color: string; desc: string 
 const orgId = 'org1'; // Replace with real org from auth context
 
 export default function OrgSettings() {
-  const [members, setMembers] = useState<OrgMember[]>(IS_DEMO ? DEMO_MEMBERS : []);
+  const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('engineer');
@@ -29,7 +21,6 @@ export default function OrgSettings() {
   const [itarEnabled, setItarEnabled] = useState(false);
 
   useEffect(() => {
-    if (IS_DEMO) return;
     setLoading(true);
     fetchOrgMembers(orgId)
       .then((data: unknown) => { if (Array.isArray(data)) setMembers(data as OrgMember[]); })
@@ -41,7 +32,7 @@ export default function OrgSettings() {
     if (!inviteEmail) return;
     setInviting(true);
     try {
-      if (!IS_DEMO) await inviteOrgMember(orgId, inviteEmail, inviteRole);
+      await inviteOrgMember(orgId, inviteEmail, inviteRole);
       setMembers(prev => [...prev, {
         id: `new-${Date.now()}`, org_id: orgId, user_id: `u-${Date.now()}`,
         role: inviteRole, email: inviteEmail, invited_at: new Date().toISOString(),
@@ -51,12 +42,12 @@ export default function OrgSettings() {
   };
 
   const handleRemove = async (userId: string) => {
-    if (!IS_DEMO) await removeOrgMember(orgId, userId).catch(() => {});
+    await removeOrgMember(orgId, userId).catch(() => {});
     setMembers(prev => prev.filter(m => m.user_id !== userId));
   };
 
   const handleRoleChange = async (userId: string, newRole: OrgRole) => {
-    if (!IS_DEMO) await updateOrgMemberRole(orgId, userId, newRole).catch(() => {});
+    await updateOrgMemberRole(orgId, userId, newRole).catch(() => {});
     setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role: newRole } : m));
   };
 

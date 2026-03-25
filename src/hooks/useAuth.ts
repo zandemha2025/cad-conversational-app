@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { login as apiLogin, register as apiRegister, IS_DEMO } from '../lib/api';
+import { login as apiLogin, register as apiRegister } from '../lib/api';
 import { getAuthToken, setAuthToken, clearAuthToken } from '../lib/storage';
 
 export interface AuthUser {
@@ -7,11 +7,8 @@ export interface AuthUser {
   name: string;
 }
 
-const DEMO_USER: AuthUser = { email: 'demo@scalecad.io', name: 'Demo Engineer' };
-
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(() => {
-    if (IS_DEMO) return DEMO_USER;
     const token = getAuthToken();
     if (!token) return null;
     // Decode name/email from JWT payload (no verification needed client-side)
@@ -28,7 +25,6 @@ export function useAuth() {
   const [error, setError] = useState<string | null>(null);
 
   const login = useCallback(async (email: string, password: string, nameHint?: string) => {
-    if (IS_DEMO) return true;
     setLoading(true);
     setError(null);
     try {
@@ -55,7 +51,6 @@ export function useAuth() {
   }, []);
 
   const register = useCallback(async (email: string, password: string, fullName: string) => {
-    if (IS_DEMO) return true;
     setLoading(true);
     setError(null);
     try {

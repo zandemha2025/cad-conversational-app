@@ -4,9 +4,7 @@ import {
   Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
   Target, Wifi, WifiOff, Loader2, X, Lightbulb,
 } from 'lucide-react';
-import { mockChatMessages } from '../../data/mockData';
 import { useChat } from '../../hooks/useChat';
-import { IS_DEMO } from '../../lib/api';
 import type { ChatMessage } from '../../types';
 
 const SUGGESTION_CHIPS = [
@@ -22,10 +20,6 @@ const SUGGESTION_CHIPS = [
   'Export as STEP',
 ];
 
-const DEMO_PROACTIVE = [
-  { id: 'p1', text: 'Small bore detected (⌀8mm). Bushing wall <1.5mm — consider upgrading to CL-8-CBH for longer life.' },
-  { id: 'p2', text: '3-2-1 locating: only 2 support pads defined. Add a 3rd rest button to eliminate the Y-rotation DOF.' },
-];
 
 interface ChatPanelProps {
   projectId?: string;
@@ -40,10 +34,10 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const { messages, isThinking, isConnected, activeGenJob, sendMessage } = useChat({
     projectId,
-    initialMessages: IS_DEMO ? mockChatMessages : [],
+    initialMessages: [],
   });
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [proactive, setProactive] = useState<ProactiveSuggestion[]>(IS_DEMO ? DEMO_PROACTIVE : []);
+  const [proactive, setProactive] = useState<ProactiveSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -52,7 +46,6 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
 
   // Pull proactive suggestions from system messages with type='proactive_suggestions'
   useEffect(() => {
-    if (IS_DEMO) return;
     const sysMessages = messages.filter(
       (m) => m.role === 'system' && (m as unknown as { metadata?: { type?: string } }).metadata?.type === 'proactive_suggestions'
     );
@@ -82,11 +75,7 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
             <Sparkles size={12} className="text-white" />
           </div>
           <span className="text-xs font-semibold text-slate-200">ForgeAI Assistant</span>
-          {IS_DEMO ? (
-            <span className="text-xs text-amber-400 flex items-center gap-1">
-              <WifiOff size={10} />Demo
-            </span>
-          ) : isConnected ? (
+          {isConnected ? (
             <span className="text-xs text-emerald-400 flex items-center gap-1">
               <Wifi size={10} />Live
             </span>

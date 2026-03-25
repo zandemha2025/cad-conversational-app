@@ -2,18 +2,6 @@ import { useState, useEffect } from 'react';
 import { GitBranch, Plus, Loader2, CheckCircle, Clock, Archive } from 'lucide-react';
 import { fetchRevisions, createRevision, approveRevision, releaseRevision } from '../../lib/api';
 import type { Revision } from '../../types';
-import { IS_DEMO } from '../../lib/api';
-
-const DEMO_REVISIONS: Revision[] = [
-  { id: 'r1', project_id: 'demo', rev_letter: 'B', status: 'released', ecr_number: 'ECR-2847',
-    description: 'Bushing seat counterbore added, 3-2-1 scheme validated', author_id: 'u1', author_name: 'J. Smith',
-    changes_json: ['Added 4× bushing seats ⌀20mm', 'Validated 3-2-1 with 6 DOF', 'Released for production'],
-    approved_by: 'u2', approved_at: '2026-03-10T14:00:00Z', created_at: '2026-03-09T10:00:00Z' },
-  { id: 'r2', project_id: 'demo', rev_letter: 'A', status: 'obsolete', ecr_number: 'ECR-2801',
-    description: 'Initial fixture design — prototype', author_id: 'u1', author_name: 'J. Smith',
-    changes_json: ['Initial base plate geometry', 'Placeholder touchpoints'],
-    approved_by: null, approved_at: null, created_at: '2026-02-20T09:00:00Z' },
-];
 
 const STATUS_CONFIG = {
   released:  { color: 'text-emerald-400 border-emerald-700/40 bg-emerald-900/30', icon: <CheckCircle size={10} /> },
@@ -25,7 +13,7 @@ const STATUS_CONFIG = {
 interface Props { projectId?: string; }
 
 export default function RevisionHistory({ projectId }: Props) {
-  const [revisions, setRevisions] = useState<Revision[]>(IS_DEMO ? DEMO_REVISIONS : []);
+  const [revisions, setRevisions] = useState<Revision[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newRevLetter, setNewRevLetter] = useState('C');
@@ -33,7 +21,7 @@ export default function RevisionHistory({ projectId }: Props) {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    if (!projectId || IS_DEMO) return;
+    if (!projectId) return;
     setLoading(true);
     fetchRevisions(projectId)
       .then((data: unknown) => { if (Array.isArray(data)) setRevisions(data as Revision[]); })
@@ -131,7 +119,7 @@ export default function RevisionHistory({ projectId }: Props) {
                   <p className="text-xs text-slate-600 mt-1">
                     {new Date(rev.created_at).toLocaleDateString()} · {rev.author_name ?? rev.author_id.slice(0, 8)}
                   </p>
-                  {rev.status === 'in-review' && !IS_DEMO && (
+                  {rev.status === 'in-review' && (
                     <div className="flex gap-2 mt-2">
                       <button onClick={() => approveRevision(rev.id).then(() => setRevisions(prev => prev.map(r => r.id === rev.id ? {...r, approved_by: 'me'} : r)))}
                         className="text-xs px-2 py-0.5 bg-cadblue-900/40 border border-cadblue-700/40 text-cadblue-300 rounded hover:bg-cadblue-900/60">

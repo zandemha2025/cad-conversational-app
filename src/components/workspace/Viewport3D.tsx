@@ -7,7 +7,7 @@ import {
   ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, AlertTriangle,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
-import { addTouchpoint, IS_DEMO } from '../../lib/api';
+import { addTouchpoint } from '../../lib/api';
 import type { ApiTouchpoint } from '../../lib/api';
 
 // ── Parametric jig plate scene (fallback / demo) ──────────────────────────────
@@ -230,19 +230,11 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
     const label = `TP-${String(state.touchpoints.length + 1).padStart(2, '0')}`;
 
     const coordArr = [Math.round(worldPos.x * 100), Math.round(worldPos.y * 100), Math.round(worldPos.z * 100)];
-    if (IS_DEMO || !projectId) {
-      const demoTp: ApiTouchpoint = {
-        id: `demo-tp-${Date.now()}`, project_id: projectId ?? 'demo',
-        label, type: 'locating', face_id: 'face_auto', coords: coordArr,
-        detail: '', force_n: null, created_at: new Date().toISOString(),
-      };
-      dispatch({ type: 'ADD_TOUCHPOINT', tp: demoTp });
-    } else {
-      try {
-        const tp = await addTouchpoint(projectId, { label, type: 'locating', face_id: 'face_auto', coords: coordArr, detail: '', force_n: null });
-        if (tp) dispatch({ type: 'ADD_TOUCHPOINT', tp: tp as ApiTouchpoint });
-      } catch { /* silently skip */ }
-    }
+    if (!projectId) return;
+    try {
+      const tp = await addTouchpoint(projectId, { label, type: 'locating', face_id: 'face_auto', coords: coordArr, detail: '', force_n: null });
+      if (tp) dispatch({ type: 'ADD_TOUCHPOINT', tp: tp as ApiTouchpoint });
+    } catch { /* silently skip */ }
   }, [touchpointMode, state.touchpoints.length, projectId, dispatch]);
 
   return (

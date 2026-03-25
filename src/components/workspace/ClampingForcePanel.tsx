@@ -3,7 +3,7 @@
  */
 import { useState } from 'react';
 import { Gauge, Calculator, Loader2, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
-import { calculateClampingForce, type ClampingForceResult, IS_DEMO } from '../../lib/api';
+import { calculateClampingForce, type ClampingForceResult } from '../../lib/api';
 
 const MATERIALS = [
   { value: 'aluminum_6061', label: 'Aluminum 6061' },
@@ -27,32 +27,6 @@ const SURFACES = [
   { value: 'nitrided',   label: 'Nitrided' },
 ];
 
-const DEMO_RESULT: ClampingForceResult = {
-  project_id: 'demo',
-  material: 'Aluminum 6061',
-  cutting_force_n: 847.3,
-  friction_force_required_n: 847.3,
-  clamping_force_per_clamp_n: 1411.2,
-  total_clamping_force_n: 2822.4,
-  safety_factor: 2.5,
-  recommended_clamp_type: 'LC-1000-V (Power Clamp 1000N)',
-  recommendations: [
-    'Clamping setup is within normal operating parameters for Aluminum 6061.',
-    'Verify clamp placement follows 3-2-1 locating rule for deterministic fixturing.',
-  ],
-  breakdown: {
-    tangential_cutting_force_n: 720.5,
-    feed_force_n: 252.2,
-    radial_force_n: 158.5,
-    weight_force_n: 19.6,
-    friction_coefficient: 0.15,
-    material_removal_rate_mm3_min: 6000,
-    cutting_speed_m_min: 113.1,
-    contact_pressure_mpa: 0.565,
-    num_clamps: 2,
-    fixture_surface: 'siegmund',
-  },
-};
 
 interface Props {
   projectId?: string;
@@ -80,13 +54,7 @@ export default function ClampingForcePanel({ projectId }: Props) {
   }
 
   async function handleCalculate() {
-    if (IS_DEMO || !projectId) {
-      setLoading(true);
-      await new Promise(r => setTimeout(r, 1000));
-      setResult(DEMO_RESULT);
-      setLoading(false);
-      return;
-    }
+    if (!projectId) return;
     setLoading(true);
     const r = await calculateClampingForce(projectId, params);
     if (r) setResult(r);

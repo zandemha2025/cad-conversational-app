@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { fetchAuditLog } from '../lib/api';
 import NewProjectModal from '../components/workspace/NewProjectModal';
 import {
   Plus,
@@ -26,7 +27,6 @@ import {
   Package,
 } from 'lucide-react';
 import { useProjects } from '../hooks/useProjects';
-import { IS_DEMO } from '../lib/api';
 import type { Project } from '../types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -259,9 +259,16 @@ export default function Home() {
   const [filter, setFilter] = useState<'all' | 'active' | 'draft' | 'released'>('all');
   const [search, setSearch] = useState('');
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [recentActivity, setRecentActivity] = useState<Array<{ user_id: string; action: string; created_at: string }>>([]);
 
   const { user } = useAuth();
   const { projects: allProjects, addProject } = useProjects(search || undefined);
+
+  useEffect(() => {
+    fetchAuditLog('org1', 5).then((data) => {
+      if (Array.isArray(data)) setRecentActivity(data as Array<{ user_id: string; action: string; created_at: string }>);
+    }).catch(() => {});
+  }, []);
 
   const filtered = allProjects.filter((p) => {
     if (filter !== 'all' && p.status !== filter) return false;
@@ -293,7 +300,6 @@ export default function Home() {
               <span className="text-cadblue-400 font-medium">
                 {allProjects.filter(p => p.status === 'active').length} active tooling projects
               </span>
-              {IS_DEMO && <span className="ml-2 text-xs text-amber-400 border border-amber-600/40 bg-amber-950/40 px-1.5 py-0.5 rounded-full">Demo Mode — set VITE_API_URL for live data</span>}
             </p>
           </div>
           <button
@@ -454,22 +460,23 @@ export default function Home() {
               Team Activity
             </h3>
             <div className="space-y-2">
-              {[
-                { user: 'AK', action: 'Released Rev B — Wing Panel Drill Jig (ECR-2847)', time: '2h ago', color: 'bg-emerald-800 text-emerald-300' },
-                { user: 'MR', action: 'Updated Datum B definition on TL-4471-A per design review', time: '1d ago', color: 'bg-cadblue-800 text-cadblue-300' },
-                { user: 'TN', action: 'Added 6th suction cup to EOAT Vacuum Gripper assembly', time: '2d ago', color: 'bg-purple-800 text-purple-300' },
-                { user: 'SL', action: 'Created Rev A drawing package for Door Frame Welding Fixture', time: '3d ago', color: 'bg-amber-800 text-amber-300' },
-              ].map((a, i) => (
-                <div key={i} className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-cadsurface-800 transition-colors">
-                  <div className={`w-6 h-6 rounded-full ${a.color} border border-cadsurface-700 flex items-center justify-center text-xs font-bold shrink-0`}>
-                    {a.user}
+              {recentActivity.length === 0 ? (
+                <p className="text-xs text-slate-600 py-4 text-center">No recent activity</p>
+              ) : recentActivity.map((a, i) => {
+                const initials = a.user_id.slice(0, 2).toUpperCase();
+                const colors = ['bg-emerald-800 text-emerald-300', 'bg-cadblue-800 text-cadblue-300', 'bg-purple-800 text-purple-300', 'bg-amber-800 text-amber-300', 'bg-teal-800 text-teal-300'];
+                return (
+                  <div key={i} className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-cadsurface-800 transition-colors">
+                    <div className={`w-6 h-6 rounded-full ${colors[i % colors.length]} border border-cadsurface-700 flex items-center justify-center text-xs font-bold shrink-0`}>
+                      {initials}
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-300 leading-relaxed">{a.action.replace('.', ' — ')}</p>
+                      <p className="text-xs text-slate-600 mt-0.5">{new Date(a.created_at).toLocaleString()}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-300 leading-relaxed">{a.action}</p>
-                    <p className="text-xs text-slate-600 mt-0.5">{a.time}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

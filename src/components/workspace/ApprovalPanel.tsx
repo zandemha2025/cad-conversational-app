@@ -7,35 +7,8 @@ import {
 } from 'lucide-react';
 import {
   fetchApprovals, submitForApproval, approveProject, rejectProject,
-  type Approval, IS_DEMO,
+  type Approval,
 } from '../../lib/api';
-
-const DEMO_APPROVALS: Approval[] = [
-  {
-    id: 'apr-1',
-    project_id: 'demo',
-    status: 'approved',
-    submitted_by: 'user-1',
-    submitted_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    reviewed_by: 'reviewer-1',
-    reviewed_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    comments: 'Approved — fixture geometry meets design requirements.',
-    revision_ref: 'Rev B',
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-  },
-  {
-    id: 'apr-2',
-    project_id: 'demo',
-    status: 'pending',
-    submitted_by: 'user-1',
-    submitted_at: new Date(Date.now() - 3600000).toISOString(),
-    reviewed_by: null,
-    reviewed_at: null,
-    comments: 'Requesting review for tolerance updates.',
-    revision_ref: 'Rev C',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
 
 const STATUS_CONFIG = {
   pending:  { icon: Clock,        color: 'text-amber-400',  bg: 'bg-amber-950/40',  border: 'border-amber-800/50',  label: 'Pending Review' },
@@ -58,11 +31,7 @@ export default function ApprovalPanel({ projectId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (IS_DEMO || !projectId) {
-      setApprovals(DEMO_APPROVALS);
-      setLoading(false);
-      return;
-    }
+    if (!projectId) { setLoading(false); return; }
     fetchApprovals(projectId).then(data => {
       if (data) setApprovals(data);
       setLoading(false);
@@ -70,25 +39,7 @@ export default function ApprovalPanel({ projectId }: Props) {
   }, [projectId]);
 
   async function handleSubmit() {
-    if (!projectId || IS_DEMO) {
-      const newApproval: Approval = {
-        id: `apr-${Date.now()}`,
-        project_id: projectId || 'demo',
-        status: 'pending',
-        submitted_by: 'me',
-        submitted_at: new Date().toISOString(),
-        reviewed_by: null,
-        reviewed_at: null,
-        comments,
-        revision_ref: revRef,
-        created_at: new Date().toISOString(),
-      };
-      setApprovals(prev => [newApproval, ...prev]);
-      setRevRef('');
-      setComments('');
-      return;
-    }
-
+    if (!projectId) return;
     setSubmitting(true);
     setError(null);
     const result = await submitForApproval(projectId, revRef, comments);
@@ -103,11 +54,7 @@ export default function ApprovalPanel({ projectId }: Props) {
   }
 
   async function handleApprove(apprId: string) {
-    if (!projectId || IS_DEMO) {
-      setApprovals(prev => prev.map(a => a.id === apprId ? { ...a, status: 'approved', comments: actionComments } : a));
-      setReviewingId(null);
-      return;
-    }
+    if (!projectId) return;
     await approveProject(projectId, apprId, actionComments);
     setApprovals(prev => prev.map(a => a.id === apprId ? { ...a, status: 'approved' } : a));
     setReviewingId(null);
@@ -115,11 +62,7 @@ export default function ApprovalPanel({ projectId }: Props) {
   }
 
   async function handleReject(apprId: string) {
-    if (!projectId || IS_DEMO) {
-      setApprovals(prev => prev.map(a => a.id === apprId ? { ...a, status: 'rejected', comments: actionComments } : a));
-      setReviewingId(null);
-      return;
-    }
+    if (!projectId) return;
     await rejectProject(projectId, apprId, actionComments);
     setApprovals(prev => prev.map(a => a.id === apprId ? { ...a, status: 'rejected' } : a));
     setReviewingId(null);

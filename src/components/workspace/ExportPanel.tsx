@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { Download, FileDown, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { directExport, IS_DEMO } from '../../lib/api';
+import { directExport } from '../../lib/api';
 
 type ExportFormat = 'step' | 'iges' | 'stl' | 'dxf';
 
@@ -57,16 +57,7 @@ export default function ExportPanel({ projectId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   async function handleExport(fmt: ExportFormat) {
-    if (!projectId || IS_DEMO) {
-      // Demo: simulate download
-      setLoading(fmt);
-      await new Promise(r => setTimeout(r, 1200));
-      setLoading(null);
-      setSuccess(fmt);
-      setTimeout(() => setSuccess(null), 3000);
-      return;
-    }
-
+    if (!projectId) return;
     setLoading(fmt);
     setError(null);
     try {
@@ -112,7 +103,6 @@ export default function ExportPanel({ projectId }: Props) {
 
         <p className="text-xs text-slate-400 pb-1">
           Download the fixture geometry in industry-standard CAD formats.
-          {IS_DEMO && ' (Demo mode — exports are simulated)'}
         </p>
 
         {FORMATS.map(fmt => {

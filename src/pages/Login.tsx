@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { IS_DEMO } from '../lib/api';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -38,13 +37,6 @@ export default function Login() {
           </div>
           <p className="text-gray-400 text-sm">AI-powered fixture design for manufacturing</p>
         </div>
-
-        {IS_DEMO && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-6 text-center">
-            <p className="text-amber-400 text-xs font-medium">Demo Mode — No backend connected</p>
-            <p className="text-amber-300/70 text-xs mt-1">Sign in with any credentials to continue</p>
-          </div>
-        )}
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
           {/* Tab switcher */}
@@ -85,7 +77,7 @@ export default function Login() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="engineer@company.com"
-                required={!IS_DEMO}
+                required
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -97,7 +89,7 @@ export default function Login() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
-                required={!IS_DEMO}
+                required
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -111,7 +103,7 @@ export default function Login() {
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-medium py-2 rounded-lg text-sm transition-colors"
             >
-              {loading ? 'Please wait…' : IS_DEMO ? 'Continue to Demo' : mode === 'login' ? 'Sign In' : 'Create Account'}
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           </form>
         </div>

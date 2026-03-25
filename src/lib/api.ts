@@ -5,16 +5,14 @@
  * so callers can fall back to mock data seamlessly.
  */
 
-// In production (Vercel), default to Fly.io backend when VITE_API_URL is not set or empty.
-// In dev, stay undefined so the Vite proxy (/api → localhost:8000) handles calls.
-// Use || (not ??) so an empty string VITE_API_URL also falls through to the production default.
-const API_URL: string | undefined = import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? 'https://scalecad-api.fly.dev' : undefined);
+// Always default to the Fly.io backend so real data is served in all environments.
+// Override with VITE_API_URL for local development against a different backend.
+const API_URL: string = import.meta.env.VITE_API_URL || 'https://scalecad-api.fly.dev';
 
-export const WS_URL: string | undefined = import.meta.env.VITE_WS_URL ||
-  (import.meta.env.PROD ? 'wss://scalecad-api.fly.dev' : undefined);
+export const WS_URL: string = import.meta.env.VITE_WS_URL || 'wss://scalecad-api.fly.dev';
 
-export const IS_DEMO = !API_URL;
+// IS_DEMO is kept for backwards compatibility but is always false — all data is real.
+export const IS_DEMO = false;
 
 // ── Token storage ─────────────────────────────────────────────────────────────
 
@@ -36,7 +34,6 @@ async function apiFetch<T>(
   path: string,
   opts: RequestInit = {},
 ): Promise<T | null> {
-  if (!API_URL) return null;
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -59,7 +56,6 @@ async function apiFetch<T>(
 }
 
 async function apiUpload<T>(path: string, formData: FormData): Promise<T | null> {
-  if (!API_URL) return null;
   const token = getToken();
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -461,7 +457,6 @@ export function getDirectExportUrl(projectId: string, format: 'step' | 'iges' | 
 }
 
 export async function directExport(projectId: string, format: 'step' | 'iges' | 'stl' | 'dxf'): Promise<Blob | null> {
-  if (!API_URL) return null;
   const tok = getToken();
   try {
     const res = await fetch(`${API_URL}/api/projects/${projectId}/export/${format}`, {

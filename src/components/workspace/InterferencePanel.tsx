@@ -5,26 +5,7 @@ import { useState, useEffect } from 'react';
 import {
   Scan, AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle,
 } from 'lucide-react';
-import { runInterferenceCheck, fetchLatestInterference, type InterferenceResult, IS_DEMO } from '../../lib/api';
-
-const DEMO_RESULT: InterferenceResult = {
-  project_id: 'demo',
-  total_pairs_checked: 6,
-  interfering_pairs: 1,
-  status: 'interference_detected',
-  ran_at: new Date().toISOString(),
-  parts_checked: 4,
-  summary: 'Detected 1 interference out of 6 pairs checked.',
-  issues: [
-    {
-      part_a: { id: 'tp-1', label: 'Clamp A', type: 'clamping' },
-      part_b: { id: 'tp-2', label: 'Locator B', type: 'locating' },
-      overlap_volume_mm3: 234.5,
-      severity: 'error',
-      description: 'Clamp A and Locator B overlap by 234.50 mm³. Adjust positions to avoid collision.',
-    },
-  ],
-};
+import { runInterferenceCheck, fetchLatestInterference, type InterferenceResult } from '../../lib/api';
 
 interface Props {
   projectId?: string;
@@ -37,11 +18,7 @@ export default function InterferencePanel({ projectId }: Props) {
 
   // Load last result on mount
   useEffect(() => {
-    if (IS_DEMO || !projectId) {
-      setResult(null);
-      setFetching(false);
-      return;
-    }
+    if (!projectId) { setFetching(false); return; }
     fetchLatestInterference(projectId).then(r => {
       if (r && r.status !== 'not_run') setResult(r);
       setFetching(false);
@@ -49,13 +26,7 @@ export default function InterferencePanel({ projectId }: Props) {
   }, [projectId]);
 
   async function runCheck() {
-    if (IS_DEMO || !projectId) {
-      setLoading(true);
-      await new Promise(r => setTimeout(r, 1500));
-      setResult(DEMO_RESULT);
-      setLoading(false);
-      return;
-    }
+    if (!projectId) return;
     setLoading(true);
     const r = await runInterferenceCheck(projectId);
     if (r) setResult(r);

@@ -6,7 +6,6 @@
  * In demo mode or when Supabase is not configured, this is a no-op.
  */
 import { useEffect, useRef } from 'react';
-import { IS_DEMO } from '../lib/api';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -33,7 +32,7 @@ export function useRealtimeProject(
   const channelRef = useRef<unknown>(null);
 
   useEffect(() => {
-    if (!projectId || IS_DEMO || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+    if (!projectId || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
 
     // Dynamically import supabase-js to avoid bundling it when not needed
     let cleanup = () => {};

@@ -4,7 +4,7 @@
  * POST /api/projects/{id}/tolerance-stack
  */
 import { useState } from 'react';
-import { runToleranceStack, IS_DEMO } from '../../lib/api';
+import { runToleranceStack } from '../../lib/api';
 import type { ToleranceStackResult } from '../../lib/api';
 import {
   Ruler, Plus, Trash2, Play, AlertTriangle, CheckCircle2,
@@ -23,32 +23,11 @@ function newDim(): Dim {
   return { id: ++_id, name: `D${_id}`, nominal_mm: 10, tolerance_mm: 0.05 };
 }
 
-const DEMO_DIMS: Dim[] = [
-  { id: 1, name: 'Plate thickness', nominal_mm: 25.0, tolerance_mm: 0.05 },
-  { id: 2, name: 'Bushing height', nominal_mm: 20.0, tolerance_mm: 0.02 },
-  { id: 3, name: 'Shim thickness', nominal_mm: 2.0, tolerance_mm: 0.025 },
-  { id: 4, name: 'Frame recess depth', nominal_mm: 47.5, tolerance_mm: 0.1 },
-];
-
-const DEMO_RESULT: ToleranceStackResult = {
-  project_id: 'demo', method: 'both',
-  dimensions: DEMO_DIMS.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
-  total_nominal_mm: 94.5,
-  worst_case_mm: 0.195,
-  rss_mm: 0.1204,
-  gap_min_mm: 0.305,
-  gap_max_mm: 0.695,
-  assembly_ok: true,
-  summary: 'Stack of 4 dimensions. Nominal total: 94.500mm. Worst Case: ±0.195mm. RSS (99.73%): ±0.120mm. Largest contributor: "Frame recess depth" at 51.3% of WC budget. Assembly fits under both WC and RSS conditions.',
-};
-
-export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?: string }) {
-  const [dims, setDims] = useState<Dim[]>(DEMO_DIMS);
+export default function ToleranceStackPanel({ projectId = '' }: { projectId?: string }) {
+  const [dims, setDims] = useState<Dim[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ToleranceStackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const isLive = !IS_DEMO && projectId !== 'demo';
 
   const addDim = () => setDims(p => [...p, newDim()]);
   const removeDim = (id: number) => setDims(p => p.filter(d => d.id !== id));
@@ -63,19 +42,14 @@ export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?
   };
 
   const handleRun = async () => {
-    if (dims.length === 0) return;
+    if (dims.length === 0 || !projectId) return;
     setLoading(true); setError(null);
     try {
-      if (!isLive) {
-        await new Promise(r => setTimeout(r, 800));
-        setResult(DEMO_RESULT);
-      } else {
-        const res = await runToleranceStack(projectId, {
-          dimensions: dims.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
-        });
-        if (res) setResult(res);
-        else setError('Stack-up failed. Check that all dimension values are valid.');
-      }
+      const res = await runToleranceStack(projectId, {
+        dimensions: dims.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
+      });
+      if (res) setResult(res);
+      else setError('Stack-up failed. Check that all dimension values are valid.');
     } catch { setError('Request failed.'); }
     finally { setLoading(false); }
   };

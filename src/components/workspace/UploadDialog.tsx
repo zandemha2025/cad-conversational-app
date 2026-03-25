@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Upload, X, FileBox, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
-import { uploadStepFile, IS_DEMO } from '../../lib/api';
+import { uploadStepFile } from '../../lib/api';
 import { useJobPoll } from '../../hooks/useJobPoll';
 
 interface UploadDialogProps {
@@ -46,16 +46,6 @@ export default function UploadDialog({ projectId, onClose, onComplete }: UploadD
   const handleUpload = async () => {
     if (!file) return;
     setPhase('uploading');
-
-    if (IS_DEMO) {
-      // Simulate upload + processing
-      await new Promise(r => setTimeout(r, 800));
-      const fakeGeoId = `demo_geo_${Date.now()}`;
-      setGeometryId(fakeGeoId);
-      setPhase('done');
-      onComplete?.(fakeGeoId);
-      return;
-    }
 
     const res = await uploadStepFile(projectId, file);
     if (!res) {
@@ -153,9 +143,7 @@ export default function UploadDialog({ projectId, onClose, onComplete }: UploadD
             <CheckCircle size={36} className="text-green-400" />
             <div className="text-center">
               <p className="text-white font-medium text-sm">Geometry imported successfully</p>
-              <p className="text-gray-500 text-xs mt-1">
-                {IS_DEMO ? 'Demo: geometry simulated. Connect backend for real processing.' : 'Part features extracted and ready for fixture design.'}
-              </p>
+              <p className="text-gray-500 text-xs mt-1">Part features extracted and ready for fixture design.</p>
             </div>
           </div>
         )}

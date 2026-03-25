@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Shield, Filter, Download, ChevronLeft, Loader2, AlertTriangle, CheckCircle, Info } from 'lucide-react';
-import { fetchAuditLog, IS_DEMO } from '../lib/api';
+import { fetchAuditLog } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 interface AuditEntry {
@@ -14,17 +14,6 @@ interface AuditEntry {
   ip_address?: string;
   created_at: string;
 }
-
-const DEMO_ENTRIES: AuditEntry[] = [
-  { id: 'a1', user_id: 'u1', action: 'fixture.generate', resource_type: 'project', resource_id: 'proj-001', ip_address: '10.0.1.45', created_at: '2026-03-15T14:32:11Z' },
-  { id: 'a2', user_id: 'u2', action: 'drawing.export', resource_type: 'project', resource_id: 'proj-001', metadata_json: { format: 'pdf', itar_check: true }, ip_address: '10.0.1.62', created_at: '2026-03-15T13:55:22Z' },
-  { id: 'a3', user_id: 'u1', action: 'revision.release', resource_type: 'revision', resource_id: 'r-b001', metadata_json: { rev_letter: 'B', ecr: 'ECR-2847' }, ip_address: '10.0.1.45', created_at: '2026-03-15T11:20:05Z' },
-  { id: 'a4', user_id: 'u3', action: 'member.invite', resource_type: 'org', resource_id: 'org1', metadata_json: { invitee: 'achen@boeing.com', role: 'viewer' }, ip_address: '192.168.0.14', created_at: '2026-03-14T16:45:33Z' },
-  { id: 'a5', user_id: 'u2', action: 'step.upload', resource_type: 'project', resource_id: 'proj-002', ip_address: '10.0.1.62', created_at: '2026-03-14T09:12:00Z' },
-  { id: 'a6', user_id: 'u1', action: 'drawing.export', resource_type: 'project', resource_id: 'proj-002', metadata_json: { format: 'step', itar_blocked: true }, ip_address: '10.0.1.45', created_at: '2026-03-13T17:30:45Z' },
-  { id: 'a7', user_id: 'u4', action: 'project.create', resource_type: 'project', resource_id: 'proj-003', ip_address: '172.20.0.8', created_at: '2026-03-13T08:05:12Z' },
-  { id: 'a8', user_id: 'u1', action: 'revision.approve', resource_type: 'revision', resource_id: 'r-a001', metadata_json: { rev_letter: 'A', ecr: 'ECR-2801' }, ip_address: '10.0.1.45', created_at: '2026-03-12T14:22:31Z' },
-];
 
 const ACTION_META: Record<string, { color: string; icon: ReactNode; label: string }> = {
   'fixture.generate':  { color: 'text-cadblue-400 bg-cadblue-900/30 border-cadblue-700/40', icon: <Info size={10} />, label: 'Generate' },
@@ -40,13 +29,12 @@ const ACTION_TYPES = ['all', 'fixture.generate', 'drawing.export', 'revision.rel
 
 export default function AuditLog() {
   const navigate = useNavigate();
-  const [entries, setEntries] = useState<AuditEntry[]>(IS_DEMO ? DEMO_ENTRIES : []);
-  const [loading, setLoading] = useState(false);
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterAction, setFilterAction] = useState('all');
   const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
-    if (IS_DEMO) return;
     setLoading(true);
     fetchAuditLog('org1', 200)
       .then((data: unknown) => { if (Array.isArray(data)) setEntries(data as AuditEntry[]); })
@@ -87,9 +75,6 @@ export default function AuditLog() {
               <p className="text-sm text-slate-500">ITAR-compliant record of all org actions</p>
             </div>
           </div>
-          {IS_DEMO && (
-            <span className="ml-auto text-xs text-amber-400 bg-amber-900/20 border border-amber-700/40 px-2 py-1 rounded-lg">Demo data</span>
-          )}
         </div>
 
         {/* Filters */}
@@ -136,7 +121,12 @@ export default function AuditLog() {
           </div>
 
           <div className="divide-y divide-cadsurface-800">
-            {filtered.length === 0 && !loading ? (
+            {loading ? (
+              <div className="py-12 text-center text-slate-600">
+                <Loader2 size={24} className="mx-auto mb-3 animate-spin opacity-40" />
+                <p className="text-sm">Loading audit log…</p>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="py-12 text-center text-slate-600">
                 <Shield size={24} className="mx-auto mb-3 opacity-40" />
                 <p className="text-sm">No entries match your filter</p>

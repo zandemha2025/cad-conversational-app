@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   fetchConstraints, createConstraint, deleteConstraint, validateAllConstraints,
-  type AssemblyConstraint, IS_DEMO,
+  type AssemblyConstraint,
 } from '../../lib/api';
 
 type ConstraintType = 'fixed' | 'coincident' | 'parallel' | 'perpendicular' | 'distance' | 'angle';
@@ -19,21 +19,6 @@ const CONSTRAINT_TYPES: { value: ConstraintType; label: string; icon: string; pa
   { value: 'perpendicular',label: 'Perpendicular', icon: '⊥', params: [] },
   { value: 'distance',     label: 'Distance',      icon: '↔', params: ['distance_mm'] },
   { value: 'angle',        label: 'Angle',         icon: '∠', params: ['angle_deg'] },
-];
-
-const DEMO_CONSTRAINTS: AssemblyConstraint[] = [
-  {
-    id: 'c1', project_id: 'demo', type: 'fixed', part_a: 'Base Plate', part_b: '',
-    params_json: {}, is_valid: true, error_msg: null, created_at: new Date().toISOString(),
-  },
-  {
-    id: 'c2', project_id: 'demo', type: 'distance', part_a: 'Locator Pin A', part_b: 'Locator Pin B',
-    params_json: { distance_mm: 50 }, is_valid: true, error_msg: null, created_at: new Date().toISOString(),
-  },
-  {
-    id: 'c3', project_id: 'demo', type: 'angle', part_a: 'Clamp Arm', part_b: 'Base Plate',
-    params_json: { angle_deg: 90 }, is_valid: true, error_msg: null, created_at: new Date().toISOString(),
-  },
 ];
 
 interface Props {
@@ -49,11 +34,7 @@ export default function ConstraintsPanel({ projectId }: Props) {
   const [form, setForm] = useState({ type: 'fixed' as ConstraintType, part_a: '', part_b: '', param_value: '' });
 
   useEffect(() => {
-    if (IS_DEMO || !projectId) {
-      setConstraints(DEMO_CONSTRAINTS);
-      setLoading(false);
-      return;
-    }
+    if (!projectId) { setLoading(false); return; }
     fetchConstraints(projectId).then(data => {
       if (data) setConstraints(data);
       setLoading(false);
@@ -73,20 +54,7 @@ export default function ConstraintsPanel({ projectId }: Props) {
       params.angle_deg = parseFloat(form.param_value);
     }
 
-    if (IS_DEMO || !projectId) {
-      const demo: AssemblyConstraint = {
-        id: `c-${Date.now()}`,
-        project_id: projectId || 'demo',
-        type: form.type,
-        part_a: form.part_a,
-        part_b: form.part_b,
-        params_json: params,
-        is_valid: true,
-        error_msg: null,
-        created_at: new Date().toISOString(),
-      };
-      setConstraints(prev => [...prev, demo]);
-    } else {
+    if (projectId) {
       const result = await createConstraint(projectId, {
         type: form.type,
         part_a: form.part_a,
@@ -102,19 +70,13 @@ export default function ConstraintsPanel({ projectId }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (IS_DEMO || !projectId) {
-      setConstraints(prev => prev.filter(c => c.id !== id));
-      return;
-    }
+    if (!projectId) return;
     await deleteConstraint(projectId, id);
     setConstraints(prev => prev.filter(c => c.id !== id));
   }
 
   async function handleValidateAll() {
-    if (IS_DEMO || !projectId) {
-      setConstraints(prev => prev.map(c => ({ ...c, is_valid: true, error_msg: null })));
-      return;
-    }
+    if (!projectId) return;
     setValidating(true);
     const result = await validateAllConstraints(projectId) as Record<string, unknown> | null;
     if (result && Array.isArray(result.constraints)) {

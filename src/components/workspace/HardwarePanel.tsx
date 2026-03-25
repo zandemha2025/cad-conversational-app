@@ -5,7 +5,7 @@ import {
   Crosshair, Settings, Cpu, Circle, Plus, Loader2,
 } from 'lucide-react';
 import { useHardwareCatalog } from '../../hooks/useHardwareCatalog';
-import { addHardwareToBom, IS_DEMO } from '../../lib/api';
+import { addHardwareToBom } from '../../lib/api';
 import type { HardwareCatalogItem } from '../../types';
 
 type FilterCategory = HardwareCatalogItem['category'] | 'all';
@@ -94,10 +94,7 @@ export default function HardwarePanel({ projectId = 'demo' }: { projectId?: stri
   });
 
   const handleAdd = useCallback(async (item: HardwareCatalogItem) => {
-    if (!IS_DEMO) {
-      try { await addHardwareToBom(projectId, item.id); } catch {}
-    }
-    // Also persist to localStorage for demo / offline use
+    try { await addHardwareToBom(projectId, item.id); } catch {}
     const existing = getBomItems(projectId) as string[];
     if (!existing.includes(item.id)) {
       const next = [...existing, item.id];

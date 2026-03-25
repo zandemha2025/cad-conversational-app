@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { regenerateNodeGraph, updateNodeParams, IS_DEMO } from '../../lib/api';
+import { regenerateNodeGraph, updateNodeParams } from '../../lib/api';
 import { useNodeGraph } from '../../hooks/useNodeGraph';
 import type { ApiNodeDef, ApiConnection, ApiNodeParam } from '../../types';
 import {
@@ -30,38 +30,6 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   'output':     <FileOutput size={13} />,
 };
 
-// ── Hardcoded fallback nodes (used in demo or when API returns nothing) ────────
-
-const DEMO_NODES: ApiNodeDef[] = [
-  { id: 'part-import', label: 'Part Import', category: 'input', x: 20, y: 20, w: 220, h: 155, ai_generated: false,
-    params: [{ name: 'File', value: 'wing_panel.step', type: 'string' }, { name: 'Dims', value: '150 × 100 × 8 mm', type: 'string' },
-             { name: 'Material', value: 'Al 6061-T6', type: 'string' }, { name: 'Faces', value: '14 detected', type: 'string' }] },
-  { id: 'printer-profile', label: 'Printer Profile', category: 'input', x: 20, y: 195, w: 220, h: 115, ai_generated: false,
-    params: [{ name: 'Machine', value: 'Bambu Lab X1C', type: 'string' }, { name: 'Nozzle', value: 'Ø 0.4 mm', type: 'string' },
-             { name: 'Material', value: 'PA12-CF', type: 'string' }] },
-  { id: 'base-plate', label: 'Base Plate', category: 'foundation', x: 295, y: 70, w: 220, h: 135, ai_generated: true,
-    params: [{ name: 'Size', value: '165 × 115 × 15 mm', type: 'string' }, { name: 'Material', value: 'Cast Tooling Plate', type: 'string' },
-             { name: 'Corner R', value: '3', unit: 'mm', type: 'number' }] },
-  { id: 'constraint-321', label: '3-2-1 Constraint Solver', category: 'foundation', x: 295, y: 300, w: 220, h: 135, ai_generated: true,
-    params: [{ name: 'Datum A', value: 'Bottom — 3 supports', type: 'string' }, { name: 'Datum B', value: 'Left face — 2 pins', type: 'string' },
-             { name: 'DOF', value: '6 / 6 constrained', type: 'string' }] },
-  { id: 'bushing-seats', label: 'Bushing Seats ×4', category: 'geometry', x: 565, y: 20, w: 220, h: 155, ai_generated: true,
-    params: [{ name: 'Count', value: '4', type: 'number' }, { name: 'Liner OD', value: '20', unit: 'mm', type: 'number' },
-             { name: 'Bore ID', value: '10', unit: 'mm', type: 'number' }, { name: 'Depth', value: '15', unit: 'mm', type: 'number' }] },
-  { id: 'layer-profile', label: 'Layer Profile', category: 'print', x: 835, y: 20, w: 220, h: 155, ai_generated: true,
-    params: [{ name: 'Layer height', value: '0.20', unit: 'mm', type: 'number' }, { name: 'Infill', value: '25', unit: '%', type: 'number' }] },
-  { id: 'step-export', label: 'STEP Export', category: 'output', x: 1110, y: 80, w: 220, h: 115, ai_generated: false,
-    params: [{ name: 'Format', value: 'STEP AP214', type: 'string' }, { name: 'Bodies', value: '1 solid', type: 'string' }] },
-];
-
-const DEMO_CONNECTIONS: ApiConnection[] = [
-  { from_node: 'part-import', from_port: 'out', to_node: 'base-plate', to_port: 'in' },
-  { from_node: 'part-import', from_port: 'out', to_node: 'constraint-321', to_port: 'in' },
-  { from_node: 'base-plate', from_port: 'out', to_node: 'bushing-seats', to_port: 'in' },
-  { from_node: 'constraint-321', from_port: 'out', to_node: 'bushing-seats', to_port: 'in' },
-  { from_node: 'layer-profile', from_port: 'out', to_node: 'step-export', to_port: 'in' },
-];
-
 function portY(node: ApiNodeDef) { return node.y + node.h / 2; }
 
 // ── Inline-editable param row ─────────────────────────────────────────────────
@@ -81,9 +49,7 @@ function ParamRow({ param, nodeId, projectId, onUpdated }: {
     if (editVal === String(param.value)) { setEditing(false); return; }
     setSaving(true);
     try {
-      if (!IS_DEMO && projectId !== 'demo') {
-        await updateNodeParams(projectId, nodeId, [{ name: param.name, value: param.type === 'number' ? parseFloat(editVal) : editVal, type: param.type }]);
-      }
+      await updateNodeParams(projectId, nodeId, [{ name: param.name, value: param.type === 'number' ? parseFloat(editVal) : editVal, type: param.type }]);
       onUpdated(param.name, param.type === 'number' ? parseFloat(editVal) : editVal);
     } finally {
       setSaving(false);
@@ -197,28 +163,27 @@ function buildConnectionPath(nodes: ApiNodeDef[], conn: ApiConnection): string {
 
 // ── Main NodeEditor ───────────────────────────────────────────────────────────
 
-export default function NodeEditor({ projectId = 'demo' }: { projectId?: string }) {
+export default function NodeEditor({ projectId = '' }: { projectId?: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [regenerating, setRegenerating] = useState(false);
   const { graph, loading, refetch } = useNodeGraph(projectId);
 
   // Local node state for optimistic param edits
-  const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>(DEMO_NODES);
-  const [localConns, setLocalConns] = useState<ApiConnection[]>(DEMO_CONNECTIONS);
+  const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>([]);
+  const [localConns, setLocalConns] = useState<ApiConnection[]>([]);
 
   useEffect(() => {
     if (graph) {
-      setLocalNodes(graph.nodes.length > 0 ? graph.nodes : DEMO_NODES);
-      setLocalConns(graph.connections.length > 0 ? graph.connections : DEMO_CONNECTIONS);
+      setLocalNodes(graph.nodes);
+      setLocalConns(graph.connections);
       if (!selected && graph.nodes.length > 0) setSelected(graph.nodes[0]?.id ?? null);
     }
   }, [graph]);
 
   const handleRegenerate = useCallback(async () => {
     setRegenerating(true);
-    if (!IS_DEMO) await regenerateNodeGraph(projectId).catch(() => {});
-    else await new Promise(r => setTimeout(r, 1500));
+    await regenerateNodeGraph(projectId).catch(() => {});
     refetch();
     setRegenerating(false);
   }, [projectId, refetch]);
@@ -227,8 +192,7 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
     setLocalNodes(prev => prev.map(n => n.id === nodeId ? {
       ...n, params: n.params.map(p => p.name === key ? { ...p, value } : p),
     } : n));
-    // Trigger partial regen
-    if (!IS_DEMO) regenerateNodeGraph(projectId).catch(() => {});
+    regenerateNodeGraph(projectId).catch(() => {});
   }, [projectId]);
 
   const CANVAS_W = Math.max(1360, localNodes.reduce((m, n) => Math.max(m, n.x + n.w + 60), 1360));
@@ -248,7 +212,7 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
         </div>
         <div className="w-px h-5 bg-cadsurface-700" />
         {loading && <Loader2 size={13} className="text-slate-500 animate-spin" />}
-        <button onClick={handleRegenerate} disabled={regenerating}
+        <button onClick={handleRegenerate} disabled={regenerating || !projectId}
           className="flex items-center gap-1.5 text-xs btn-ghost px-2.5 py-1.5 rounded-lg border border-cadsurface-700 hover:border-cadblue-700/50 disabled:opacity-50">
           <RefreshCw size={12} className={regenerating ? 'animate-spin' : ''} />
           {regenerating ? 'Regenerating…' : 'Regenerate'}
@@ -265,37 +229,49 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
       {/* Canvas + detail panel */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-auto">
-          <div className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom / 100})` }}>
-            <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+          {loading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 size={24} className="animate-spin text-slate-600" />
+            </div>
+          ) : localNodes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-600">
+              <Sparkles size={32} className="opacity-30" />
+              <p className="text-sm">No node graph yet</p>
+              <p className="text-xs">Click Regenerate to generate the fixture graph from your design</p>
+            </div>
+          ) : (
+            <div className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom / 100})` }}>
+              <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle, #1e293b 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
-            {/* SVG connections */}
-            <svg className="absolute inset-0 overflow-visible pointer-events-none" width={CANVAS_W} height={CANVAS_H}>
-              {localConns.map((c, i) => {
-                const path = buildConnectionPath(localNodes, c);
-                if (!path) return null;
-                const fromNode = localNodes.find(n => n.id === c.from_node);
-                const cat = fromNode ? CAT[fromNode.category as Category] : CAT.input;
-                return <path key={i} d={path} stroke={cat.wireColor} strokeWidth="1.5" fill="none" opacity={0.55} />;
-              })}
-              {/* Port dots */}
-              {localNodes.map(node => {
-                const cat = CAT[node.category as Category] ?? CAT.input;
-                const isInput = node.category === 'input';
-                const isOutput = node.category === 'output';
-                return (
-                  <g key={node.id}>
-                    {!isOutput && <circle cx={node.x + node.w} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
-                    {!isInput && <circle cx={node.x} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
-                  </g>
-                );
-              })}
-            </svg>
+              {/* SVG connections */}
+              <svg className="absolute inset-0 overflow-visible pointer-events-none" width={CANVAS_W} height={CANVAS_H}>
+                {localConns.map((c, i) => {
+                  const path = buildConnectionPath(localNodes, c);
+                  if (!path) return null;
+                  const fromNode = localNodes.find(n => n.id === c.from_node);
+                  const cat = fromNode ? CAT[fromNode.category as Category] : CAT.input;
+                  return <path key={i} d={path} stroke={cat.wireColor} strokeWidth="1.5" fill="none" opacity={0.55} />;
+                })}
+                {/* Port dots */}
+                {localNodes.map(node => {
+                  const cat = CAT[node.category as Category] ?? CAT.input;
+                  const isInput = node.category === 'input';
+                  const isOutput = node.category === 'output';
+                  return (
+                    <g key={node.id}>
+                      {!isOutput && <circle cx={node.x + node.w} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
+                      {!isInput && <circle cx={node.x} cy={portY(node)} r="4" fill="#0d1424" stroke={cat.portColor} strokeWidth="1.5" />}
+                    </g>
+                  );
+                })}
+              </svg>
 
-            {localNodes.map(node => (
-              <NodeCard key={node.id} node={node} selected={selected === node.id} onSelect={setSelected}
-                projectId={projectId} onParamUpdated={handleParamUpdated} />
-            ))}
-          </div>
+              {localNodes.map(node => (
+                <NodeCard key={node.id} node={node} selected={selected === node.id} onSelect={setSelected}
+                  projectId={projectId} onParamUpdated={handleParamUpdated} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right detail panel */}
@@ -353,10 +329,10 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
           <span className="text-xs text-slate-500">Graph valid</span>
         </div>
         <span className="text-slate-700">·</span>
-        <span className="text-xs text-slate-600">{IS_DEMO ? 'Demo mode' : `Project ${projectId.slice(0, 8)}`}</span>
+        <span className="text-xs text-slate-600">Project {projectId.slice(0, 8)}</span>
         <div className="flex-1" />
         <span className="text-xs text-slate-700 font-mono">
-          {graph?.generated_at ? new Date(graph.generated_at).toLocaleTimeString() : 'Last generated: just now'}
+          {graph?.generated_at ? new Date(graph.generated_at).toLocaleTimeString() : ''}
         </span>
       </div>
     </div>

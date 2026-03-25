@@ -10,7 +10,6 @@ import {
   Target,
   X,
 } from 'lucide-react';
-import { IS_DEMO } from '../../lib/api';
 import { addTouchpoint, deleteTouchpoint } from '../../lib/api';
 import { getTouchpoints, saveTouchpoints } from '../../lib/storage';
 
@@ -51,68 +50,6 @@ const TYPE_META: Record<TouchpointType, { color: string; bg: string; border: str
   },
 };
 
-const DUMMY_TOUCHPOINTS: Touchpoint[] = [
-  {
-    id: 'tp-01',
-    label: 'TP-01',
-    type: 'locating',
-    face: 'Face B (left side)',
-    coords: [0, 50, 7.5],
-    detail: 'Diamond locating pin, ⌀6 H7 bore. Primary X/Y reference.',
-    force: undefined,
-    expanded: false,
-  },
-  {
-    id: 'tp-02',
-    label: 'TP-02',
-    type: 'locating',
-    face: 'Face C (right side)',
-    coords: [150, 50, 7.5],
-    detail: 'Round locating pin, ⌀6 H7 bore. Constrains Y rotation.',
-    force: undefined,
-    expanded: false,
-  },
-  {
-    id: 'tp-03',
-    label: 'TP-03',
-    type: 'clamping',
-    face: 'Top face, center-left',
-    coords: [45, 50, 15],
-    detail: 'Strap clamp, Mitee-Bite M8. Clamps against Face A datum.',
-    force: '320 N',
-    expanded: true,
-  },
-  {
-    id: 'tp-04',
-    label: 'TP-04',
-    type: 'clamping',
-    face: 'Top face, center-right',
-    coords: [105, 50, 15],
-    detail: 'Toggle clamp, De-Sta-Co 225U. Over-center action.',
-    force: '490 N',
-    expanded: false,
-  },
-  {
-    id: 'tp-05',
-    label: 'TP-05',
-    type: 'support',
-    face: 'Bottom face (Datum A)',
-    coords: [75, 25, 0],
-    detail: 'Fixed support pad, 25×25mm, hardened steel. Sets Z-datum.',
-    force: undefined,
-    expanded: false,
-  },
-  {
-    id: 'tp-06',
-    label: 'TP-06',
-    type: 'support',
-    face: 'Bottom face (Datum A)',
-    coords: [75, 75, 0],
-    detail: 'Adjustable rest button, M8 thread. Set height to ±0.01mm.',
-    force: undefined,
-    expanded: false,
-  },
-];
 
 const COUNT_LABELS: Record<TouchpointType, string> = {
   locating: 'Locating pins',
@@ -145,40 +82,26 @@ function AddTouchpointForm({ projectId, onClose, onAdd }: AddFormProps) {
     const coords: [number, number, number] = [parseFloat(x), parseFloat(y), parseFloat(z)];
     const newLabel = label || `TP-${Date.now().toString().slice(-4)}`;
 
-    if (IS_DEMO) {
+    const res = await addTouchpoint(projectId, {
+      label: newLabel,
+      type,
+      face_id: face,
+      coords,
+      detail: detail || null,
+      force_n: force ? parseFloat(force) : null,
+    });
+    if (res) {
       const tp: Touchpoint = {
-        id: `tp_${Date.now()}`,
-        label: newLabel,
-        type,
-        face,
-        coords,
-        detail,
-        force: force || undefined,
+        id: res.id,
+        label: res.label,
+        type: res.type,
+        face: res.face_id,
+        coords: res.coords as [number, number, number],
+        detail: res.detail ?? '',
+        force: res.force_n ? `${res.force_n} N` : undefined,
         expanded: false,
       };
       onAdd(tp);
-    } else {
-      const res = await addTouchpoint(projectId, {
-        label: newLabel,
-        type,
-        face_id: face,
-        coords,
-        detail: detail || null,
-        force_n: force ? parseFloat(force) : null,
-      });
-      if (res) {
-        const tp: Touchpoint = {
-          id: res.id,
-          label: res.label,
-          type: res.type,
-          face: res.face_id,
-          coords: res.coords as [number, number, number],
-          detail: res.detail ?? '',
-          force: res.force_n ? `${res.force_n} N` : undefined,
-          expanded: false,
-        };
-        onAdd(tp);
-      }
     }
     setSaving(false);
     onClose();
@@ -248,9 +171,8 @@ function AddTouchpointForm({ projectId, onClose, onAdd }: AddFormProps) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function TouchpointPanel({ projectId = 'demo' }: { projectId?: string }) {
+export default function TouchpointPanel({ projectId = '' }: { projectId?: string }) {
   const [points, setPoints] = useState<Touchpoint[]>(() => {
-    // Merge demo touchpoints with any localStorage-persisted ones
     const stored = getTouchpoints(projectId);
     if (stored.length > 0) {
       return stored.map(s => ({
@@ -264,26 +186,10 @@ export default function TouchpointPanel({ projectId = 'demo' }: { projectId?: st
         expanded: false,
       }));
     }
-    return DUMMY_TOUCHPOINTS;
+    return [];
   });
-  const [selectedId, setSelectedId] = useState<string | null>('tp-03');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-
-  const persist = (pts: Touchpoint[]) => {
-    if (IS_DEMO) {
-      saveTouchpoints(projectId, pts.map(p => ({
-        id: p.id,
-        project_id: projectId,
-        label: p.label,
-        type: p.type,
-        face_id: p.face,
-        coords: p.coords,
-        detail: p.detail || null,
-        force_n: p.force ? parseFloat(p.force) : null,
-        created_at: new Date().toISOString(),
-      })));
-    }
-  };
 
   const toggle = (id: string) => {
     setPoints((prev) =>
@@ -292,23 +198,15 @@ export default function TouchpointPanel({ projectId = 'demo' }: { projectId?: st
   };
 
   const remove = async (id: string) => {
-    if (!IS_DEMO) await deleteTouchpoint(projectId, id);
-    setPoints((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      persist(next);
-      return next;
-    });
+    await deleteTouchpoint(projectId, id);
+    setPoints((prev) => prev.filter((p) => p.id !== id));
     if (selectedId === id) setSelectedId(null);
   };
 
   const select = (id: string) => setSelectedId(selectedId === id ? null : id);
 
   const handleAdd = (tp: Touchpoint) => {
-    setPoints(prev => {
-      const next = [...prev, tp];
-      persist(next);
-      return next;
-    });
+    setPoints(prev => [...prev, tp]);
   };
 
   const counts = {

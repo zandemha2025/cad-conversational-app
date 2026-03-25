@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchFixtureGeometry, fetchPartGeometry, IS_DEMO } from '../lib/api';
+import { fetchFixtureGeometry, fetchPartGeometry } from '../lib/api';
 import type { PartFeatures } from '../types';
 
 interface FixtureGeometryResult {
@@ -20,7 +20,7 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (!projectId || IS_DEMO) return;
+    if (!projectId) return;
 
     setLoading(true);
     setError(null);

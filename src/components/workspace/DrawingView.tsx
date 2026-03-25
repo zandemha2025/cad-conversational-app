@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Printer, Download,
   Plus, Layers, Tag, Grid3x3, Loader2, RefreshCw,
 } from 'lucide-react';
-import { requestExport, fetchLatestDrawing, generateDrawing, IS_DEMO, requestDxfExport, requestIgesExport } from '../../lib/api';
+import { requestExport, fetchLatestDrawing, generateDrawing, requestDxfExport, requestIgesExport } from '../../lib/api';
 import { useJobPoll } from '../../hooks/useJobPoll';
 
 // Static BOM for demo / fallback
@@ -48,9 +48,9 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
 
   useJobPoll(exportJobId ? projectId : null, exportJobId);
 
-  // In live mode, try to load existing server drawing
+  // Try to load existing server drawing
   useEffect(() => {
-    if (IS_DEMO || projectId === 'demo') return;
+    if (!projectId) return;
     fetchLatestDrawing(projectId)
       .then((data: unknown) => {
         const d = data as { svg_json?: { svg?: string }; pdf_url?: string } | null;
@@ -72,21 +72,8 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
   const handleExportPDF = useCallback(async () => {
     setPdfExporting(true);
     try {
-      if (IS_DEMO) {
-        const { default: jsPDF } = await import('jspdf');
-        const { default: html2canvas } = await import('html2canvas');
-        if (!drawingRef.current) return;
-        const canvas = await html2canvas(drawingRef.current, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-        pdf.save('TL-4471-A_RevB_Drawing.pdf');
-      } else {
-        const res = await requestExport(projectId, 'pdf');
-        if (res) setExportJobId(res.job_id);
-      }
+      const res = await requestExport(projectId, 'pdf');
+      if (res) setExportJobId(res.job_id);
     } finally {
       setPdfExporting(false);
     }
@@ -125,20 +112,18 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
           <Grid3x3 size={12} />Layers
         </button>
 
-        {/* Generate server drawing button (live mode) */}
-        {!IS_DEMO && (
-          <>
-            <div className="w-px h-5 bg-cadsurface-700 mx-1" />
-            <button
-              onClick={handleGenerateDrawing}
-              disabled={generating}
-              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 disabled:opacity-50 transition-colors"
-            >
-              {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              {generating ? 'Generating…' : 'AI Drawing'}
-            </button>
-          </>
-        )}
+        {/* Generate server drawing button */}
+        <>
+          <div className="w-px h-5 bg-cadsurface-700 mx-1" />
+          <button
+            onClick={handleGenerateDrawing}
+            disabled={generating}
+            className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 disabled:opacity-50 transition-colors"
+          >
+            {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {generating ? 'Generating…' : 'AI Drawing'}
+          </button>
+        </>
 
         <div className="flex-1" />
 
@@ -172,14 +157,14 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
           {pdfExporting ? 'Exporting…' : 'Export PDF'}
         </button>
         <button
-          onClick={() => IS_DEMO ? alert('DXF export requires a live project') : requestDxfExport(projectId)}
+          onClick={() => requestDxfExport(projectId)}
           className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 transition-colors"
           title="Export DXF (laser cut / CNC)"
         >
           <Download size={12} />DXF
         </button>
         <button
-          onClick={() => IS_DEMO ? alert('IGES export requires a live project') : requestIgesExport(projectId)}
+          onClick={() => requestIgesExport(projectId)}
           className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 transition-colors"
           title="Export IGES (CAD interop)"
         >

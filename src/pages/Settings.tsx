@@ -4,7 +4,6 @@ import {
   User, Bell, Shield, Package, Cpu, ChevronRight, ChevronLeft,
   Save, CheckCircle2, Building, Mail, Settings2,
 } from 'lucide-react';
-import { IS_DEMO } from '../lib/api';
 import { getSettings, saveSettings } from '../lib/storage';
 import type { StoredSettings } from '../lib/storage';
 
@@ -111,12 +110,6 @@ export default function Settings() {
               <ChevronRight size={12} className="ml-auto text-gray-600" />
             </button>
           ))}
-          {IS_DEMO && (
-            <div className="mt-4 mx-1 p-2.5 bg-amber-900/20 border border-amber-700/30 rounded-lg">
-              <p className="text-xs text-amber-400 font-medium">Demo Mode</p>
-              <p className="text-xs text-amber-400/60 mt-0.5">Settings saved to localStorage</p>
-            </div>
-          )}
         </div>
 
         {/* Content pane */}
@@ -257,17 +250,7 @@ export default function Settings() {
                 </div>
                 <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
                   <p className="text-xs text-gray-400 font-medium mb-2">Backend Connection</p>
-                  {IS_DEMO ? (
-                    <>
-                      <p className="text-xs text-amber-400 mb-2">⚠ Demo mode — AI responses are keyword-matched</p>
-                      <p className="text-xs text-gray-500">
-                        Set <code className="bg-gray-700 px-1 rounded">VITE_API_URL=http://localhost:8000</code> in{' '}
-                        <code className="bg-gray-700 px-1 rounded">.env.local</code> to enable real Gemini 2.0 generation.
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-xs text-green-400">✓ Connected to backend — Gemini AI generation enabled</p>
-                  )}
+                  <p className="text-xs text-green-400">✓ Connected to backend — Gemini AI generation enabled</p>
                 </div>
               </>
             )}

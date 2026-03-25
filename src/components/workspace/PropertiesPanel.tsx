@@ -3,10 +3,9 @@ import {
   ChevronDown, ChevronRight, Info, Activity, Layers, Settings2, Tag, GitBranch,
   AlertTriangle, CheckCircle2, XCircle, Circle, Triangle,
 } from 'lucide-react';
-import { mockMaterials } from '../../data/mockData';
 import { useWorkspace } from '../../store/workspaceStore';
 import {
-  runFeaLite, IS_DEMO, fetchValidationResults, fetchProject,
+  runFeaLite, fetchValidationResults, fetchProject,
   fetchRevisions, fetchMaterials,
 } from '../../lib/api';
 import type { MaterialProperties } from '../../lib/api';
@@ -94,7 +93,7 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const [liveMaterials, setLiveMaterials] = useState<MaterialProperties[]>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('aluminum_6061');
 
-  const isLive = !IS_DEMO && projectId !== 'demo';
+  const isLive = !!projectId;
 
   // Fetch materials from live API (no auth needed)
   useEffect(() => {
@@ -141,26 +140,16 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const isFullyConstrained = dofConstrained >= 6;
 
   const handleRunFea = useCallback(async () => {
+    if (!projectId) return;
     setFeaRunning(true);
     try {
-      if (!isLive) {
-        const bb = features?.bounding_box;
-        await new Promise(r => setTimeout(r, 800));
-        setFeaResult({
-          deflection_mm: 0.018, max_stress_mpa: 12.4, yield_strength_mpa: 250,
-          safety_factor: 20.2, within_tolerance: true, tolerance_mm: 0.1,
-          interpretation: 'Base plate deflects 0.018mm under 500N clamping load. Within ±0.1mm tolerance. Safety factor: 20.2x.',
-          inputs: { length_mm: bb?.x ?? 165, width_mm: bb?.y ?? 115, thickness_mm: bb?.z ?? 15, material: 'cast_tooling_plate', clamping_force_n: 500, support_count: 3 },
-        });
-      } else {
-        const bb = features?.bounding_box;
-        const res = await runFeaLite(projectId, {
-          length_mm: bb?.x, width_mm: bb?.y, thickness_mm: bb?.z,
-        });
-        if (res) setFeaResult(res);
-      }
+      const bb = features?.bounding_box;
+      const res = await runFeaLite(projectId, {
+        length_mm: bb?.x, width_mm: bb?.y, thickness_mm: bb?.z,
+      });
+      if (res) setFeaResult(res);
     } finally { setFeaRunning(false); }
-  }, [isLive, projectId, features]);
+  }, [projectId, features]);
 
   const tabs: { id: Tab; icon: React.ReactNode; label: string }[] = [
     { id: 'properties', icon: <Settings2 size={13} />, label: 'Props' },
@@ -339,26 +328,22 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
             </Section>
 
             <Section title="DFM Warnings">
-              {isLive ? (
-                dfmIssues.length > 0 ? (
-                  <div className="space-y-2">
-                    {dfmIssues.map((w, i) => (
-                      <div key={w.id ?? i} className="bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2">
-                        <div className="flex items-start gap-1.5">
-                          {DFM_ICONS[w.severity] ?? DFM_ICONS.info}
-                          <div className="min-w-0">
-                            <p className={`text-xs font-medium ${DFM_COLORS[w.severity] ?? 'text-slate-300'}`}>{w.title}</p>
-                            {w.detail && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{w.detail}</p>}
-                          </div>
+              {dfmIssues.length > 0 ? (
+                <div className="space-y-2">
+                  {dfmIssues.map((w, i) => (
+                    <div key={w.id ?? i} className="bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2">
+                      <div className="flex items-start gap-1.5">
+                        {DFM_ICONS[w.severity] ?? DFM_ICONS.info}
+                        <div className="min-w-0">
+                          <p className={`text-xs font-medium ${DFM_COLORS[w.severity] ?? 'text-slate-300'}`}>{w.title}</p>
+                          {w.detail && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{w.detail}</p>}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-600 py-2">No validation results yet. Run validation from the Validation panel.</p>
-                )
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <p className="text-xs text-slate-600 py-2">Connect to live backend to see real DFM warnings.</p>
+                <p className="text-xs text-slate-600 py-2">No validation results yet. Run validation from the Validation panel.</p>
               )}
             </Section>
 
@@ -402,14 +387,7 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
         {activeTab === 'materials' && (
           <Section title="Material Library">
             <div className="space-y-1.5">
-              {(liveMaterials.length > 0 ? liveMaterials : mockMaterials.map(m => ({
-                id: m.id, display_name: m.name, category: 'alloy',
-                density_kg_m3: parseFloat(String(m.density).replace(/[^\d.]/g, '')) * 1000,
-                yield_strength_mpa: m.yield, ultimate_strength_mpa: m.yield * 1.3,
-                hardness_hb: 100, youngs_modulus_gpa: m.youngsModulus,
-                poissons_ratio: 0.33, thermal_conductivity_w_mk: 150,
-                machinability_rating: 80, kc1_1: 700, mc: 0.27, notes: '',
-              } as MaterialProperties))).map(mat => (
+              {liveMaterials.map(mat => (
                 <button
                   key={mat.id}
                   onClick={() => setSelectedMaterialId(mat.id)}
@@ -482,43 +460,39 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
             </div>
 
             <Section title="Revision History">
-              {isLive ? (
-                revisions.length > 0 ? (
-                  <div className="space-y-3">
-                    {revisions.map((r, i) => (
-                      <div key={r.id} className="relative">
-                        {i < revisions.length - 1 && <div className="absolute left-3 top-8 bottom-0 w-px bg-cadsurface-700" />}
-                        <div className="flex gap-3">
-                          <div className="shrink-0 mt-0.5">
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold z-10 relative ${
-                              i === 0 ? 'border-emerald-500 bg-emerald-900/40 text-emerald-400' : 'border-cadsurface-600 bg-cadsurface-800 text-slate-400'
-                            }`}>{r.rev_letter}</div>
+              {revisions.length > 0 ? (
+                <div className="space-y-3">
+                  {revisions.map((r, i) => (
+                    <div key={r.id} className="relative">
+                      {i < revisions.length - 1 && <div className="absolute left-3 top-8 bottom-0 w-px bg-cadsurface-700" />}
+                      <div className="flex gap-3">
+                        <div className="shrink-0 mt-0.5">
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold z-10 relative ${
+                            i === 0 ? 'border-emerald-500 bg-emerald-900/40 text-emerald-400' : 'border-cadsurface-600 bg-cadsurface-800 text-slate-400'
+                          }`}>{r.rev_letter}</div>
+                        </div>
+                        <div className="flex-1 pb-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-slate-200">Rev {r.rev_letter}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded border capitalize ${REVISION_STATUS_COLORS[r.status] ?? 'bg-slate-800 border-slate-700 text-slate-400'}`}>{r.status}</span>
+                            {r.ecr_number && <span className="text-xs text-slate-500 font-mono">{r.ecr_number}</span>}
                           </div>
-                          <div className="flex-1 pb-3">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-semibold text-slate-200">Rev {r.rev_letter}</span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded border capitalize ${REVISION_STATUS_COLORS[r.status] ?? 'bg-slate-800 border-slate-700 text-slate-400'}`}>{r.status}</span>
-                              {r.ecr_number && <span className="text-xs text-slate-500 font-mono">{r.ecr_number}</span>}
+                          <p className="text-xs text-slate-400 mt-0.5">{r.description}</p>
+                          {Array.isArray(r.changes_json) && (
+                            <div className="mt-1 space-y-0.5">
+                              {r.changes_json.map((ch: string, ci: number) => (
+                                <p key={ci} className="text-xs text-slate-600 pl-2 border-l border-cadsurface-700">{ch}</p>
+                              ))}
                             </div>
-                            <p className="text-xs text-slate-400 mt-0.5">{r.description}</p>
-                            {Array.isArray(r.changes_json) && (
-                              <div className="mt-1 space-y-0.5">
-                                {r.changes_json.map((ch: string, ci: number) => (
-                                  <p key={ci} className="text-xs text-slate-600 pl-2 border-l border-cadsurface-700">{ch}</p>
-                                ))}
-                              </div>
-                            )}
-                            <p className="text-xs text-slate-600 mt-1">{new Date(r.created_at).toLocaleDateString()}</p>
-                          </div>
+                          )}
+                          <p className="text-xs text-slate-600 mt-1">{new Date(r.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-600 py-2">No revisions yet. Use "Raise ECR" to create the first revision.</p>
-                )
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <p className="text-xs text-slate-600 py-2">Connect to live backend to see revision history.</p>
+                <p className="text-xs text-slate-600 py-2">No revisions yet. Use "Raise ECR" to create the first revision.</p>
               )}
               <button className="btn-primary w-full mt-2 text-xs">Raise ECR</button>
             </Section>

@@ -4,10 +4,9 @@ import {
   Copy, Scissors, SquareAsterisk, SquareDashedBottomCode, Triangle, Target, Drill, Tag,
   Crosshair, Loader2,
 } from 'lucide-react';
-import { mockFeatureTree } from '../../data/mockData';
 import type { FeatureTreeItem, FeatureType, PartFeatures } from '../../types';
 import { useWorkspace } from '../../store/workspaceStore';
-import { fetchPartGeometry, IS_DEMO } from '../../lib/api';
+import { fetchPartGeometry } from '../../lib/api';
 
 const featureIcon: Record<FeatureType, React.ReactNode> = {
   sketch:      <SquareDashedBottomCode size={13} className="text-amber-400" />,
@@ -128,27 +127,22 @@ function TreeNode({ item, depth = 0, selectedId, onSelect }: {
 
 export default function FeatureTree() {
   const [selectedId, setSelectedId] = useState('');
-  const [treeItems, setTreeItems] = useState<FeatureTreeItem[]>(mockFeatureTree);
+  const [treeItems, setTreeItems] = useState<FeatureTreeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const { state, selectFeature } = useWorkspace();
   const projectId = state.projectId;
 
   useEffect(() => {
-    if (IS_DEMO || !projectId) {
-      setTreeItems(mockFeatureTree);
-      return;
-    }
+    if (!projectId) return;
     setLoading(true);
     fetchPartGeometry(projectId)
       .then((data: unknown) => {
         const partData = data as { features_json?: PartFeatures } | null;
         if (partData?.features_json) {
-          const features = partData.features_json;
-          setTreeItems(featuresToTree(features));
-          // Sync to workspace state
+          setTreeItems(featuresToTree(partData.features_json));
         }
       })
-      .catch(() => setTreeItems(mockFeatureTree))
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [projectId]);
 
@@ -201,11 +195,11 @@ export default function FeatureTree() {
           <div className="flex items-center gap-2 min-w-0">
             <Box size={14} className="text-cadblue-400 shrink-0" />
             <span className="text-xs text-slate-200 font-medium truncate">
-              {projectId && !IS_DEMO ? `Project ${projectId.slice(0, 8)}` : 'wing_panel_drill_jig'}
+              {projectId ? `Project ${projectId.slice(0, 8)}` : 'No project'}
             </span>
           </div>
           <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded shrink-0">
-            {IS_DEMO ? 'Rev B' : 'OCCT'}
+            OCCT
           </span>
         </div>
         {state.features && (

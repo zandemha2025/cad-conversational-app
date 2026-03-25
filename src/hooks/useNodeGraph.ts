@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchNodeGraph, IS_DEMO } from '../lib/api';
+import { fetchNodeGraph } from '../lib/api';
 import type { ApiNodeGraph } from '../types';
 
 interface NodeGraphResult {
@@ -16,7 +16,7 @@ export function useNodeGraph(projectId: string | undefined): NodeGraphResult {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (!projectId || IS_DEMO) return;
+    if (!projectId) return;
 
     setLoading(true);
     setError(null);
