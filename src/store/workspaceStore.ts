@@ -25,6 +25,7 @@ interface WorkspaceState {
   features: PartFeatures | null;
   touchpoints: ApiTouchpoint[];
   gltfUrl: string | null;
+  fixtureVersion: number | null;
   generationProgress: { status: string; message: string; progress: number } | null;
   touchpointMode: boolean;
 }
@@ -37,6 +38,7 @@ type Action =
   | { type: 'ADD_TOUCHPOINT'; tp: ApiTouchpoint }
   | { type: 'REMOVE_TOUCHPOINT'; id: string }
   | { type: 'SET_GLTF_URL'; url: string | null }
+  | { type: 'SET_FIXTURE'; url: string | null; version: number | null }
   | { type: 'SET_GEN_PROGRESS'; payload: WorkspaceState['generationProgress'] }
   | { type: 'SET_TOUCHPOINT_MODE'; active: boolean };
 
@@ -56,6 +58,8 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, touchpoints: state.touchpoints.filter(t => t.id !== action.id) };
     case 'SET_GLTF_URL':
       return { ...state, gltfUrl: action.url };
+    case 'SET_FIXTURE':
+      return { ...state, gltfUrl: action.url, fixtureVersion: action.version };
     case 'SET_GEN_PROGRESS':
       return { ...state, generationProgress: action.payload };
     case 'SET_TOUCHPOINT_MODE':
@@ -71,6 +75,7 @@ const initialState: WorkspaceState = {
   features: null,
   touchpoints: [],
   gltfUrl: null,
+  fixtureVersion: null,
   generationProgress: null,
   touchpointMode: false,
 };

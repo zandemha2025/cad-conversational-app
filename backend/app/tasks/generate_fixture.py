@@ -45,8 +45,13 @@ def _publish(project_id: str, data: dict):
 
 
 @celery_app.task(name="app.tasks.generate_fixture.generate_fixture_task", bind=True, max_retries=1)
-def generate_fixture_task(self, project_id: str, user_prompt: str | None):
-    log.info("generate_fixture project=%s", project_id)
+def generate_fixture_task(
+    self,
+    project_id: str,
+    user_prompt: str | None,
+    previous_description: str | None = None,
+):
+    log.info("generate_fixture project=%s modification=%s", project_id, bool(previous_description))
     sb = get_supabase_client()
 
     # ── Fetch context ──────────────────────────────────────────────────────────
@@ -77,13 +82,23 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     # ── KCL generation ─────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Generating KCL code…", "progress": 0.25})
 
+    # When modifying an existing design, prepend the previous description so
+    # Gemini understands what it's working with.
+    kcl_prompt = user_prompt or f"Generate a {template_id} fixture"
+    if previous_description:
+        kcl_prompt = (
+            f"EXISTING FIXTURE DESIGN:\n{previous_description}\n\n"
+            f"MODIFICATION REQUESTED:\n{kcl_prompt}\n\n"
+            "Generate updated KCL that incorporates this modification into the existing design."
+        )
+
     kcl = _run_async(gemini.generate_kcl(
         part_features=features,
         touchpoints=touchpoints,
         environment=env,
         printer_profile=printer,
         template_id=template_id,
-        user_prompt=user_prompt or f"Generate a {template_id} fixture",
+        user_prompt=kcl_prompt,
     ))
 
     # ── Zoo.dev compilation ────────────────────────────────────────────────────
@@ -104,6 +119,20 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "generation_prompt": user_prompt,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
+
+    # Generate and save design_description (best-effort — column may not exist yet)
+    _publish(project_id, {"status": "generating", "message": "Summarizing design…", "progress": 0.60})
+    try:
+        design_description = _run_async(gemini.summarize_fixture_design(
+            kcl_code=kcl,
+            user_prompt=user_prompt or kcl_prompt,
+        ))
+        sb.table("fixture_geometries").update(
+            {"design_description": design_description}
+        ).eq("id", fixture_id).execute()
+        log.info("design_description saved for fixture=%s", fixture_id)
+    except Exception as e:
+        log.warning("Could not save design_description for fixture=%s: %s", fixture_id, e)
 
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.70})

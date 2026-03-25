@@ -96,23 +96,66 @@ async def chat_ws(websocket: WebSocket, project_id: str):
             # Notify client we're responding
             await websocket.send_json({"type": "thinking", "intent": intent})
 
-            # If fixture generation is requested → queue Celery job and notify
-            if intent == "fixture_generation":
+            # ── Fixture generation / modification → queue Celery job ──────────
+            if intent in ("fixture_generation", "fixture_modification"):
                 from app.tasks.generate_fixture import generate_fixture_task
+
+                previous_description: str | None = None
+                combined_prompt = content
+
+                if intent == "fixture_modification":
+                    # Fetch the latest fixture geometry to get its design context
+                    try:
+                        fg_res = (
+                            sb.table("fixture_geometries")
+                            .select("version,generation_prompt,design_description")
+                            .eq("project_id", project_id)
+                            .order("version", desc=True)
+                            .limit(1)
+                            .execute()
+                        )
+                        if fg_res.data:
+                            row = fg_res.data[0]
+                            # Prefer design_description (AI summary); fall back to generation_prompt
+                            previous_description = (
+                                row.get("design_description") or row.get("generation_prompt")
+                            )
+                    except Exception as e:
+                        log.warning("Could not fetch previous fixture context: %s", e)
+
                 job = generate_fixture_task.apply_async(
-                    args=[project_id, content],
+                    args=[project_id, combined_prompt],
+                    kwargs={"previous_description": previous_description},
                     queue="normal",
+                )
+
+                queue_msg = (
+                    "Updating your fixture — this takes about 15 seconds."
+                    if intent == "fixture_modification"
+                    else "Generating your fixture — this takes about 15 seconds."
                 )
                 await websocket.send_json({
                     "type": "generation_queued",
                     "job_id": job.id,
-                    "message": "Generating your fixture — this takes about 15 seconds.",
+                    "message": queue_msg,
                 })
-                # Still stream a brief explanation
-                explanation_prompt = (
-                    f"The engineer requested: {content!r}. "
-                    "Briefly confirm what you're generating and what to expect."
-                )
+
+                # Stream a brief explanation acknowledging what's changing
+                if intent == "fixture_modification" and previous_description:
+                    explanation_prompt = (
+                        f"The engineer wants to modify an existing fixture. "
+                        f"Current design: {previous_description[:300]}. "
+                        f"Requested change: {content!r}. "
+                        "In 1–2 sentences, confirm what you're changing and what to expect. "
+                        "Be specific about the modification (e.g. 'I'll increase the base plate "
+                        "thickness to 8mm and regenerate the model...')."
+                    )
+                else:
+                    explanation_prompt = (
+                        f"The engineer requested: {content!r}. "
+                        "Briefly confirm what you're generating and what to expect."
+                    )
+
                 full_response = ""
                 async for chunk in gemini.stream_chat(explanation_prompt, history, project_ctx):
                     full_response += chunk

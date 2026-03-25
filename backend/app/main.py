@@ -88,9 +88,12 @@ app.include_router(materials_router,          prefix=API)  # public, no auth
 app.include_router(tolerance_stack_router,    prefix=API)
 
 
-# ── Startup validation ────────────────────────────────────────────────────────
+# ── Startup validation + migrations ───────────────────────────────────────────
 @app.on_event("startup")
 async def validate_config():
+    import logging
+    log = logging.getLogger(__name__)
+
     missing = []
     if not settings.SUPABASE_URL:
         missing.append("SUPABASE_URL")
@@ -99,15 +102,25 @@ async def validate_config():
     if not settings.SUPABASE_JWT_SECRET:
         missing.append("SUPABASE_JWT_SECRET")
     if missing:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Missing env vars (auth will fail): %s", ", ".join(missing)
-        )
+        log.warning("Missing env vars (auth will fail): %s", ", ".join(missing))
     if not settings.GEMINI_API_KEY:
-        import logging
-        logging.getLogger(__name__).warning(
-            "GEMINI_API_KEY not set — AI features will use stub responses"
-        )
+        log.warning("GEMINI_API_KEY not set — AI features will use stub responses")
+
+    # Best-effort schema migration — runs only when DATABASE_URL is configured
+    if settings.DATABASE_URL:
+        try:
+            from sqlalchemy import text
+            from app.core.database import get_engine
+            engine = get_engine()
+            if engine:
+                async with engine.begin() as conn:
+                    await conn.execute(text(
+                        "ALTER TABLE fixture_geometries "
+                        "ADD COLUMN IF NOT EXISTS design_description TEXT"
+                    ))
+                log.info("Schema migration OK: fixture_geometries.design_description")
+        except Exception as exc:
+            log.warning("Schema migration skipped: %s", exc)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

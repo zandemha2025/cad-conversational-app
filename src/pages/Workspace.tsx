@@ -55,12 +55,12 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const { state, dispatch }       = useWorkspace();
 
   // Load fixture geometry + part features
-  const { gltfUrl, partFeatures } = useFixtureGeometry(projectId);
+  const { gltfUrl, version, partFeatures } = useFixtureGeometry(projectId);
 
-  // Sync gltfUrl into workspace context
+  // Sync gltfUrl + version into workspace context on initial load
   useEffect(() => {
-    if (gltfUrl) dispatch({ type: 'SET_GLTF_URL', url: gltfUrl });
-  }, [gltfUrl, dispatch]);
+    if (gltfUrl) dispatch({ type: 'SET_FIXTURE', url: gltfUrl, version: version ?? null });
+  }, [gltfUrl, version, dispatch]);
 
   // Sync part features into workspace context
   useEffect(() => {
@@ -90,8 +90,14 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
         }).catch(() => {});
       }
     },
-    onFixtureGenerated: () => {
-      dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
+    onFixtureGenerated: (payload: unknown) => {
+      // Extract gltf_url + version from the Supabase Realtime INSERT payload
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const record = (payload as any)?.new;
+      if (record?.gltf_url) {
+        dispatch({ type: 'SET_FIXTURE', url: record.gltf_url, version: record.version ?? null });
+      }
+      dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: `Design updated — v${record?.version ?? '?'}`, progress: 100 } });
     },
   });
 
@@ -225,6 +231,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               <Viewport3D
                 touchpointMode={leftPanel === 'touchpoints' && showLeft}
                 gltfUrl={state.gltfUrl}
+                fixtureVersion={state.fixtureVersion}
                 projectId={projectId}
               />
             </div>

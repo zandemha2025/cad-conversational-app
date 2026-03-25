@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 # GENERATION_INTENTS that should be routed to Gemini Pro
-PRO_INTENTS = {"fixture_generation", "geometry_modification", "kcl_revision"}
+PRO_INTENTS = {"fixture_generation", "fixture_modification", "geometry_modification", "kcl_revision"}
 
 
 def _load_prompt(name: str) -> str:
@@ -234,6 +234,43 @@ class GeminiService:
         except Exception as e:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
+
+    # ── Design description summarizer (Flash) ─────────────────────────────────
+    async def summarize_fixture_design(
+        self,
+        kcl_code: str,
+        user_prompt: str,
+    ) -> str:
+        """
+        Given the KCL source for a generated fixture, produce a concise
+        engineering description (2–4 sentences) that captures key dimensions,
+        features, and materials.  This description is stored as design_description
+        and prepended to the next modification request so the AI understands
+        what already exists.
+        """
+        if not settings.GEMINI_API_KEY:
+            return user_prompt  # fallback: use the original prompt as context
+
+        prompt = (
+            "You are a fixture design engineer. Given the KCL source code for a "
+            "machining fixture, write a concise technical description (2–4 sentences) "
+            "of what the fixture looks like. Focus on: overall dimensions (length × width × "
+            "height in mm), key features (base plate, locating pins, clamp pads, drill "
+            "bushings, slots), materials if specified, and any notable geometry. "
+            "This description will be used to provide context for future modifications — "
+            "write it as a factual summary, not instructions.\n\n"
+            f"USER INTENT: {user_prompt}\n\n"
+            f"KCL SOURCE:\n{kcl_code[:4000]}"  # truncate for token budget
+        )
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            return resp.text.strip()
+        except Exception as e:
+            log.error("summarize_fixture_design error: %s", e)
+            return user_prompt  # fallback
 
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(

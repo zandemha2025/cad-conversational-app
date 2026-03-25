@@ -1,4 +1,4 @@
-import { useState, Suspense, useCallback } from 'react';
+import { useState, Suspense, useCallback, useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -210,20 +210,40 @@ type ViewAngle = 'isometric' | 'front' | 'top' | 'right';
 interface Viewport3DProps {
   touchpointMode?: boolean;
   gltfUrl?: string | null;
+  fixtureVersion?: number | null;
   projectId?: string;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId }: Viewport3DProps) {
+export default function Viewport3D({ touchpointMode = false, gltfUrl, fixtureVersion, projectId }: Viewport3DProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('shaded');
   const [viewAngle, setViewAngle] = useState<ViewAngle>('isometric');
   const [showGrid, setShowGrid] = useState(true);
   const [showAnnotations, setShowAnnotations] = useState(true);
+  const [fading, setFading] = useState(false);
+  const prevUrlRef = useRef<string | null | undefined>(undefined);
   const { state, dispatch } = useWorkspace();
 
   const resolvedGltfUrl = gltfUrl ?? state.gltfUrl;
+  const resolvedVersion = fixtureVersion ?? state.fixtureVersion;
   const features = state.features;
+
+  // Fade transition when geometry changes
+  useEffect(() => {
+    if (prevUrlRef.current === undefined) {
+      prevUrlRef.current = resolvedGltfUrl;
+      return;
+    }
+    if (resolvedGltfUrl !== prevUrlRef.current) {
+      setFading(true);
+      const t = setTimeout(() => {
+        prevUrlRef.current = resolvedGltfUrl;
+        setFading(false);
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [resolvedGltfUrl]);
 
   const handleFaceClick = useCallback(async (worldPos: THREE.Vector3) => {
     if (!touchpointMode) return;
@@ -248,7 +268,9 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   return (
     <div className="relative w-full h-full bg-cadsurface-950 overflow-hidden select-none">
       <Canvas shadows camera={{ position: [10, 7, 10], fov: 45, near: 0.1, far: 200 }}
-        gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
+        gl={{ antialias: true, preserveDrawingBuffer: true }}
+        className="absolute inset-0"
+        style={{ opacity: fading ? 0 : 1, transition: 'opacity 300ms ease' }}>
         <Suspense fallback={null}>
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
             showAnnotations={showAnnotations} showGrid={showGrid} onFaceClick={handleFaceClick} />
@@ -287,9 +309,15 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       <div className="absolute top-3 left-3 bg-cadsurface-900/80 border border-cadsurface-700 rounded-lg px-3 py-2 backdrop-blur-sm z-10">
         <div className="flex items-center gap-2">
           <p className="text-xs font-medium text-slate-200">{resolvedGltfUrl ? 'Fixture Model' : 'wing_panel_drill_jig'}</p>
-          <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
-            {resolvedGltfUrl ? 'Live' : 'Rev B'}
-          </span>
+          {resolvedGltfUrl && resolvedVersion != null ? (
+            <span className="text-xs bg-cadblue-900/50 border border-cadblue-700/50 text-cadblue-300 px-1.5 py-0.5 rounded font-mono">
+              v{resolvedVersion}
+            </span>
+          ) : (
+            <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
+              {resolvedGltfUrl ? 'Live' : 'Rev B'}
+            </span>
+          )}
         </div>
         {features ? (
           <p className="text-xs text-slate-500 mt-0.5">{features.face_count} faces · {features.hole_count} holes · {Math.round(features.volume_mm3 / 1000)} cm³</p>
