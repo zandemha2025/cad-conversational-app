@@ -64,6 +64,8 @@ from app.api.routes.studies import router as studies_router
 from app.api.routes.feature_search import router as feature_search_router
 # Assembly support (Feature 5)
 from app.api.routes.assembly import router as assembly_router
+# Standards component library (Feature 7)
+from app.api.routes.components import router as components_router
 
 API = "/api"
 
@@ -109,6 +111,8 @@ app.include_router(studies_router,            prefix=API)
 app.include_router(feature_search_router,     prefix=API)
 # Assembly support (Feature 5)
 app.include_router(assembly_router,           prefix=API)
+# Standards component library (Feature 7)
+app.include_router(components_router,         prefix=API)
 
 
 # ── Startup migrations ────────────────────────────────────────────────────────

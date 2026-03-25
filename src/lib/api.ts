@@ -1056,6 +1056,63 @@ export async function createStudy(
   });
 }
 
+// ── Standard component library ─────────────────────────────────────────────────
+
+export interface StandardComponent {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  specifications: Record<string, string | number>;
+  prompt_hint?: string;
+  thumbnail?: string;
+}
+
+export interface ComponentCategory {
+  name: string;
+  icon: string;
+  color: string;
+}
+
+export interface ComponentLibraryResponse {
+  categories: Record<string, ComponentCategory>;
+  components: StandardComponent[];
+  total: number;
+}
+
+export interface ProjectComponent {
+  id: string;
+  project_id: string;
+  component_id: string;
+  component_name: string;
+  category: string;
+  quantity: number;
+  position_notes: string;
+  specifications: Record<string, string | number>;
+  created_at?: string;
+}
+
+export interface ComponentSuggestion {
+  component_id: string;
+  quantity: number;
+  reason: string;
+}
+
+export async function fetchComponentLibrary(category?: string): Promise<ComponentLibraryResponse | null> {
+  const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+  return apiFetch<ComponentLibraryResponse>(`/components/library${qs}`);
+}
+
+export async function addComponentToProject(
+  projectId: string,
+  body: { component_id: string; quantity: number; position_notes?: string }
+): Promise<ProjectComponent | null> {
+  return apiFetch<ProjectComponent>(`/projects/${projectId}/components/add`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export async function fetchStudies(projectId: string): Promise<ApiStudy[] | null> {
   return apiFetch<ApiStudy[]>(`/projects/${projectId}/studies`);
 }
@@ -1073,4 +1130,12 @@ export async function selectStudyVariation(
     `/projects/${projectId}/studies/${studyId}/variations/${variationId}/select`,
     { method: 'POST' },
   );
+}
+
+export async function fetchProjectComponents(projectId: string): Promise<ProjectComponent[] | null> {
+  return apiFetch<ProjectComponent[]>(`/projects/${projectId}/components`);
+}
+
+export async function removeProjectComponent(projectId: string, itemId: string): Promise<null> {
+  return apiFetch(`/projects/${projectId}/components/${itemId}`, { method: 'DELETE' });
 }

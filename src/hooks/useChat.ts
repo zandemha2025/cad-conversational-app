@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WS_URL, getToken } from '../lib/api';
 import type { ChatMessage } from '../types';
+import type { ComponentSuggestion } from '../lib/api';
 
 interface UseChatOptions {
   projectId: string | undefined;
@@ -31,10 +32,11 @@ interface GenerationJob {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
-  const [messages, setMessages]         = useState<ChatMessage[]>(initialMessages);
-  const [isThinking, setIsThinking]     = useState(false);
-  const [isConnected, setIsConnected]   = useState(false);
-  const [activeGenJob, setActiveGenJob] = useState<GenerationJob | null>(null);
+  const [messages, setMessages]               = useState<ChatMessage[]>(initialMessages);
+  const [isThinking, setIsThinking]           = useState(false);
+  const [isConnected, setIsConnected]         = useState(false);
+  const [activeGenJob, setActiveGenJob]       = useState<GenerationJob | null>(null);
+  const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
 
   const wsRef          = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
@@ -89,6 +91,11 @@ export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
         return;
       }
 
+      if (msg.type === 'component_suggestions') {
+        setComponentSuggestions(msg.suggestions as ComponentSuggestion[]);
+        return;
+      }
+
       if (msg.type === 'error') {
         setIsThinking(false);
         streamingIdRef.current = null;
@@ -131,5 +138,5 @@ export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
     wsRef.current.send(JSON.stringify({ type: 'message', content, attachments }));
   }, []);
 
-  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages };
+  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, componentSuggestions };
 }

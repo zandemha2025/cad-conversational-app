@@ -22,6 +22,7 @@ import CollaborationPanel from '../components/workspace/CollaborationPanel';
 import FeatureSearch from '../components/workspace/FeatureSearch';
 import ManufacturingPanel from '../components/workspace/ManufacturingPanel';
 import AssemblyPanel from '../components/workspace/AssemblyPanel';
+import ComponentLibraryPanel from '../components/workspace/ComponentLibraryPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import OnboardingTour from '../components/OnboardingTour';
@@ -34,8 +35,9 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen,
 } from 'lucide-react';
+import type { ComponentSuggestion } from '../lib/api';
 
 type LeftPanel =
   | 'chat'
@@ -54,7 +56,8 @@ type LeftPanel =
   | 'team'
   | 'features'
   | 'manufacturing'
-  | 'assembly';
+  | 'assembly'
+  | 'parts';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -65,6 +68,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [mode, setMode]           = useState<WorkspaceMode>('part');
   const [showTour, setShowTour]   = useState(false);
   const [projectName, setProjectName] = useState<string>('');
+  const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
   const { state, dispatch }       = useWorkspace();
   const { user } = useAuth();
   const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
@@ -157,6 +161,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'features',          icon: <Search size={15} />,       title: 'Feature Search' },
     { id: 'manufacturing',     icon: <Wrench size={15} />,       title: 'Manufacturing' },
     { id: 'assembly',          icon: <Layers size={15} />,       title: 'Assembly BOM' },
+    { id: 'parts',             icon: <BookOpen size={15} />,     title: 'Parts Library' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -180,6 +185,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'features':          return 'bg-cadblue-700 text-white';
       case 'manufacturing':     return 'bg-orange-600 text-white';
       case 'assembly':          return 'bg-indigo-700 text-white';
+      case 'parts':             return 'bg-violet-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -263,7 +269,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           <>
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
-                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} />}
+                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onComponentSuggestions={setComponentSuggestions} />}
                 {leftPanel === 'tree'         && <FeatureTree />}
                 {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                 {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}
@@ -282,6 +288,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'features'          && <FeatureSearch projectId={projectId} />}
                 {leftPanel === 'manufacturing'     && <ManufacturingPanel projectId={projectId} />}
                 {leftPanel === 'assembly'          && <AssemblyPanel projectId={projectId} />}
+                {leftPanel === 'parts'             && <ComponentLibraryPanel projectId={projectId} suggestions={componentSuggestions} />}
               </div>
             )}
 
