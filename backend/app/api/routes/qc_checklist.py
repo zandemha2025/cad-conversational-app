@@ -346,6 +346,32 @@ async def generate_qc_checklist(
         + len(func_checks) + len(doc_checks)
     )
 
+    # Build frontend-compatible flat "items" array from categorised checks
+    def _to_item(raw: dict, category: str) -> dict:
+        return {
+            "id": raw.get("item_number") or raw.get("check_id") or raw.get("check_number", "—"),
+            "category": category,
+            "characteristic": (
+                raw.get("dimension") or raw.get("surface") or raw.get("characteristic") or
+                raw.get("check_description") or raw.get("requirement") or raw.get("item", "—")
+            ),
+            "nominal": str(raw.get("nominal_mm") or raw.get("nominal_ra_um") or raw.get("nominal") or "—"),
+            "tolerance": str(raw.get("tolerance_mm") or raw.get("tolerance") or "—"),
+            "method": raw.get("method", "—"),
+            "instrument": raw.get("instrument", "—"),
+            "frequency": "100%",
+            "accept_criteria": raw.get("accept_range") or raw.get("accept_criteria") or "Per drawing",
+            "reference": gdt_standard,
+        }
+
+    items = (
+        [_to_item(c, "Dimensional") for c in dim_checks] +
+        [_to_item(c, "Surface Finish") for c in sf_checks] +
+        [_to_item(c, "GD&T") for c in gdt_checks] +
+        [_to_item(c, "Functional") for c in func_checks] +
+        [_to_item(c, "Documentation") for c in doc_checks]
+    )
+
     return {
         "project_id": project_id,
         "project_name": proj.get("name", ""),
@@ -353,11 +379,19 @@ async def generate_qc_checklist(
         "part_number": part_number,
         "revision": revision,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "standard": gdt_standard,
         "inspection_standard": gdt_standard,
         "quality_standard": quality_standard,
         "measurement_standard": "ASME B89 series",
         "surface_texture_standard": "ASME B46.1",
         "total_check_items": total_items,
+        "summary": (
+            f"{total_items} inspection items across {len(dim_checks)} dimensional, "
+            f"{len(sf_checks)} surface finish, {len(gdt_checks)} GD&T, "
+            f"{len(func_checks)} functional, {len(doc_checks)} documentation checks. "
+            f"Standard: {gdt_standard}."
+        ),
+        "items": items,
         "dimensional_checks": dim_checks,
         "surface_finish_checks": sf_checks,
         "gdt_checks": gdt_checks,

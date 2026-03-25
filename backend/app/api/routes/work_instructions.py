@@ -474,6 +474,26 @@ async def generate_work_instructions(
     tooling = _build_tooling_list(mat_key, plastic)
     safety = _build_safety_notes(mat_key)
 
+    # Build frontend-compatible "phases" array from detailed steps
+    phases = [
+        {
+            "phase": s["step_number"],
+            "title": s["title"],
+            "operation": s.get("description", ""),
+            "tool": (s.get("tools_required") or ["—"])[0],
+            "setup": (s.get("details") or [""])[0],
+            "parameters": {
+                "Vc_m_min": str(cuts["finishing_vc"]),
+                "fz_mm":    str(cuts["feed_mm_tooth"]),
+                "ap_mm":    str(cuts["doc_finish_mm"]),
+                "time_min": str(s.get("estimated_time_min", "—")),
+            },
+            "notes": " ".join((s.get("details") or [])[1:3]),
+            "quality_check": s.get("go_nogo_criteria", ""),
+        }
+        for s in steps
+    ]
+
     return {
         "project_id": project_id,
         "project_name": proj.get("name", ""),
@@ -483,7 +503,14 @@ async def generate_work_instructions(
         "machine_type": "3-axis CNC VMC",
         "setup_time_estimate_min": setup_time,
         "run_time_estimate_min_per_part": run_time,
-        "material": mat["display_name"],
+        "material": mat_key,
+        "process": (body.process or "cnc_milling"),
+        "summary": (
+            f"{mat['display_name']} · {len(steps)}-step CNC plan · "
+            f"Est. setup: {setup_time} min, run: {run_time} min/part · "
+            f"Kc1,1={mat['kc1_1']} N/mm², Vc={cuts['roughing_vc']}–{cuts['finishing_vc']} m/min"
+        ),
+        "phases": phases,
         "steps": steps,
         "tooling_list": tooling,
         "cutting_parameters": {
