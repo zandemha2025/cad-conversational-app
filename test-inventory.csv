@@ -1,0 +1,21 @@
+part_number,description,material,quantity_on_hand,annual_usage,unit_cost,lead_time_days,supplier,category,dimensions_mm
+SA-VLV-001,"Gate Valve Handle 2-inch",Cast Iron,450,1200,12.50,45,Al-Rashid Industrial,Valve Components,80x40x25
+SA-BRK-002,"Pump Bracket Assembly",Stainless Steel 316,120,340,85.00,60,National Oilfield,Brackets,200x150x12
+SA-GSK-003,"Flange Gasket DN150",Graphite/PTFE,2000,8500,3.25,30,Saudi Seals Co,Gaskets,168x120x3
+SA-BRG-004,"Bearing Housing Cap",Aluminum 6061,85,200,45.00,90,Precision Parts LLC,Bearing Components,120x120x40
+SA-IMP-005,"Pump Impeller 6-inch",Inconel 718,15,30,1250.00,120,Flowserve,Pump Components,152x152x60
+SA-CLM-006,"Pipe Clamp 4-inch DN100",Carbon Steel,600,3200,8.75,21,Al-Jazeera Steel,Pipe Supports,120x100x50
+SA-HSG-007,"Sensor Housing Enclosure",ABS Plastic,200,800,22.00,35,Local 3D Shop,Electronics,60x40x30
+SA-SPR-008,"Return Spring Guide",Spring Steel,1500,6000,2.10,14,Saudi Springs,Springs,30x30x45
+SA-FLG-009,"Blind Flange DN200",Stainless Steel 304,45,90,320.00,75,Al-Rashid Industrial,Flanges,275x275x25
+SA-NZL-010,"Spray Nozzle Tip",Hastelloy C-276,25,60,450.00,90,Spray Systems,Nozzles,25x25x40
+SA-BKT-011,"Cable Tray Bracket",Galvanized Steel,3000,15000,4.50,10,Al-Jazeera Steel,Cable Management,150x80x3
+SA-CVR-012,"Junction Box Cover",Polycarbonate,800,4000,6.00,20,Local 3D Shop,Electronics,100x80x5
+SA-PIN-013,"Dowel Pin Lot (100pc)",Tool Steel,50,200,15.00,7,Precision Parts LLC,Fasteners,8x8x30
+SA-MNT-014,"Motor Mount Plate",Aluminum 7075,30,60,180.00,45,National Oilfield,Motor Components,300x250x15
+SA-ADT-015,"Pipe Adapter 2-to-3 inch",Stainless Steel 316,150,500,65.00,30,Al-Rashid Industrial,Pipe Fittings,100x76x60
+SA-GRD-016,"Compressor Guard Panel",Perforated Steel,40,80,95.00,60,Saudi Fabrication,Safety Guards,500x400x2
+SA-KNB-017,"Control Valve Handwheel",Cast Aluminum,200,600,18.00,30,Al-Rashid Industrial,Valve Components,120x120x35
+SA-SPC-018,"Spacer Ring DN100",PEEK,100,400,35.00,45,Precision Parts LLC,Spacers,114x100x10
+SA-FTR-019,"Oil Filter Housing",Aluminum 6061,60,180,120.00,60,Flowserve,Filter Components,80x80x150
+SA-CAP-020,"Pipe End Cap DN50",Carbon Steel,1000,5000,5.50,14,Al-Jazeera Steel,Pipe Fittings,60x60x20

@@ -4,6 +4,9 @@ ScaleCAD FastAPI application entry point.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+import logging
+
+_mig_log = logging.getLogger(__name__)
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -59,6 +62,8 @@ from app.routers.manufacturing import router as manufacturing_router
 from app.api.routes.studies import router as studies_router
 # Feature search (Sprint 7)
 from app.api.routes.feature_search import router as feature_search_router
+# Assembly support (Feature 5)
+from app.api.routes.assembly import router as assembly_router
 
 API = "/api"
 
@@ -102,6 +107,57 @@ app.include_router(manufacturing_router,      prefix=API)
 app.include_router(studies_router,            prefix=API)
 # Feature search (Sprint 7)
 app.include_router(feature_search_router,     prefix=API)
+# Assembly support (Feature 5)
+app.include_router(assembly_router,           prefix=API)
+
+
+# ── Startup migrations ────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def run_migrations():
+    """Run idempotent DDL migrations on startup."""
+    db_url = settings.DATABASE_URL
+    if not db_url:
+        _mig_log.warning("DATABASE_URL not set — skipping startup migrations")
+        return
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text
+        # Ensure URL uses asyncpg driver and has SSL for Supabase pooler
+        if db_url.startswith("postgresql://") and "asyncpg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        engine = create_async_engine(
+            db_url,
+            pool_pre_ping=True,
+            connect_args={"ssl": "require"} if "supabase.com" in db_url else {},
+        )
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS assembly_components (
+                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                  fixture_id UUID REFERENCES fixture_geometries(id) ON DELETE CASCADE,
+                  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+                  name TEXT NOT NULL,
+                  component_type TEXT,
+                  description TEXT,
+                  gltf_url TEXT,
+                  position_json JSONB,
+                  rotation_json JSONB,
+                  material TEXT,
+                  created_at TIMESTAMPTZ DEFAULT now()
+                )
+            """))
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_assembly_components_project_id
+                ON assembly_components(project_id)
+            """))
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_assembly_components_fixture_id
+                ON assembly_components(fixture_id)
+            """))
+        await engine.dispose()
+        _mig_log.info("Startup migrations complete")
+    except Exception as e:
+        _mig_log.error("Startup migration failed: %s", e)
 
 
 # ── Startup validation + DB migrations ────────────────────────────────────────

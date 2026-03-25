@@ -19,6 +19,20 @@ export interface SelectedFeature {
   depth?: number;
 }
 
+export interface AssemblyComponent {
+  id: string;
+  fixture_id: string;
+  project_id: string;
+  name: string;
+  component_type: 'base' | 'clamp' | 'pin' | 'spacer' | 'bracket' | 'bushing' | 'custom';
+  description: string;
+  gltf_url: string | null;
+  position_json: { x: number; y: number; z: number } | null;
+  rotation_json: { x: number; y: number; z: number } | null;
+  material: string;
+  created_at: string;
+}
+
 interface WorkspaceState {
   projectId: string | null;
   selectedFeature: SelectedFeature | null;
@@ -36,6 +50,9 @@ interface WorkspaceState {
   costEstimate: CostEstimate | null;
   shoppingList: ShoppingListItem[];
   inventory: InventoryItem[];
+  // Assembly state
+  assemblyComponents: AssemblyComponent[];
+  hoveredComponentId: string | null;
 }
 
 type Action =
@@ -57,7 +74,10 @@ type Action =
   | { type: 'SET_MACHINES'; machines: Machine[] }
   | { type: 'SET_COST_ESTIMATE'; estimate: CostEstimate | null }
   | { type: 'SET_SHOPPING_LIST'; items: ShoppingListItem[] }
-  | { type: 'SET_INVENTORY'; items: InventoryItem[] };
+  | { type: 'SET_INVENTORY'; items: InventoryItem[] }
+  // Assembly actions
+  | { type: 'SET_ASSEMBLY_COMPONENTS'; components: AssemblyComponent[] }
+  | { type: 'SET_HOVERED_COMPONENT'; id: string | null };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -97,6 +117,11 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, shoppingList: action.items };
     case 'SET_INVENTORY':
       return { ...state, inventory: action.items };
+    // Assembly cases
+    case 'SET_ASSEMBLY_COMPONENTS':
+      return { ...state, assemblyComponents: action.components };
+    case 'SET_HOVERED_COMPONENT':
+      return { ...state, hoveredComponentId: action.id };
     default:
       return state;
   }
@@ -117,6 +142,8 @@ const initialState: WorkspaceState = {
   costEstimate: null,
   shoppingList: [],
   inventory: [],
+  assemblyComponents: [],
+  hoveredComponentId: null,
 };
 
 import React from 'react';

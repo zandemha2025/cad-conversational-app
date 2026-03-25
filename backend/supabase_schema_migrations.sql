@@ -283,5 +283,22 @@ SELECT * FROM (VALUES
 ) AS v(part_number, name, category, supplier, specs_json, price_usd, in_stock, preferred)
 WHERE NOT EXISTS (SELECT 1 FROM hardware_catalog LIMIT 1);
 
+-- ── Feature 5: Assembly Components ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS assembly_components (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fixture_id     UUID REFERENCES fixture_geometries(id) ON DELETE CASCADE,
+  project_id     UUID REFERENCES projects(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL,
+  component_type TEXT,  -- 'base', 'clamp', 'pin', 'spacer', 'bracket', 'bushing', 'custom'
+  description    TEXT,
+  gltf_url       TEXT,
+  position_json  JSONB,  -- {x, y, z} offset from assembly origin
+  rotation_json  JSONB,  -- {x, y, z} euler angles
+  material       TEXT,
+  created_at     TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_assembly_components_project_id ON assembly_components(project_id);
+CREATE INDEX IF NOT EXISTS idx_assembly_components_fixture_id ON assembly_components(fixture_id);
+
 -- Done
 SELECT 'ScaleCAD migrations applied successfully' AS result;

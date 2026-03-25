@@ -21,6 +21,7 @@ import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
 import CollaborationPanel from '../components/workspace/CollaborationPanel';
 import FeatureSearch from '../components/workspace/FeatureSearch';
 import ManufacturingPanel from '../components/workspace/ManufacturingPanel';
+import AssemblyPanel from '../components/workspace/AssemblyPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import OnboardingTour from '../components/OnboardingTour';
@@ -33,7 +34,7 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers,
 } from 'lucide-react';
 
 type LeftPanel =
@@ -52,7 +53,8 @@ type LeftPanel =
   | 'tolerance_stack'
   | 'team'
   | 'features'
-  | 'manufacturing';
+  | 'manufacturing'
+  | 'assembly';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -154,6 +156,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'team',              icon: <Users size={15} />,        title: 'Team & Collaboration', badge: viewers.length > 1 ? viewers.length : undefined },
     { id: 'features',          icon: <Search size={15} />,       title: 'Feature Search' },
     { id: 'manufacturing',     icon: <Wrench size={15} />,       title: 'Manufacturing' },
+    { id: 'assembly',          icon: <Layers size={15} />,       title: 'Assembly BOM' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -176,6 +179,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'team':              return 'bg-cadblue-700 text-white';
       case 'features':          return 'bg-cadblue-700 text-white';
       case 'manufacturing':     return 'bg-orange-600 text-white';
+      case 'assembly':          return 'bg-indigo-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -277,6 +281,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 )}
                 {leftPanel === 'features'          && <FeatureSearch projectId={projectId} />}
                 {leftPanel === 'manufacturing'     && <ManufacturingPanel projectId={projectId} />}
+                {leftPanel === 'assembly'          && <AssemblyPanel projectId={projectId} />}
               </div>
             )}
 

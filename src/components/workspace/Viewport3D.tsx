@@ -4,7 +4,7 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, 
 import * as THREE from 'three';
 import {
   Maximize2, Grid3x3, Eye, Sun, Box, Layers, RefreshCw,
-  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target,
+  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, ChevronRight,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
 import { addTouchpoint } from '../../lib/api';
@@ -225,6 +225,31 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
           </span>
         </div>
       )}
+
+
+      {/* Assembly component hover banner */}
+      {!touchpointMode && state.hoveredComponentId && (() => {
+        const comp = state.assemblyComponents.find(c => c.id === state.hoveredComponentId);
+        if (!comp) return null;
+        const typeColors: Record<string, string> = {
+          base: 'text-slate-300', clamp: 'text-blue-300', pin: 'text-yellow-300',
+          spacer: 'text-cyan-300', bracket: 'text-purple-300', bushing: 'text-orange-300', custom: 'text-slate-400',
+        };
+        const color = typeColors[comp.component_type] ?? typeColors.custom;
+        return (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-indigo-900/40 border border-indigo-700/60 rounded-full px-4 py-1.5 backdrop-blur-sm z-10">
+            <Layers size={11} className="text-indigo-400" />
+            <span className={`text-xs font-medium ${color}`}>{comp.name}</span>
+            {comp.material && (
+              <>
+                <ChevronRight size={10} className="text-slate-600" />
+                <span className="text-xs text-slate-400 font-mono">{comp.material}</span>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
 
       {/* Touchpoint mode banner */}
       {touchpointMode && (
