@@ -341,7 +341,11 @@ export default function Home() {
                 }`}
               >
                 {f}
-                {f === 'active' && <span className="ml-1.5 bg-cadblue-900 text-cadblue-300 px-1 rounded text-xs">3</span>}
+                {f === 'active' && allProjects.filter(p => p.status === 'active').length > 0 && (
+                  <span className="ml-1.5 bg-cadblue-900 text-cadblue-300 px-1 rounded text-xs">
+                    {allProjects.filter(p => p.status === 'active').length}
+                  </span>
+                )}
               </button>
             ))}
           </div>

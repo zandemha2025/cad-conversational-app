@@ -17,7 +17,9 @@ export function useAuth() {
     // Decode name/email from JWT payload (no verification needed client-side)
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      return { email: payload.email ?? '', name: payload.name ?? payload.email ?? '' };
+      const email = payload.email ?? '';
+      const name = payload.name ?? payload.full_name ?? payload.user_metadata?.full_name ?? email.split('@')[0] ?? '';
+      return { email, name };
     } catch {
       return null;
     }

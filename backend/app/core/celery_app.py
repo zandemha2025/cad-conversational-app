@@ -1,3 +1,4 @@
+import ssl
 from celery import Celery
 from app.core.config import settings
 
@@ -12,6 +13,8 @@ celery_app = Celery(
         "app.tasks.export",
     ],
 )
+
+_ssl_opts = {"ssl_cert_reqs": ssl.CERT_NONE} if settings.celery_broker.startswith("rediss://") else {}
 
 celery_app.conf.update(
     task_serializer="json",
@@ -29,4 +32,5 @@ celery_app.conf.update(
         "app.tasks.export.*":          {"queue": "low"},
     },
     task_default_queue="normal",
+    **(_ssl_opts and {"broker_use_ssl": _ssl_opts, "redis_backend_use_ssl": _ssl_opts} or {}),
 )
