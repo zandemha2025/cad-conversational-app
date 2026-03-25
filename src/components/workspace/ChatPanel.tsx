@@ -95,7 +95,7 @@ export default function ChatPanel({ projectId }: ChatPanelProps) {
         <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
           <Target size={11} />
           <span className="font-medium">Context:</span>
-          <span className="text-slate-400">Drill Jig · 3-2-1 Locating · ASME Y14.5 · AS9100</span>
+          <span className="text-slate-400">ASME Y14.5 · AS9100 · 3-2-1 Locating</span>
         </div>
       </div>
 

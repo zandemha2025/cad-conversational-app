@@ -12,77 +12,9 @@ import {
 import {
   fetchFeatures, searchFeatures,
   type PartFeature, type FeatureListResult,
-  IS_DEMO,
 } from '../../lib/api';
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
-
-const DEMO_FEATURES: PartFeature[] = [
-  {
-    id: 'bounding_box',
-    type: 'bounding_box',
-    name: 'Bounding Box 165×115×15mm',
-    params: { x_mm: 165, y_mm: 115, z_mm: 15, volume_mm3: 18750, surface_area_mm2: 8940 },
-    location: [82.5, 57.5, 7.5],
-    dependencies: [],
-  },
-  {
-    id: 'face_001',
-    type: 'face',
-    name: 'Face face_001',
-    params: { area_mm2: 150, normal: [0, 0, -1], is_planar: true, is_datum_candidate: true },
-    location: [82.5, 57.5, 0],
-    dependencies: ['bounding_box'],
-  },
-  {
-    id: 'face_002',
-    type: 'face',
-    name: 'Face face_002',
-    params: { area_mm2: 150, normal: [0, 0, 1], is_planar: true, is_datum_candidate: false },
-    location: [82.5, 57.5, 15],
-    dependencies: ['bounding_box'],
-  },
-  {
-    id: 'hole_000',
-    type: 'hole',
-    name: 'Hole Ø6.0mm',
-    params: { diameter_mm: 6.0, depth_mm: 15.0, axis: [0, 0, -1], is_through_hole: true },
-    location: [50, 50, 7.5],
-    dependencies: [],
-  },
-  {
-    id: 'hole_001',
-    type: 'hole',
-    name: 'Hole Ø6.0mm',
-    params: { diameter_mm: 6.0, depth_mm: 15.0, axis: [0, 0, -1], is_through_hole: true },
-    location: [115, 50, 7.5],
-    dependencies: [],
-  },
-  {
-    id: 'hole_002',
-    type: 'hole',
-    name: 'Hole Ø10.0mm',
-    params: { diameter_mm: 10.0, depth_mm: 15.0, axis: [0, 0, -1], is_through_hole: true },
-    location: [30, 30, 7.5],
-    dependencies: [],
-  },
-  {
-    id: 'hole_003',
-    type: 'hole',
-    name: 'Hole Ø10.0mm',
-    params: { diameter_mm: 10.0, depth_mm: 15.0, axis: [0, 0, -1], is_through_hole: true },
-    location: [135, 85, 7.5],
-    dependencies: [],
-  },
-  {
-    id: 'geometry_summary',
-    type: 'summary',
-    name: 'Geometry Summary',
-    params: { face_count: 24, edge_count: 36, hole_count: 4, volume_mm3: 18750, surface_area_mm2: 8940 },
-    location: null,
-    dependencies: [],
-  },
-];
 
 // ── Type icon mapping ──────────────────────────────────────────────────────────
 
@@ -215,8 +147,7 @@ export default function FeatureSearch({ projectId }: Props) {
 
   // ── Load all features on mount ──
   useEffect(() => {
-    if (IS_DEMO || !projectId || projectId === 'demo') {
-      setAll(DEMO_FEATURES);
+    if (!projectId || projectId === 'demo') {
       setFetching(false);
       return;
     }
@@ -226,14 +157,12 @@ export default function FeatureSearch({ projectId }: Props) {
         if (data?.features && data.features.length > 0) {
           setAll(data.features);
         } else if (data?.status && data.status !== 'ready') {
-          setError(`Geometry ${data.status} — upload a STEP file to search features`);
-          setAll(DEMO_FEATURES);
-        } else {
-          setAll(DEMO_FEATURES);
+          setError(`Geometry ${data.status} — upload a STEP file or generate a fixture to search features`);
         }
+        // else: leave empty — no mock data
       })
       .catch(() => {
-        setAll(DEMO_FEATURES);
+        setError('Could not load features. Check your connection.');
       })
       .finally(() => setFetching(false));
   }, [projectId]);
@@ -249,8 +178,8 @@ export default function FeatureSearch({ projectId }: Props) {
     }
 
     debounceRef.current = setTimeout(async () => {
-      if (IS_DEMO || !projectId || projectId === 'demo') {
-        // Client-side search on demo data
+      if (!projectId || projectId === 'demo') {
+        // Client-side search on local features
         const q = val.toLowerCase();
         const matched = allFeatures.filter(f =>
           f.name.toLowerCase().includes(q) ||

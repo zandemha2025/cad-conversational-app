@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { fetchValidationResults, runValidation, IS_DEMO } from '../../lib/api';
+import { fetchValidationResults, runValidation } from '../../lib/api';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -33,50 +33,6 @@ interface Issue {
   fix?: string;
   nodeRef?: string;
 }
-
-// ── Demo fallback data ─────────────────────────────────────────────────────────
-
-const DEMO_ISSUES: Record<Method, Issue[]> = {
-  fdm: [
-    { id: 'fdm-ok1', severity: 'ok', title: 'Wall thickness OK — 3.2mm ≥ 0.8mm minimum', detail: 'Thinnest section (3.2mm) clears the 0.4mm nozzle × 2 requirement.' },
-    { id: 'fdm-ok2', severity: 'ok', title: 'No overhangs exceed 45° — support-free print possible', detail: 'All face normals are within the printable overhang angle for this profile.' },
-    { id: 'fdm-ok3', severity: 'ok', title: 'All bore diameters within FDM printability range', detail: 'All holes ≥ 1.6mm minimum for 0.4mm nozzle.' },
-    { id: 'fdm-ok4', severity: 'ok', title: 'Part height adequate — elephant foot risk low', detail: 'Part height 15.0mm. First-layer expansion will not significantly affect geometry.' },
-    {
-      id: 'fdm-w1',
-      severity: 'warning',
-      title: 'Bushing bore tolerance not compensated',
-      detail: 'Bushing seat bore is modelled at nominal Ø10.0mm. With 0.4mm nozzle, FDM typically undersizes bores by 0.2–0.4mm.',
-      fix: 'Enable tolerance offset (+0.20mm ID compensation)',
-    },
-    { id: 'fdm-i1', severity: 'info', title: 'PA12-CF requires pre-drying', detail: 'PA12 Nylon with carbon fibre fill must be dried at 80°C for 4–6h before printing.' },
-  ],
-  cnc: [
-    { id: 'cnc-ok1', severity: 'ok', title: 'Simple geometry — internal corner count within CNC accessibility', detail: 'Part has 6 faces. Low complexity reduces tool access risk.' },
-    { id: 'cnc-ok2', severity: 'ok', title: 'Depth/width ratio 0.75:1 — within CNC reach limits', detail: 'Standard end mills can access this pocket depth without chatter risk.' },
-    { id: 'cnc-ok3', severity: 'ok', title: '2× Ø6mm holes — radius and depth consistent (15.0mm deep)', detail: 'All Ø6mm holes are geometrically consistent.' },
-    { id: 'cnc-ok4', severity: 'ok', title: '4 datum face(s) are planar — CNC machinable', detail: 'Flat datum faces can be precision-ground or face-milled to flatness spec.' },
-    { id: 'cnc-w1', severity: 'warning', title: 'Verify internal corner radii ≥ tool radius', detail: 'CNC cannot cut internal square corners. All internal corners need a fillet.', fix: 'Add R3mm fillets to all internal pockets.' },
-  ],
-  laser: [
-    { id: 'laser-ok1', severity: 'ok', title: 'Part Z-height 15mm — within laser sheet range', detail: 'Part is thin enough to be laser-cut from sheet stock.' },
-    { id: 'laser-ok2', severity: 'ok', title: 'All holes above laser minimum diameter', detail: 'No holes below 1.5mm — all features are laser-cuttable.' },
-    { id: 'laser-ok3', severity: 'ok', title: 'Part appears laser-compatible for base plate profiling', detail: 'Flat 2D geometry suitable for laser cutting. Verify material thickness.' },
-  ],
-  functional: [
-    { id: 'func-ok1', severity: 'ok', title: '3-2-1 constraint satisfied', detail: '3 supports (Datum A) + 2 locating (Datum B) + 1 clamp (Datum C). All 6 DOF constrained.' },
-    { id: 'func-ok2', severity: 'ok', title: 'Planar surface check passed — 4 flat face(s) verified', detail: 'All planar surfaces have unit normals within tolerance. Surfaces are geometrically confirmed flat.' },
-    { id: 'func-ok3', severity: 'ok', title: 'STEP topology valid — 24 faces, 36 edges (ratio 1.5)', detail: 'Edge-to-face ratio within expected bounds for a closed manifold solid.' },
-    { id: 'func-ok4', severity: 'ok', title: 'SA/volume ratio 0.477 mm⁻¹ — geometry dimensionally sound', detail: 'Surface area: 8940mm², Volume: 18750mm³. Consistent with a well-formed solid part.' },
-    { id: 'func-ok5', severity: 'ok', title: 'All holes use standard diameter increments', detail: 'Hole diameters align with standard drill/reamer sizes for easy procurement.' },
-    { id: 'func-w1', severity: 'warning', title: 'Datum A flatness not yet verified', detail: 'Flatness of support datum faces not measured from STEP.', fix: 'Add flatness callout ≤0.05mm on Datum A face in drawing.' },
-  ],
-  standards: [
-    { id: 'std-ok1', severity: 'ok', title: 'GD&T standard set: ASME Y14.5', detail: 'Drawing will reference the correct tolerance standard.' },
-    { id: 'std-ok2', severity: 'ok', title: "Revision 'A' — drawing change control active", detail: 'Revision field is populated. Document control traceability is established.' },
-    { id: 'std-ok3', severity: 'ok', title: 'No special material certification required', detail: "Quality standard 'general' does not mandate material traceability certs." },
-  ],
-};
 
 // ── API data transformation ────────────────────────────────────────────────────
 
@@ -206,14 +162,15 @@ function IssueCard({ issue }: { issue: Issue }) {
 
 export default function ValidationPanel({ projectId = 'demo' }: { projectId?: string }) {
   const [activeMethod, setActiveMethod] = useState<Method>('fdm');
-  const [issues, setIssues] = useState<Record<Method, Issue[]>>(DEMO_ISSUES);
+  const EMPTY_ISSUES: Record<Method, Issue[]> = { fdm: [], cnc: [], laser: [], functional: [], standards: [] };
+  const [issues, setIssues] = useState<Record<Method, Issue[]>>(EMPTY_ISSUES);
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(!IS_DEMO);
+  const [fetching, setFetching] = useState(!!projectId && projectId !== 'demo');
   const [lastRun, setLastRun] = useState<string | null>(null);
 
   // ── Load results on mount ──
   useEffect(() => {
-    if (IS_DEMO || !projectId || projectId === 'demo') {
+    if (!projectId || projectId === 'demo') {
       setFetching(false);
       return;
     }
@@ -241,9 +198,7 @@ export default function ValidationPanel({ projectId = 'demo' }: { projectId?: st
   // ── Re-run ──
   const handleRerun = useCallback(async () => {
     setLoading(true);
-    if (IS_DEMO || !projectId || projectId === 'demo') {
-      await new Promise(r => setTimeout(r, 1200));
-      setLastRun(new Date().toLocaleTimeString());
+    if (!projectId || projectId === 'demo') {
       setLoading(false);
       return;
     }
