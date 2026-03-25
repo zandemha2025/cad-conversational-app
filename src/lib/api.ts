@@ -5,14 +5,13 @@
  * so callers can fall back to mock data seamlessly.
  */
 
-// In production (Vercel), default to Fly.io backend when VITE_API_URL is not set.
+// In production (Vercel), default to Fly.io backend when VITE_API_URL is not set or empty.
 // In dev, stay undefined so the Vite proxy (/api → localhost:8000) handles calls.
-const _envApiUrl = import.meta.env.VITE_API_URL as string | undefined;
-const API_URL: string | undefined = _envApiUrl ??
+// Use || (not ??) so an empty string VITE_API_URL also falls through to the production default.
+const API_URL: string | undefined = import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? 'https://scalecad-api.fly.dev' : undefined);
 
-const _envWsUrl = import.meta.env.VITE_WS_URL as string | undefined;
-export const WS_URL: string | undefined = _envWsUrl ??
+export const WS_URL: string | undefined = import.meta.env.VITE_WS_URL ||
   (import.meta.env.PROD ? 'wss://scalecad-api.fly.dev' : undefined);
 
 export const IS_DEMO = !API_URL;
