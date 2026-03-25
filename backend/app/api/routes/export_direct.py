@@ -1,6 +1,9 @@
 """
 Direct export download endpoint.
 GET /api/projects/{id}/export/{format}  — synchronous export + download
+
+Uses real OCCT solid modeling (via occt_engine) when pythonocc-core is
+available; falls back to stub generators otherwise.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, JSONResponse
@@ -11,6 +14,20 @@ import json
 import math
 
 log = logging.getLogger(__name__)
+
+# Real OCCT engine — gracefully absent if pythonocc-core not installed
+try:
+    from app.services import occt_engine as _occt
+    _OCCT_AVAILABLE = getattr(_occt, "OCCT_ENGINE_AVAILABLE", False)
+except Exception:
+    _occt = None  # type: ignore[assignment]
+    _OCCT_AVAILABLE = False
+
+log.info(
+    "occt_engine available — real geometry exports enabled"
+    if _OCCT_AVAILABLE
+    else "occt_engine not available — exports will use stub generators"
+)
 router = APIRouter(prefix="/projects", tags=["export"])
 
 SUPPORTED_FORMATS = {"step", "iges", "stl", "dxf"}
@@ -210,10 +227,15 @@ async def export_direct(
     )
     has_kcl = bool(fixture_res.data and fixture_res.data[0].get("kcl"))
 
-    # Fetch fixture KCL if available (for Zoo.dev conversion)
+    # Fetch fixture KCL if available (for Zoo.dev / OCCT conversion)
     fixture_kcl = None
     if fixture_res.data and fixture_res.data[0].get("kcl"):
         fixture_kcl = fixture_res.data[0]["kcl"]
+
+    # Full features_json for OCCT engine (keep raw dict/list, not just face list)
+    features_json_full = None
+    if geom_res.data and geom_res.data[0].get("features_json"):
+        features_json_full = geom_res.data[0]["features_json"]
 
     # Generate the export file
     if fmt == "stl":
@@ -231,6 +253,23 @@ async def export_direct(
                         "X-Export-Format": "stl",
                         "X-Project-Name": project_name,
                         "X-Source": "zoo_kcl",
+                    },
+                )
+        # Try OCCT engine (real B-rep → STL mesh)
+        if _OCCT_AVAILABLE and features_json_full is not None:
+            occt_bytes = _occt.features_to_stl_bytes(features_json_full)
+            if occt_bytes is None and fixture_kcl:
+                occt_bytes = _occt.kcl_to_stl_bytes(fixture_kcl)
+            if occt_bytes:
+                stl_fn = f"{part_number}_{project_name}.stl".replace(" ", "_")
+                return Response(
+                    content=occt_bytes,
+                    media_type=MIME_TYPES["stl"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{stl_fn}"',
+                        "X-Export-Format": "stl",
+                        "X-Project-Name": project_name,
+                        "X-Source": "occt_engine",
                     },
                 )
         content = _generate_stl_from_features(project_name, features)
@@ -254,7 +293,24 @@ async def export_direct(
                         "X-Source": "zoo_kcl",
                     },
                 )
-        # 2. Fall back to original uploaded STEP file
+        # 2. OCCT engine: build real solid from features_json → STEP AP214
+        if _OCCT_AVAILABLE and features_json_full is not None:
+            occt_bytes = _occt.features_to_step_bytes(features_json_full)
+            if occt_bytes is None and fixture_kcl:
+                occt_bytes = _occt.kcl_to_step_bytes(fixture_kcl)
+            if occt_bytes:
+                step_fn = f"{part_number}_{project_name}.step".replace(" ", "_")
+                return Response(
+                    content=occt_bytes,
+                    media_type=MIME_TYPES["step"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{step_fn}"',
+                        "X-Export-Format": "step",
+                        "X-Project-Name": project_name,
+                        "X-Source": "occt_engine",
+                    },
+                )
+        # 3. Fall back to original uploaded STEP file
         if geom_res.data and geom_res.data[0].get("step_file_url"):
             step_url = geom_res.data[0]["step_file_url"]
             return JSONResponse({
@@ -263,7 +319,7 @@ async def export_direct(
                 "source": "original_upload",
                 "note": "Redirecting to original uploaded STEP file",
             })
-        # 3. Last resort: stub
+        # 4. Last resort: stub
         content = _generate_step_stub(project_name, part_number)
         mime = MIME_TYPES["step"]
         filename = f"{part_number}_{project_name}.step".replace(" ", "_")
@@ -283,6 +339,21 @@ async def export_direct(
                         "X-Export-Format": "iges",
                         "X-Project-Name": project_name,
                         "X-Source": "zoo_kcl",
+                    },
+                )
+        # Try OCCT engine: build real solid → IGES
+        if _OCCT_AVAILABLE and features_json_full is not None:
+            occt_bytes = _occt.features_to_iges_bytes(features_json_full)
+            if occt_bytes:
+                iges_fn = f"{part_number}_{project_name}.igs".replace(" ", "_")
+                return Response(
+                    content=occt_bytes,
+                    media_type=MIME_TYPES["iges"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{iges_fn}"',
+                        "X-Export-Format": "iges",
+                        "X-Project-Name": project_name,
+                        "X-Source": "occt_engine",
                     },
                 )
         content = _generate_iges_stub(project_name, part_number)
