@@ -17,6 +17,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WS_URL, IS_DEMO, getToken } from '../lib/api';
 import type { ChatMessage } from '../types';
+import type { ComponentSuggestion } from '../lib/api';
 
 interface UseChatOptions {
   projectId: string | undefined;
@@ -197,10 +198,11 @@ In the meantime, try asking about: **3-2-1 locating**, **DFM analysis**, **GD&T 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
-  const [messages, setMessages]         = useState<ChatMessage[]>(initialMessages);
-  const [isThinking, setIsThinking]     = useState(false);
-  const [isConnected, setIsConnected]   = useState(false);
-  const [activeGenJob, setActiveGenJob] = useState<GenerationJob | null>(null);
+  const [messages, setMessages]               = useState<ChatMessage[]>(initialMessages);
+  const [isThinking, setIsThinking]           = useState(false);
+  const [isConnected, setIsConnected]         = useState(false);
+  const [activeGenJob, setActiveGenJob]       = useState<GenerationJob | null>(null);
+  const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
 
   const wsRef          = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
@@ -252,6 +254,11 @@ export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
 
       if (msg.type === 'generation_queued') {
         setActiveGenJob({ jobId: msg.job_id as string, message: msg.message as string });
+        return;
+      }
+
+      if (msg.type === 'component_suggestions') {
+        setComponentSuggestions(msg.suggestions as ComponentSuggestion[]);
         return;
       }
 
@@ -316,5 +323,5 @@ export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
     wsRef.current.send(JSON.stringify({ type: 'message', content, attachments }));
   }, []);
 
-  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages };
+  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, componentSuggestions };
 }

@@ -14,6 +14,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core.security import verify_supabase_jwt, verify_token
 from app.core.database import get_supabase_client
 from app.services.gemini_service import GeminiService
+from app.data.standard_components import STANDARD_COMPONENTS
 import uuid
 from datetime import datetime, timezone
 
@@ -118,6 +119,21 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                     full_response += chunk
                     await websocket.send_json({"type": "chunk", "content": chunk})
                 await websocket.send_json({"type": "done", "intent": intent, "job_id": job.id})
+
+                # Suggest standard components for this fixture design
+                try:
+                    catalog_hints = [
+                        f"{c['id']}: {c.get('prompt_hint', c['name'])}"
+                        for c in STANDARD_COMPONENTS
+                    ]
+                    suggestions = await gemini.suggest_components(content, catalog_hints)
+                    if suggestions:
+                        await websocket.send_json({
+                            "type": "component_suggestions",
+                            "suggestions": suggestions,
+                        })
+                except Exception as sugg_err:
+                    log.warning("suggest_components failed: %s", sugg_err)
             else:
                 # Pure conversational response — stream directly
                 full_response = ""

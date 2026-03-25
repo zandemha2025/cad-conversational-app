@@ -235,6 +235,47 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Component suggestions (Flash) ─────────────────────────────────────────
+    async def suggest_components(
+        self,
+        design_description: str,
+        catalog_hints: list[str],
+    ) -> list[dict]:
+        """
+        Given a fixture design description, return a ranked list of recommended
+        standard components with quantities.
+
+        Returns list of dicts: [{"component_id": str, "quantity": int, "reason": str}, ...]
+        """
+        if not settings.GEMINI_API_KEY:
+            return _fallback_component_suggestions(design_description)
+
+        catalog_text = "\n".join(f"- {h}" for h in catalog_hints)
+        prompt = (
+            "You are a fixture engineering expert. Given the fixture design description below, "
+            "recommend relevant standard catalog components from the provided list.\n\n"
+            f"Design description:\n{design_description}\n\n"
+            f"Available catalog components (id: description):\n{catalog_text}\n\n"
+            "Return a JSON array (no markdown, no prose) of up to 5 recommendations:\n"
+            '[{"component_id": "<id>", "quantity": <int>, "reason": "<one sentence why>"}, ...]\n'
+            "Only recommend components that are genuinely useful for this fixture. "
+            "Use the exact component_id strings from the catalog list."
+        )
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            result = json.loads(raw)
+            if isinstance(result, list):
+                return result[:5]
+        except Exception as e:
+            log.error("suggest_components error: %s", e)
+        return _fallback_component_suggestions(design_description)
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -264,6 +305,24 @@ class GeminiService:
         except Exception as e:
             log.error("explain_dfm_issue error: %s", e)
             return str(e)
+
+
+# ── Fallback component suggestions ────────────────────────────────────────────
+
+def _fallback_component_suggestions(description: str) -> list[dict]:
+    desc_lower = description.lower()
+    suggestions = []
+    if any(w in desc_lower for w in ["clamp", "hold", "fixture", "secure"]):
+        suggestions.append({"component_id": "toggle_clamp_medium", "quantity": 2, "reason": "Horizontal toggle clamps provide reliable work holding for most CNC fixtures."})
+    if any(w in desc_lower for w in ["locat", "datum", "pin", "reference"]):
+        suggestions.append({"component_id": "dowel_pin_6mm", "quantity": 2, "reason": "6mm dowel pins establish precise 3-2-1 datum locations."})
+        suggestions.append({"component_id": "diamond_pin_6mm", "quantity": 1, "reason": "Diamond pin for secondary datum prevents over-constraint."})
+    if any(w in desc_lower for w in ["support", "rest", "pad", "surface"]):
+        suggestions.append({"component_id": "rest_pad_25mm", "quantity": 3, "reason": "Three rest pads define the primary datum plane per 3-2-1 locating."})
+    if any(w in desc_lower for w in ["base", "plate", "table", "mount"]):
+        suggestions.append({"component_id": "fixture_plate_200x200", "quantity": 1, "reason": "Aluminum base plate with M8 grid provides flexible component mounting."})
+        suggestions.append({"component_id": "tslot_nut_m8", "quantity": 4, "reason": "T-slot nuts for securing the fixture to the machine table."})
+    return suggestions[:5]
 
 
 # ── Fallback proactive suggestions ───────────────────────────────────────────

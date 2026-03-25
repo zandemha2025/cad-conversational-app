@@ -17,6 +17,7 @@ import ClampingForcePanel from '../components/workspace/ClampingForcePanel';
 import WorkInstructionsPanel from '../components/workspace/WorkInstructionsPanel';
 import QcChecklistPanel from '../components/workspace/QcChecklistPanel';
 import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
+import ComponentLibraryPanel from '../components/workspace/ComponentLibraryPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
@@ -27,8 +28,9 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, BookOpen,
 } from 'lucide-react';
+import type { ComponentSuggestion } from '../lib/api';
 
 type LeftPanel =
   | 'chat'
@@ -43,7 +45,8 @@ type LeftPanel =
   | 'clamping'
   | 'work_instructions'
   | 'qc_checklist'
-  | 'tolerance_stack';
+  | 'tolerance_stack'
+  | 'parts';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -52,6 +55,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [showLeft, setShowLeft]   = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [mode, setMode]           = useState<WorkspaceMode>('part');
+  const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
   const { state, dispatch }       = useWorkspace();
 
   // Load fixture geometry + part features
@@ -116,6 +120,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'work_instructions', icon: <FileText size={15} />,     title: 'Work Instructions' },
     { id: 'qc_checklist',      icon: <Microscope size={15} />,   title: 'QC Checklist' },
     { id: 'tolerance_stack',   icon: <Ruler size={15} />,        title: 'Tolerance Stack-Up' },
+    { id: 'parts',             icon: <BookOpen size={15} />,     title: 'Parts Library' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -135,6 +140,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'work_instructions': return 'bg-cadblue-700 text-white';
       case 'qc_checklist':      return 'bg-emerald-700 text-white';
       case 'tolerance_stack':   return 'bg-violet-700 text-white';
+      case 'parts':             return 'bg-indigo-700 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -205,7 +211,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           <>
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
-                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} />}
+                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onComponentSuggestions={setComponentSuggestions} />}
                 {leftPanel === 'tree'         && <FeatureTree />}
                 {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                 {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}
@@ -218,6 +224,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
                 {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
                 {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
+                {leftPanel === 'parts'             && <ComponentLibraryPanel projectId={projectId} suggestions={componentSuggestions} />}
               </div>
             )}
 

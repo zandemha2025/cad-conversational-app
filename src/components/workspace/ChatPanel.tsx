@@ -29,6 +29,7 @@ const DEMO_PROACTIVE = [
 
 interface ChatPanelProps {
   projectId?: string;
+  onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
 }
 
 interface ProactiveSuggestion {
@@ -36,12 +37,19 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId }: ChatPanelProps) {
+export default function ChatPanel({ projectId, onComponentSuggestions }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const { messages, isThinking, isConnected, activeGenJob, sendMessage } = useChat({
+  const { messages, isThinking, isConnected, activeGenJob, sendMessage, componentSuggestions } = useChat({
     projectId,
     initialMessages: IS_DEMO ? mockChatMessages : [],
   });
+
+  // Forward component suggestions to Workspace when they arrive
+  useEffect(() => {
+    if (componentSuggestions.length > 0) {
+      onComponentSuggestions?.(componentSuggestions);
+    }
+  }, [componentSuggestions, onComponentSuggestions]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>(IS_DEMO ? DEMO_PROACTIVE : []);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
