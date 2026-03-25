@@ -57,6 +57,8 @@ from app.api.routes.collaboration import router as collaboration_router
 from app.routers.manufacturing import router as manufacturing_router
 # Study mode (Sprint 7)
 from app.api.routes.studies import router as studies_router
+# Feature search (Sprint 7)
+from app.api.routes.feature_search import router as feature_search_router
 
 API = "/api"
 
@@ -98,6 +100,8 @@ app.include_router(collaboration_router,      prefix=API)
 app.include_router(manufacturing_router,      prefix=API)
 # Study mode (Sprint 7)
 app.include_router(studies_router,            prefix=API)
+# Feature search (Sprint 7)
+app.include_router(feature_search_router,     prefix=API)
 
 
 # ── Startup validation + DB migrations ────────────────────────────────────────
