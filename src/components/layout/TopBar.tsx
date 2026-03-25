@@ -23,7 +23,131 @@ import {
   Shield,
   Users,
   LogOut,
+  Copy,
+  Check,
+  X,
+  Link2,
 } from 'lucide-react';
+import { createShareLink, type ShareResponse } from '../../lib/api';
+
+// ── Share modal ───────────────────────────────────────────────────────────────
+
+function ShareModal({ projectId, onClose }: { projectId?: string; onClose: () => void }) {
+  const [permission, setPermission] = useState<'view' | 'edit'>('view');
+  const [share, setShare] = useState<ShareResponse | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function handleCreate() {
+    if (!projectId) return;
+    setCreating(true);
+    const s = await createShareLink(projectId, { permission });
+    setShare(s);
+    setCreating(false);
+  }
+
+  function handleCopy() {
+    if (!share) return;
+    const url = `${window.location.origin}/shared/${share.share_token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  const shareUrl = share ? `${window.location.origin}/shared/${share.share_token}` : '';
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none px-4">
+        <div
+          className="pointer-events-auto w-full max-w-sm bg-cadsurface-900 border border-cadsurface-700 rounded-2xl shadow-2xl overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-cadsurface-700">
+            <div className="flex items-center gap-2">
+              <Link2 size={14} className="text-cadblue-400" />
+              <span className="text-sm font-semibold text-slate-200">Share Project</span>
+            </div>
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-200 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {!share ? (
+              <>
+                <p className="text-xs text-slate-400">
+                  Generate a link so teammates can view (or edit) this project without logging in.
+                </p>
+
+                {/* Permission picker */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5 font-medium">Access level</p>
+                  <div className="flex gap-2">
+                    {(['view', 'edit'] as const).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setPermission(p)}
+                        className={`flex-1 py-2 text-xs rounded-lg border transition-all ${
+                          permission === p
+                            ? p === 'edit'
+                              ? 'bg-amber-600/20 border-amber-600/50 text-amber-300 font-medium'
+                              : 'bg-cadblue-600/20 border-cadblue-600/50 text-cadblue-300 font-medium'
+                            : 'border-cadsurface-600 text-slate-500 hover:text-slate-300 hover:border-cadsurface-500'
+                        }`}
+                      >
+                        {p === 'view' ? '👁 View only' : '✏️ Can edit'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreate}
+                  disabled={creating || !projectId}
+                  className="w-full py-2 bg-cadblue-600 hover:bg-cadblue-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {creating ? 'Generating…' : 'Generate link'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-950/30 border border-emerald-900/50 rounded-lg">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-xs text-emerald-400">
+                    Link created · {share.permission === 'edit' ? 'Can edit' : 'View only'}
+                  </span>
+                </div>
+
+                <div className="bg-cadsurface-800 border border-cadsurface-600 rounded-lg p-3">
+                  <p className="text-xs font-mono text-slate-400 break-all leading-relaxed">{shareUrl}</p>
+                </div>
+
+                <button
+                  onClick={handleCopy}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-cadsurface-700 hover:bg-cadsurface-600 text-sm text-slate-200 font-medium rounded-lg transition-colors"
+                >
+                  {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  {copied ? 'Copied to clipboard!' : 'Copy link'}
+                </button>
+
+                <button
+                  onClick={() => setShare(null)}
+                  className="w-full text-xs text-slate-600 hover:text-slate-400 transition-colors"
+                >
+                  Create another link
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 export type WorkspaceMode = 'part' | 'assembly' | 'drawing' | 'nodes';
 
@@ -33,13 +157,14 @@ interface TopBarProps {
   projectId?: string;
 }
 
-export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
+export default function TopBar({ mode = 'part', onModeChange, projectId }: TopBarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isWorkspace = location.pathname.startsWith('/workspace');
   const [saved] = useState(true);
   const [showStandards, setShowStandards] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   return (
     <header className="h-11 bg-cadsurface-900 border-b border-cadsurface-700 flex items-center px-3 gap-1 shrink-0 z-50 select-none">
@@ -182,9 +307,16 @@ export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
 
           <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
 
-          <button className="flex items-center gap-1.5 btn-ghost text-xs rounded-md px-2 py-1 border border-cadsurface-700 hover:border-cadblue-600/50">
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center gap-1.5 btn-ghost text-xs rounded-md px-2 py-1 border border-cadsurface-700 hover:border-cadblue-600/50"
+          >
             <Share2 size={13} />Share<ChevronDown size={11} />
           </button>
+
+          {showShareModal && (
+            <ShareModal projectId={projectId} onClose={() => setShowShareModal(false)} />
+          )}
 
           {/* DFM indicator */}
           <div className="flex items-center gap-1 ml-1 px-2 py-1 rounded-md bg-red-950/40 border border-red-900/60 cursor-pointer hover:bg-red-900/30 transition-colors">
