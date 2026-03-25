@@ -4,7 +4,7 @@
  * POST /api/projects/{id}/qc-checklist
  */
 import { useState } from 'react';
-import { generateQcChecklist, IS_DEMO } from '../../lib/api';
+import { generateQcChecklist } from '../../lib/api';
 import type { QcChecklistResult } from '../../lib/api';
 import {
   ClipboardCheck, Play, AlertCircle, Clock,
@@ -77,85 +77,20 @@ function ChecklistItem({ item }: { item: QcChecklistResult['items'][0] }) {
   );
 }
 
-const DEMO_RESULT: QcChecklistResult = {
-  project_id: 'demo',
-  standard: 'asme_y14_5',
-  generated_at: new Date().toISOString(),
-  summary: 'Demo checklist — connect to live backend for project-specific inspection plan.',
-  items: [
-    {
-      id: 'dim-1', category: 'dimensional',
-      characteristic: 'Overall Length', nominal: '200.000 mm', tolerance: '±0.05 mm',
-      method: 'CMM point-to-point measurement on Datum A',
-      instrument: 'Zeiss Contura CMM (ISO 10360-2)', frequency: '100% first article, 10% production',
-      accept_criteria: '199.950–200.050 mm', reference: 'ASME B89.4.22 CMM Performance',
-    },
-    {
-      id: 'dim-2', category: 'dimensional',
-      characteristic: 'M8 Hole True Position', nominal: 'TP ⌀0.1mm |A|B|C', tolerance: 'MMC',
-      method: 'CMM vector bore + datum reference frame alignment',
-      instrument: 'CMM + ⌀8 H7 Go/No-Go gauge', frequency: '100%',
-      accept_criteria: 'True position ≤ ⌀0.1mm at MMC', reference: 'ASME Y14.5-2018 §7',
-    },
-    {
-      id: 'geo-1', category: 'geometric',
-      characteristic: 'Datum A Flatness', nominal: '⏥ 0.02 mm', tolerance: '0.02 mm',
-      method: 'CMM 25-point grid scan on primary datum face',
-      instrument: 'CMM or granite surface plate + dial indicator', frequency: '100%',
-      accept_criteria: 'All 25 points within 0.02mm plane', reference: 'ASME Y14.5-2018 §12.4',
-    },
-    {
-      id: 'geo-2', category: 'geometric',
-      characteristic: 'Dowel Bore Cylindricity', nominal: '⌀6 H7 (⌀6.000/⌀6.012)', tolerance: 'H7',
-      method: 'CMM 4-cross-section bore measurement',
-      instrument: 'CMM or pin gauges', frequency: '100%',
-      accept_criteria: 'In-tolerance with H7 Go (⌀6.000mm) / No-Go (⌀6.012mm)', reference: 'ISO 286-1',
-    },
-    {
-      id: 'surf-1', category: 'surface_finish',
-      characteristic: 'Datum A Surface Roughness', nominal: 'Ra 1.6 µm', tolerance: 'max',
-      method: 'Contact profilometer measurement — 5 scans, report average',
-      instrument: 'Mitutoyo SJ-410 profilometer (ISO 4288)', frequency: '100% first article',
-      accept_criteria: 'Ra ≤ 1.6µm on all datum faces', reference: 'ASME B46.1-2019',
-    },
-    {
-      id: 'mat-1', category: 'material',
-      characteristic: 'Material Certification', nominal: 'Al 6061-T6 per AMS 2770', tolerance: 'N/A',
-      method: 'Review mill cert — verify heat, lot, temper, chemistry, tensile',
-      instrument: 'Mill certificate review + XRF spot check (optional)', frequency: '100% — per lot',
-      accept_criteria: 'Cert matches AMS 2770 T6 requirements (Sy ≥ 276 MPa)', reference: 'AS9100D §8.4.3, AMS 2770',
-    },
-    {
-      id: 'func-1', category: 'functional',
-      characteristic: 'Fixture Assembly Fit Check', nominal: 'All hardware installs freely', tolerance: 'N/A',
-      method: 'Assemble M8 bolts, dowel pins, and bushings by hand without forcing',
-      instrument: 'Visual + tactile — no force gauge required', frequency: '100%',
-      accept_criteria: 'M8 bolts start freely; dowels press-fit with ≤ 100N hand press', reference: 'AS9102B §6.4',
-    },
-  ],
-};
-
-export default function QcChecklistPanel({ projectId = 'demo' }: { projectId?: string }) {
+export default function QcChecklistPanel({ projectId = '' }: { projectId?: string }) {
   const [standard, setStandard] = useState('asme_y14_5');
   const [includeCmm, setIncludeCmm] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QcChecklistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isLive = !IS_DEMO && projectId !== 'demo';
-
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
     try {
-      if (!isLive) {
-        await new Promise(r => setTimeout(r, 1000));
-        setResult({ ...DEMO_RESULT, standard });
-      } else {
-        const res = await generateQcChecklist(projectId, { standard, include_cmm: includeCmm });
-        if (res) setResult(res);
-        else setError('Failed to generate QC checklist. Ensure the project has geometry and GD&T data.');
-      }
+      const res = await generateQcChecklist(projectId, { standard, include_cmm: includeCmm });
+      if (res) setResult(res);
+      else setError('Failed to generate QC checklist. Ensure the project has geometry and GD&T data.');
     } catch {
       setError('Request failed. Check backend connectivity.');
     } finally {
@@ -254,10 +189,16 @@ export default function QcChecklistPanel({ projectId = 'demo' }: { projectId?: s
           </>
         ) : !loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
-            <ClipboardCheck size={32} className="text-slate-700" />
-            <p className="text-xs text-slate-600 text-center leading-relaxed">
-              Generate an inspection plan with CMM routines, Go/No-Go gauges, and surface roughness checks per your selected quality standard.
-            </p>
+            <div className="w-10 h-10 rounded-xl bg-emerald-900/30 border border-emerald-700/30 flex items-center justify-center">
+              <ClipboardCheck size={16} className="text-emerald-500" />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-300 font-medium mb-1">Generate your QC checklist</p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Select a quality standard above and click Generate.<br />
+                Produces an inspection plan with CMM routines and Go/No-Go gauges.
+              </p>
+            </div>
           </div>
         )}
       </div>

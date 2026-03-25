@@ -19,6 +19,7 @@ import QcChecklistPanel from '../components/workspace/QcChecklistPanel';
 import ToleranceStackPanel from '../components/workspace/ToleranceStackPanel';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
+import OnboardingTour from '../components/OnboardingTour';
 import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
 import { useFixtureGeometry } from '../hooks/useFixtureGeometry';
 import { useRealtimeProject } from '../hooks/useRealtimeProject';
@@ -52,7 +53,17 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [showLeft, setShowLeft]   = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [mode, setMode]           = useState<WorkspaceMode>('part');
+  const [showTour, setShowTour]   = useState(false);
   const { state, dispatch }       = useWorkspace();
+
+  // Show tour automatically on first visit
+  useEffect(() => {
+    if (!OnboardingTour.isCompleted()) {
+      // Slight delay so layout is fully rendered
+      const t = setTimeout(() => setShowTour(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   // Load fixture geometry + part features
   const { gltfUrl, partFeatures } = useFixtureGeometry(projectId);
@@ -141,7 +152,12 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <TopBar mode={mode} onModeChange={setMode} projectId={projectId} />
+      <TopBar
+        mode={mode}
+        onModeChange={setMode}
+        projectId={projectId}
+        onStartTour={() => setShowTour(true)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left icon rail — hidden on mobile */}
@@ -162,9 +178,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               <div className="h-px bg-cadsurface-700 my-1" />
               {leftButtons.map(btn => {
                 const isActive = leftPanel === btn.id && showLeft;
+                const tourId =
+                  btn.id === 'chat'   ? 'tour-chat-btn'   :
+                  btn.id === 'export' ? 'tour-export-btn' : undefined;
                 return (
                   <button
                     key={btn.id}
+                    id={tourId}
                     title={btn.title}
                     onClick={() => { setLeftPanel(btn.id); setShowLeft(true); }}
                     className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${getPanelColor(btn.id, isActive)}`}
@@ -221,7 +241,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               </div>
             )}
 
-            <div className="flex-1 overflow-hidden relative">
+            <div id="tour-viewport" className="flex-1 overflow-hidden relative">
               <Viewport3D
                 touchpointMode={leftPanel === 'touchpoints' && showLeft}
                 gltfUrl={state.gltfUrl}
@@ -230,7 +250,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
             </div>
 
             {showRight && (
-              <div className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
+              <div id="tour-right-panel" className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
                 <PropertiesPanel projectId={projectId} />
               </div>
             )}
@@ -264,6 +284,9 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           </button>
         ))}
       </div>
+
+      {/* Onboarding tour */}
+      <OnboardingTour active={showTour} onDone={() => setShowTour(false)} />
     </div>
   );
 }

@@ -1,41 +1,14 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Clock, AlertTriangle, ChevronLeft, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { IS_DEMO, fetchValidationTrends, fetchDfmFrequency, fetchReleaseVelocity } from '../lib/api';
+import { fetchValidationTrends, fetchDfmFrequency, fetchReleaseVelocity } from '../lib/api';
 
 interface TrendPoint { date: string; errors: number; warnings: number; }
 interface DfmFreq { rule: string; count: number; process: string; }
 interface VelocityItem { category: string; avg_days: number; projects: number; }
 
-const DEMO_TRENDS: TrendPoint[] = [
-  { date: '2026-03-09', errors: 8, warnings: 14 },
-  { date: '2026-03-10', errors: 5, warnings: 11 },
-  { date: '2026-03-11', errors: 6, warnings: 9 },
-  { date: '2026-03-12', errors: 3, warnings: 8 },
-  { date: '2026-03-13', errors: 2, warnings: 7 },
-  { date: '2026-03-14', errors: 1, warnings: 5 },
-  { date: '2026-03-15', errors: 0, warnings: 4 },
-];
-
-const DEMO_DFM: DfmFreq[] = [
-  { rule: 'Small hole diameter', count: 24, process: 'FDM' },
-  { rule: 'Depth-to-diameter > 10:1', count: 18, process: 'CNC' },
-  { rule: 'Thin wall (<1.2mm)', count: 15, process: 'FDM' },
-  { rule: 'Missing datums (3-2-1)', count: 12, process: 'Standards' },
-  { rule: 'Unsupported overhang >45°', count: 9, process: 'FDM' },
-  { rule: 'No clamping forces defined', count: 7, process: 'Functional' },
-  { rule: 'Surface finish mismatch', count: 5, process: 'Standards' },
-];
-
-const DEMO_VELOCITY: VelocityItem[] = [
-  { category: 'Drill Jig', avg_days: 2.4, projects: 11 },
-  { category: 'Weld Fixture', avg_days: 4.1, projects: 6 },
-  { category: 'Check Fixture', avg_days: 3.2, projects: 8 },
-  { category: 'EOAT / Gripper', avg_days: 5.8, projects: 4 },
-  { category: 'Go/No-Go Gauge', avg_days: 1.9, projects: 7 },
-];
-
 function MiniLineChart({ data }: { data: TrendPoint[] }) {
+  if (data.length < 2) return null;
   const maxErr = Math.max(...data.map((d) => d.errors), 1);
   const maxWarn = Math.max(...data.map((d) => d.warnings), 1);
   const w = 360, h = 80;
@@ -67,16 +40,29 @@ function HorizBar({ value, max, color }: { value: number; max: number; color: st
   );
 }
 
+function EmptyState({ label, sub }: { label: string; sub?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 gap-2">
+      <div className="w-8 h-8 rounded-lg bg-cadblue-900/30 border border-cadblue-700/30 flex items-center justify-center">
+        <BarChart3 size={14} className="text-cadblue-500" />
+      </div>
+      <p className="text-xs text-slate-400 text-center font-medium">{label}</p>
+      {sub && <p className="text-xs text-slate-600 text-center">{sub}</p>}
+    </div>
+  );
+}
+
 export default function Analytics() {
   const navigate = useNavigate();
-  const [trends, setTrends] = useState<TrendPoint[]>(IS_DEMO ? DEMO_TRENDS : []);
-  const [dfm, setDfm] = useState<DfmFreq[]>(IS_DEMO ? DEMO_DFM : []);
-  const [velocity, setVelocity] = useState<VelocityItem[]>(IS_DEMO ? DEMO_VELOCITY : []);
-  const [loading, setLoading] = useState(!IS_DEMO);
+  const [trends, setTrends] = useState<TrendPoint[]>([]);
+  const [dfm, setDfm] = useState<DfmFreq[]>([]);
+  const [velocity, setVelocity] = useState<VelocityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
-    if (IS_DEMO) return;
     setLoading(true);
+    setFetchError(false);
     Promise.all([
       fetchValidationTrends(),
       fetchDfmFrequency(),
@@ -88,8 +74,6 @@ export default function Analytics() {
           errors: (t as unknown as { error_count: number }).error_count ?? 0,
           warnings: (t as unknown as { warning_count: number }).warning_count ?? 0,
         })));
-      } else {
-        setTrends(DEMO_TRENDS); // fallback when no validation data yet
       }
       if (dfmData && dfmData.length > 0) {
         setDfm(dfmData.map((d) => ({
@@ -97,8 +81,6 @@ export default function Analytics() {
           count: d.count,
           process: d.severity ?? 'General',
         })));
-      } else {
-        setDfm(DEMO_DFM);
       }
       if (velocityData && velocityData.length > 0) {
         setVelocity(velocityData.map((v) => ({
@@ -106,13 +88,9 @@ export default function Analytics() {
           avg_days: v.avg_days,
           projects: v.count,
         })));
-      } else {
-        setVelocity(DEMO_VELOCITY);
       }
     }).catch(() => {
-      setTrends(DEMO_TRENDS);
-      setDfm(DEMO_DFM);
-      setVelocity(DEMO_VELOCITY);
+      setFetchError(true);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -140,16 +118,22 @@ export default function Analytics() {
             </div>
           </div>
           {loading && <Loader2 size={14} className="animate-spin text-slate-500 ml-auto" />}
-          {IS_DEMO && <span className="ml-auto text-xs text-amber-400 bg-amber-900/20 border border-amber-700/40 px-2 py-1 rounded-lg">Demo data</span>}
         </div>
+
+        {fetchError && (
+          <div className="mb-6 flex items-center gap-2 bg-red-950/40 border border-red-700/40 rounded-xl px-4 py-3 text-xs text-red-400">
+            <AlertTriangle size={13} />
+            Unable to load analytics data. Check backend connectivity.
+          </div>
+        )}
 
         {/* KPI row */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Open Errors', value: latestErrors, color: latestErrors === 0 ? 'text-emerald-400' : 'text-red-400', sub: 'today' },
-            { label: 'Open Warnings', value: latestWarnings, color: 'text-amber-400', sub: 'today' },
-            { label: 'Avg Time-to-Release', value: `${avgVelocity.toFixed(1)}d`, color: 'text-cadblue-400', sub: 'all categories' },
-            { label: 'Total Projects', value: totalProjects, color: 'text-slate-200', sub: 'last 30 days' },
+            { label: 'Open Errors', value: trends.length ? latestErrors : '—', color: latestErrors === 0 ? 'text-emerald-400' : 'text-red-400', sub: 'today' },
+            { label: 'Open Warnings', value: trends.length ? latestWarnings : '—', color: 'text-amber-400', sub: 'today' },
+            { label: 'Avg Time-to-Release', value: velocity.length ? `${avgVelocity.toFixed(1)}d` : '—', color: 'text-cadblue-400', sub: 'all categories' },
+            { label: 'Total Projects', value: totalProjects || '—', color: 'text-slate-200', sub: 'last 30 days' },
           ].map((kpi) => (
             <div key={kpi.label} className="bg-cadsurface-900 border border-cadsurface-700 rounded-xl p-4">
               <p className="text-xs text-slate-500 mb-1">{kpi.label}</p>
@@ -168,24 +152,33 @@ export default function Analytics() {
               <h2 className="text-sm font-semibold text-slate-200">Validation Score Trend</h2>
               <span className="ml-auto text-xs text-slate-500">Last 7 days</span>
             </div>
-            <MiniLineChart data={trends} />
-            <div className="flex items-center gap-4 mt-3">
-              <span className="flex items-center gap-1.5 text-xs text-red-400">
-                <div className="w-3 h-0.5 bg-red-500 rounded" /> Errors
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-amber-400">
-                <div className="w-3 h-0.5 bg-amber-500 rounded" /> Warnings
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-7 gap-0">
-              {trends.map((t) => (
-                <div key={t.date} className="text-center">
-                  <p className="text-xs text-slate-700" style={{ fontSize: '9px' }}>
-                    {new Date(t.date).toLocaleDateString('en', { weekday: 'short' }).slice(0, 2)}
-                  </p>
+            {trends.length >= 2 ? (
+              <>
+                <MiniLineChart data={trends} />
+                <div className="flex items-center gap-4 mt-3">
+                  <span className="flex items-center gap-1.5 text-xs text-red-400">
+                    <div className="w-3 h-0.5 bg-red-500 rounded" /> Errors
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-amber-400">
+                    <div className="w-3 h-0.5 bg-amber-500 rounded" /> Warnings
+                  </span>
                 </div>
-              ))}
-            </div>
+                <div className="mt-3 grid grid-cols-7 gap-0">
+                  {trends.map((t) => (
+                    <div key={t.date} className="text-center">
+                      <p className="text-xs text-slate-700" style={{ fontSize: '9px' }}>
+                        {new Date(t.date).toLocaleDateString('en', { weekday: 'short' }).slice(0, 2)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <EmptyState
+                label="Describe your fixture in the chat to generate your first design"
+                sub="Validation trends will appear here after your first run"
+              />
+            )}
           </div>
 
           {/* Release velocity */}
@@ -194,21 +187,30 @@ export default function Analytics() {
               <Clock size={14} className="text-emerald-400" />
               <h2 className="text-sm font-semibold text-slate-200">Release Velocity by Category</h2>
             </div>
-            <div className="space-y-3">
-              {velocity.map((v) => (
-                <div key={v.category} className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400 w-28 shrink-0">{v.category}</span>
-                  <HorizBar
-                    value={v.avg_days}
-                    max={Math.max(...velocity.map((x) => x.avg_days))}
-                    color={v.avg_days < 3 ? 'bg-emerald-600' : v.avg_days < 5 ? 'bg-amber-600' : 'bg-red-600'}
-                  />
-                  <span className="text-xs text-slate-400 w-12 text-right font-mono">{v.avg_days}d</span>
-                  <span className="text-xs text-slate-600 w-10 text-right">{v.projects}</span>
+            {velocity.length > 0 ? (
+              <>
+                <div className="space-y-3">
+                  {velocity.map((v) => (
+                    <div key={v.category} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 w-28 shrink-0">{v.category}</span>
+                      <HorizBar
+                        value={v.avg_days}
+                        max={Math.max(...velocity.map((x) => x.avg_days))}
+                        color={v.avg_days < 3 ? 'bg-emerald-600' : v.avg_days < 5 ? 'bg-amber-600' : 'bg-red-600'}
+                      />
+                      <span className="text-xs text-slate-400 w-12 text-right font-mono">{v.avg_days}d</span>
+                      <span className="text-xs text-slate-600 w-10 text-right">{v.projects}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-700 mt-3">Days from creation to released revision</p>
+                <p className="text-xs text-slate-700 mt-3">Days from creation to released revision</p>
+              </>
+            ) : (
+              <EmptyState
+                label="Release a project revision to track time-to-release"
+                sub="Create a revision in the Approvals panel to get started"
+              />
+            )}
           </div>
         </div>
 
@@ -219,21 +221,30 @@ export default function Analytics() {
             <h2 className="text-sm font-semibold text-slate-200">Most Common DFM Warnings</h2>
             <span className="ml-auto text-xs text-slate-500">All projects · last 30 days</span>
           </div>
-          <div className="space-y-3">
-            {dfm.map((d, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-xs text-slate-600 w-5 text-right font-mono">{i + 1}</span>
-                <span className="text-xs text-slate-300 flex-1">{d.rule}</span>
-                <span className="text-xs text-slate-600 px-1.5 py-0.5 rounded bg-cadsurface-800 font-mono">{d.process}</span>
-                <HorizBar value={d.count} max={maxDfm} color="bg-amber-600" />
-                <span className="text-xs text-amber-400 font-mono w-8 text-right">{d.count}×</span>
+          {dfm.length > 0 ? (
+            <>
+              <div className="space-y-3">
+                {dfm.map((d, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-600 w-5 text-right font-mono">{i + 1}</span>
+                    <span className="text-xs text-slate-300 flex-1">{d.rule}</span>
+                    <span className="text-xs text-slate-600 px-1.5 py-0.5 rounded bg-cadsurface-800 font-mono">{d.process}</span>
+                    <HorizBar value={d.count} max={maxDfm} color="bg-amber-600" />
+                    <span className="text-xs text-amber-400 font-mono w-8 text-right">{d.count}×</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {dfm.length >= 2 && (
-            <p className="text-xs text-slate-700 mt-4">
-              Address "{dfm[0].rule}" and "{dfm[1].rule}" first — they account for {Math.round((dfm[0].count + dfm[1].count) / dfm.reduce((s, d) => s + d.count, 0) * 100)}% of all DFM issues.
-            </p>
+              {dfm.length >= 2 && (
+                <p className="text-xs text-slate-700 mt-4">
+                  Address "{dfm[0].rule}" and "{dfm[1].rule}" first — they account for {Math.round((dfm[0].count + dfm[1].count) / dfm.reduce((s, d) => s + d.count, 0) * 100)}% of all DFM issues.
+                </p>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              label="Generate a fixture to surface your most common DFM issues"
+              sub="Describe your workholding need in the chat to create your first design"
+            />
           )}
         </div>
       </div>

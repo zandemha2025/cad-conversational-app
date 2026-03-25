@@ -4,7 +4,7 @@
  * POST /api/projects/{id}/tolerance-stack
  */
 import { useState } from 'react';
-import { runToleranceStack, IS_DEMO } from '../../lib/api';
+import { runToleranceStack } from '../../lib/api';
 import type { ToleranceStackResult } from '../../lib/api';
 import {
   Ruler, Plus, Trash2, Play, AlertTriangle, CheckCircle2,
@@ -23,32 +23,11 @@ function newDim(): Dim {
   return { id: ++_id, name: `D${_id}`, nominal_mm: 10, tolerance_mm: 0.05 };
 }
 
-const DEMO_DIMS: Dim[] = [
-  { id: 1, name: 'Plate thickness', nominal_mm: 25.0, tolerance_mm: 0.05 },
-  { id: 2, name: 'Bushing height', nominal_mm: 20.0, tolerance_mm: 0.02 },
-  { id: 3, name: 'Shim thickness', nominal_mm: 2.0, tolerance_mm: 0.025 },
-  { id: 4, name: 'Frame recess depth', nominal_mm: 47.5, tolerance_mm: 0.1 },
-];
-
-const DEMO_RESULT: ToleranceStackResult = {
-  project_id: 'demo', method: 'both',
-  dimensions: DEMO_DIMS.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
-  total_nominal_mm: 94.5,
-  worst_case_mm: 0.195,
-  rss_mm: 0.1204,
-  gap_min_mm: 0.305,
-  gap_max_mm: 0.695,
-  assembly_ok: true,
-  summary: 'Stack of 4 dimensions. Nominal total: 94.500mm. Worst Case: ±0.195mm. RSS (99.73%): ±0.120mm. Largest contributor: "Frame recess depth" at 51.3% of WC budget. Assembly fits under both WC and RSS conditions.',
-};
-
-export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?: string }) {
-  const [dims, setDims] = useState<Dim[]>(DEMO_DIMS);
+export default function ToleranceStackPanel({ projectId = '' }: { projectId?: string }) {
+  const [dims, setDims] = useState<Dim[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ToleranceStackResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const isLive = !IS_DEMO && projectId !== 'demo';
 
   const addDim = () => setDims(p => [...p, newDim()]);
   const removeDim = (id: number) => setDims(p => p.filter(d => d.id !== id));
@@ -66,16 +45,11 @@ export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?
     if (dims.length === 0) return;
     setLoading(true); setError(null);
     try {
-      if (!isLive) {
-        await new Promise(r => setTimeout(r, 800));
-        setResult(DEMO_RESULT);
-      } else {
-        const res = await runToleranceStack(projectId, {
-          dimensions: dims.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
-        });
-        if (res) setResult(res);
-        else setError('Stack-up failed. Check that all dimension values are valid.');
-      }
+      const res = await runToleranceStack(projectId, {
+        dimensions: dims.map(d => ({ name: d.name, nominal_mm: d.nominal_mm, tolerance_mm: d.tolerance_mm })),
+      });
+      if (res) setResult(res);
+      else setError('Stack-up failed. Check that all dimension values are valid.');
     } catch { setError('Request failed.'); }
     finally { setLoading(false); }
   };
@@ -99,6 +73,12 @@ export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?
             <Plus size={11} /> Add
           </button>
         </div>
+        {dims.length === 0 && (
+          <div className="py-4 px-2 text-center">
+            <p className="text-xs text-slate-400 font-medium mb-1">Add dimensions to analyze your stack-up</p>
+            <p className="text-xs text-slate-600">Enter each dimension and bilateral tolerance, then run to get Worst Case and RSS results.</p>
+          </div>
+        )}
         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
           {dims.map(d => (
             <div key={d.id} className="flex gap-1.5 items-center">
@@ -220,12 +200,11 @@ export default function ToleranceStackPanel({ projectId = 'demo' }: { projectId?
           </>
         )}
 
-        {!result && !loading && (
+        {!result && !loading && dims.length > 0 && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Ruler size={28} className="text-slate-700" />
             <p className="text-xs text-slate-600 text-center leading-relaxed">
-              Add dimensions with their bilateral tolerances, then run the stack-up.
-              Supports Worst Case and RSS methods.
+              Click Run Stack-Up to calculate Worst Case and RSS analysis.
             </p>
           </div>
         )}

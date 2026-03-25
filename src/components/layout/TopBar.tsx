@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   ChevronDown,
   Grid2x2,
+  HelpCircle,
   Layers,
   Play,
   RotateCcw,
@@ -17,13 +18,13 @@ import {
   Target,
   GitBranch,
   CheckCircle2,
-  AlertTriangle,
   Package,
   BarChart3,
   Shield,
   Users,
   LogOut,
 } from 'lucide-react';
+import { fetchProject, type ApiProject } from '../../lib/api';
 
 export type WorkspaceMode = 'part' | 'assembly' | 'drawing' | 'nodes';
 
@@ -31,15 +32,25 @@ interface TopBarProps {
   mode?: WorkspaceMode;
   onModeChange?: (m: WorkspaceMode) => void;
   projectId?: string;
+  onStartTour?: () => void;
 }
 
-export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
+export default function TopBar({ mode = 'part', onModeChange, projectId, onStartTour }: TopBarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isWorkspace = location.pathname.startsWith('/workspace');
   const [saved] = useState(true);
-  const [showStandards, setShowStandards] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [project, setProject] = useState<ApiProject | null>(null);
+
+  useEffect(() => {
+    if (!projectId || !isWorkspace) return;
+    fetchProject(projectId).then(p => { if (p) setProject(p); }).catch(() => {});
+  }, [projectId, isWorkspace]);
+
+  const partNumber = project?.part_number ?? '—';
+  const revision   = project?.revision ?? '—';
+  const projectName = project?.name ?? '';
 
   return (
     <header className="h-11 bg-cadsurface-900 border-b border-cadsurface-700 flex items-center px-3 gap-1 shrink-0 z-50 select-none">
@@ -105,92 +116,58 @@ export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
 
           <div className="flex-1" />
 
-          {/* Part number pill */}
+          {/* Project info pill */}
           <div className="flex items-center gap-2 px-2.5 py-1 bg-cadsurface-800/60 border border-cadsurface-700 rounded-lg text-xs shrink-0">
             <div className="flex items-center gap-1.5">
               <Wrench size={11} className="text-amber-400" />
-              <span className="font-mono text-slate-300 font-medium">TL-4471-A</span>
+              <span className="font-mono text-slate-300 font-medium">
+                {partNumber !== '—' ? partNumber : 'No P/N'}
+              </span>
             </div>
             <div className="w-px h-3 bg-cadsurface-600" />
             <div className="flex items-center gap-1">
               <GitBranch size={11} className="text-slate-500" />
-              <span className="font-mono text-emerald-400 font-medium">Rev B</span>
+              <span className="font-mono text-emerald-400 font-medium">
+                {revision !== '—' ? `Rev ${revision}` : 'No Rev'}
+              </span>
             </div>
-            <div className="w-px h-3 bg-cadsurface-600" />
-            <span className="text-slate-500 font-mono">Al 6061-T6</span>
           </div>
 
-          {/* Filename + save */}
-          <div className="flex items-center gap-1.5 text-xs px-2">
-            <span className="text-slate-400">wing_panel_drill_jig.sldprt</span>
-            {saved ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 size={11} />Saved
-              </span>
-            ) : (
-              <span className="text-amber-400 flex items-center gap-1">
-                <AlertTriangle size={11} />Unsaved
-              </span>
-            )}
-          </div>
+          {/* Project name + save status */}
+          {projectName && (
+            <div className="flex items-center gap-1.5 text-xs px-2 max-w-40 overflow-hidden">
+              <span className="text-slate-400 truncate">{projectName}</span>
+              {saved && (
+                <span className="text-emerald-400 flex items-center gap-1 shrink-0">
+                  <CheckCircle2 size={11} />
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
 
-          {/* Standards badge + dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowStandards((p) => !p)}
-              className="flex items-center gap-1 text-xs btn-ghost px-2 py-1 rounded-md border border-cadsurface-700 hover:border-cadblue-600/50 transition-colors"
-            >
+          {/* Standards badge — based on project fields */}
+          {project && (project.gdt_standard || project.quality_standard) && (
+            <div className="flex items-center gap-1 text-xs btn-ghost px-2 py-1 rounded-md border border-cadsurface-700">
               <Target size={11} className="text-cadblue-400" />
-              <span className="text-slate-400">Standards</span>
-              <span className="text-emerald-400">3/4</span>
-              <ChevronDown size={10} className={`text-slate-600 transition-transform ${showStandards ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showStandards && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowStandards(false)} />
-                <div className="absolute top-full right-0 mt-1 w-56 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
-                  <div className="px-3 py-1.5 border-b border-cadsurface-800">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Standards Compliance</p>
-                  </div>
-                  {[
-                    { std: 'AS9100 Rev D',    ok: true,  note: 'Traceability fields complete' },
-                    { std: 'ASME Y14.5-2018', ok: true,  note: 'GD&T annotations applied' },
-                    { std: 'ISO 2768-m',      ok: true,  note: 'General tolerances set' },
-                    { std: 'ITAR',            ok: false, note: 'Classification pending' },
-                  ].map((item) => (
-                    <div key={item.std} className="flex items-center justify-between px-3 py-2 hover:bg-cadsurface-800 transition-colors">
-                      <div>
-                        <p className="text-xs text-slate-300 font-medium">{item.std}</p>
-                        <p className="text-xs text-slate-600">{item.note}</p>
-                      </div>
-                      {item.ok
-                        ? <CheckCircle2 size={12} className="text-emerald-400 shrink-0 ml-2" />
-                        : <AlertTriangle size={12} className="text-amber-400 shrink-0 ml-2" />
-                      }
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+              <span className="text-slate-400 hidden lg:inline">
+                {[project.gdt_standard, project.quality_standard].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+          )}
 
           <button className="btn-ghost p-1.5 rounded" title="Save"><Save size={14} /></button>
           <button className="btn-ghost p-1.5 rounded" title="Run simulation"><Play size={14} /></button>
 
           <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
 
-          <button className="flex items-center gap-1.5 btn-ghost text-xs rounded-md px-2 py-1 border border-cadsurface-700 hover:border-cadblue-600/50">
+          <button
+            id="tour-share-btn"
+            className="flex items-center gap-1.5 btn-ghost text-xs rounded-md px-2 py-1 border border-cadsurface-700 hover:border-cadblue-600/50"
+          >
             <Share2 size={13} />Share<ChevronDown size={11} />
           </button>
-
-          {/* DFM indicator */}
-          <div className="flex items-center gap-1 ml-1 px-2 py-1 rounded-md bg-red-950/40 border border-red-900/60 cursor-pointer hover:bg-red-900/30 transition-colors">
-            <AlertTriangle size={11} className="text-red-400" />
-            <span className="text-xs text-red-400 font-medium">1 DFM</span>
-          </div>
         </>
       ) : (
         <>
@@ -218,6 +195,15 @@ export default function TopBar({ mode = 'part', onModeChange }: TopBarProps) {
 
       {/* Always-right */}
       <div className="flex items-center gap-1 ml-1">
+        {isWorkspace && onStartTour && (
+          <button
+            onClick={onStartTour}
+            className="btn-ghost p-1.5 rounded text-slate-500 hover:text-cadblue-400 transition-colors"
+            title="Start guided tour"
+          >
+            <HelpCircle size={14} />
+          </button>
+        )}
         <button className="btn-ghost p-1.5 rounded" title="Refresh"><RotateCcw size={14} /></button>
         <button className="btn-ghost p-1.5 rounded" title="Settings" onClick={() => navigate('/settings')}>
           <Settings size={14} />
