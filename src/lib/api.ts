@@ -762,6 +762,21 @@ export async function generateQcChecklist(
   });
 }
 
+// ── Dimensions ────────────────────────────────────────────────────────────────
+
+export interface DimensionEntry {
+  label: string;
+  value: string;
+  position: [number, number, number];
+  direction?: 'x' | 'y' | 'z';
+  type?: 'diameter' | 'radius' | 'linear';
+}
+
+export async function fetchDimensions(projectId: string): Promise<DimensionEntry[] | null> {
+  const res = await apiFetch<{ dimensions: DimensionEntry[] }>(`/projects/${projectId}/dimensions`);
+  return res?.dimensions ?? null;
+}
+
 // ── Tolerance stack-up ─────────────────────────────────────────────────────────
 
 export interface ToleranceStackRequest {

@@ -51,6 +51,8 @@ from app.api.routes.work_instructions import router as work_instructions_router
 from app.api.routes.qc_checklist import router as qc_checklist_router
 from app.api.routes.materials import router as materials_router
 from app.api.routes.tolerance_stack import router as tolerance_stack_router
+# Feature #3 — dimension overlay
+from app.api.routes.dimensions import router as dimensions_router
 
 API = "/api"
 
@@ -86,11 +88,14 @@ app.include_router(work_instructions_router,  prefix=API)
 app.include_router(qc_checklist_router,       prefix=API)
 app.include_router(materials_router,          prefix=API)  # public, no auth
 app.include_router(tolerance_stack_router,    prefix=API)
+app.include_router(dimensions_router,         prefix=API)
 
 
 # ── Startup validation ────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def validate_config():
+    import logging
+    log = logging.getLogger(__name__)
     missing = []
     if not settings.SUPABASE_URL:
         missing.append("SUPABASE_URL")
@@ -99,15 +104,25 @@ async def validate_config():
     if not settings.SUPABASE_JWT_SECRET:
         missing.append("SUPABASE_JWT_SECRET")
     if missing:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Missing env vars (auth will fail): %s", ", ".join(missing)
-        )
+        log.warning("Missing env vars (auth will fail): %s", ", ".join(missing))
     if not settings.GEMINI_API_KEY:
-        import logging
-        logging.getLogger(__name__).warning(
-            "GEMINI_API_KEY not set — AI features will use stub responses"
-        )
+        log.warning("GEMINI_API_KEY not set — AI features will use stub responses")
+
+    # Schema migration: add dimensions_json column if missing
+    try:
+        from sqlalchemy import text as sa_text
+        from app.core.database import get_engine
+        engine = get_engine()
+        if engine:
+            async with engine.connect() as conn:
+                await conn.execute(sa_text(
+                    "ALTER TABLE fixture_geometries "
+                    "ADD COLUMN IF NOT EXISTS dimensions_json JSONB"
+                ))
+                await conn.commit()
+            log.info("Schema migration: dimensions_json column ensured")
+    except Exception as e:
+        log.warning("Schema migration skipped (column may already exist or DATABASE_URL not set): %s", e)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

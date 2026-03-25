@@ -235,6 +235,53 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Dimension extraction (Flash) ──────────────────────────────────────────
+    async def extract_dimensions(
+        self,
+        kcl: str,
+        design_description: str,
+    ) -> list[dict]:
+        """Extract key dimensions from KCL code and design description using Flash."""
+        prompt = (
+            "You are an expert manufacturing engineer. Extract the key dimensions from "
+            "the following fixture design.\n\n"
+            "Return ONLY a JSON array (no markdown, no explanation) with dimension objects:\n"
+            "[\n"
+            '  {"label": "Base Length", "value": "100mm", "position": [50, 0, 0], "direction": "x"},\n'
+            '  {"label": "Wall Thickness", "value": "4mm", "position": [0, 25, 0], "direction": "y"},\n'
+            '  {"label": "M5 Holes ×4", "value": "Ø5.0mm", "position": [10, 10, 0], "type": "diameter"},\n'
+            '  {"label": "Overall Height", "value": "45mm", "position": [0, 0, 22.5], "direction": "z"}\n'
+            "]\n\n"
+            "Rules:\n"
+            "- Extract 6–10 key dimensions: overall envelope, wall thicknesses, hole diameters, "
+            "fillets, critical tolerances\n"
+            "- Positions are in mm relative to the model center (approximate is fine)\n"
+            "- For tolerances include them in the value: \"100.0 ±0.1mm\"\n"
+            "- For diameters use Ø prefix and type \"diameter\"\n"
+            "- Use direction \"x\", \"y\", or \"z\" for linear dimensions\n"
+            "- Labels max 20 characters\n\n"
+            f"KCL Code:\n{kcl[:3000]}\n\n"
+            f"Design description:\n{design_description[:1000]}\n\n"
+            "Respond with ONLY the JSON array:"
+        )
+
+        if not settings.GEMINI_API_KEY:
+            return _stub_dimensions()
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+            dims = json.loads(raw)
+            if isinstance(dims, list):
+                return dims[:10]
+        except Exception as e:
+            log.error("extract_dimensions error: %s", e)
+        return _stub_dimensions()
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -307,6 +354,18 @@ const base = startSketchOn('XY')
   |> close(%)
   |> extrude(length=baseHeight, %)
 """
+
+
+def _stub_dimensions() -> list[dict]:
+    return [
+        {"label": "Base Length", "value": "190mm", "position": [95, 0, 0], "direction": "x"},
+        {"label": "Base Width", "value": "140mm", "position": [0, 70, 0], "direction": "y"},
+        {"label": "Base Height", "value": "12mm", "position": [0, 0, 6], "direction": "z"},
+        {"label": "Wall Thickness", "value": "4mm", "position": [95, 35, 6], "direction": "x"},
+        {"label": "M6 Holes ×4", "value": "Ø6.0mm", "position": [20, 20, 12], "type": "diameter"},
+        {"label": "Fillet R", "value": "R2.0mm", "position": [95, 70, 0], "type": "radius"},
+        {"label": "Pin Spacing", "value": "150.0 ±0.05mm", "position": [75, 0, 12], "direction": "x"},
+    ]
 
 
 def _stub_node_graph() -> dict:

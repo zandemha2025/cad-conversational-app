@@ -1,14 +1,15 @@
-import { useState, Suspense, useCallback } from 'react';
+import { useState, Suspense, useCallback, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   Maximize2, Grid3x3, Eye, Sun, Box, Layers, RefreshCw,
-  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, AlertTriangle,
+  ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, AlertTriangle, Ruler,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
-import { addTouchpoint, IS_DEMO } from '../../lib/api';
-import type { ApiTouchpoint } from '../../lib/api';
+import { addTouchpoint, fetchDimensions, IS_DEMO } from '../../lib/api';
+import type { ApiTouchpoint, DimensionEntry } from '../../lib/api';
+import DimensionOverlay from '../DimensionOverlay';
 
 // ── Parametric jig plate scene (fallback / demo) ──────────────────────────────
 
@@ -160,9 +161,10 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFaceClick }: {
+function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, showDimensions, dimensions, onFaceClick }: {
   gltfUrl?: string | null; touchpointMode: boolean; showAnnotations: boolean;
-  showGrid: boolean; onFaceClick?: (worldPos: THREE.Vector3) => void;
+  showGrid: boolean; showDimensions: boolean; dimensions: DimensionEntry[];
+  onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
   const { state } = useWorkspace();
   return (
@@ -185,6 +187,10 @@ function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, onFa
       {touchpointMode && state.touchpoints.map((tp, i) => (
         <TouchpointMarker key={tp.id} tp={tp} index={i} />
       ))}
+
+      {showDimensions && dimensions.length > 0 && (
+        <DimensionOverlay dimensions={dimensions} />
+      )}
 
       {showGrid && (
         <Grid position={[0, -0.27, 0]} args={[40, 40]} cellSize={1} cellThickness={0.4}
@@ -220,10 +226,23 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   const [viewAngle, setViewAngle] = useState<ViewAngle>('isometric');
   const [showGrid, setShowGrid] = useState(true);
   const [showAnnotations, setShowAnnotations] = useState(true);
+  const [showDimensions, setShowDimensions] = useState(false);
+  const [dimensions, setDimensions] = useState<DimensionEntry[]>([]);
   const { state, dispatch } = useWorkspace();
 
   const resolvedGltfUrl = gltfUrl ?? state.gltfUrl;
   const features = state.features;
+
+  // Fetch dimensions whenever a fixture is loaded
+  useEffect(() => {
+    if (!projectId || IS_DEMO) return;
+    fetchDimensions(projectId).then(dims => {
+      if (dims && dims.length > 0) {
+        setDimensions(dims);
+        setShowDimensions(true); // auto-show when available
+      }
+    });
+  }, [projectId, resolvedGltfUrl]);
 
   const handleFaceClick = useCallback(async (worldPos: THREE.Vector3) => {
     if (!touchpointMode) return;
@@ -251,7 +270,9 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
         <Suspense fallback={null}>
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
-            showAnnotations={showAnnotations} showGrid={showGrid} onFaceClick={handleFaceClick} />
+            showAnnotations={showAnnotations} showGrid={showGrid}
+            showDimensions={showDimensions} dimensions={dimensions}
+            onFaceClick={handleFaceClick} />
         </Suspense>
       </Canvas>
 
@@ -278,6 +299,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         <div className="w-px h-4 bg-cadsurface-600 mx-1" />
         <ViewButton active={showGrid} icon={<Grid3x3 size={13} />} label="Grid" onClick={() => setShowGrid(p => !p)} />
         <ViewButton active={showAnnotations} icon={<Target size={13} />} label="GD&T" onClick={() => setShowAnnotations(p => !p)} />
+        <ViewButton active={showDimensions} icon={<Ruler size={13} />} label="Dims" onClick={() => setShowDimensions(p => !p)} />
         <ViewButton active={false} icon={<Sun size={13} />} label="Lighting" onClick={() => {}} />
         <ViewButton active={false} icon={<Eye size={13} />} label="Section" onClick={() => {}} />
         <ViewButton active={false} icon={<RefreshCw size={13} />} label="Reset View" onClick={() => {}} />
