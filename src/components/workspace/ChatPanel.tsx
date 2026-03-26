@@ -23,6 +23,7 @@ const SUGGESTION_CHIPS = [
 
 interface ChatPanelProps {
   projectId?: string;
+  onGenerationQueued?: () => void;
 }
 
 interface ProactiveSuggestion {
@@ -30,11 +31,12 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId }: ChatPanelProps) {
+export default function ChatPanel({ projectId, onGenerationQueued }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const { messages, isThinking, isConnected, activeGenJob, sendMessage } = useChat({
     projectId,
     initialMessages: [],
+    onGenerationQueued,
   });
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>([]);
