@@ -226,6 +226,33 @@ export async function fetchFixtureGeometry(projectId: string, version?: number) 
   return apiFetch(`/projects/${projectId}/geometry/fixture${qs}`);
 }
 
+/**
+ * Fetch a GLB/GLTF binary from a backend proxy URL (which requires auth) and return a
+ * blob: URL that Three.js / useGLTF can load without needing auth headers.
+ * Caller is responsible for calling URL.revokeObjectURL() when done.
+ */
+export async function fetchGlbBlobUrl(url: string): Promise<string | null> {
+  const token = getToken();
+  try {
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      if (res.status === 401 && token) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) return fetchGlbBlobUrl(url);
+      }
+      console.error(`[API] fetchGlbBlobUrl ${url} → ${res.status}`);
+      return null;
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch (e) {
+    console.error('[API] fetchGlbBlobUrl error:', e);
+    return null;
+  }
+}
+
 // ── Touchpoints ───────────────────────────────────────────────────────────────
 
 export interface ApiTouchpoint {
