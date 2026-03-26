@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # ── Zoo.dev CAD Kernel ────────────────────────────────────────────────────
     ZOO_API_KEY: str = ""
     ZOO_API_URL: str = "https://api.zoo.dev"
+    # Vercel proxy to bypass Fly.io blocked IPs on Zoo.dev/Cloudflare
+    ZOO_PROXY_URL: str = ""   # e.g. https://eager-euler.vercel.app/api/zoo-proxy
+    ZOO_PROXY_KEY: str = ""   # shared secret for x-proxy-key header
 
     # ── Redis / Celery ────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"

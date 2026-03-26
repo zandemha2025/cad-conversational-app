@@ -2,7 +2,13 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/zoo-proxy.ts": {
+      "maxDuration": 120
+    }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
