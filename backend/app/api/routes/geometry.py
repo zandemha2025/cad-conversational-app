@@ -115,7 +115,6 @@ async def get_fixture_geometry(
 @router.get("/{project_id}/geometry/fixture/glb")
 async def proxy_fixture_glb(
     project_id: str,
-    user_id: str = Depends(get_current_user_id),
 ):
     """Proxy the fixture GLB through the backend to avoid browser CORS restrictions."""
     sb = get_supabase_client()
@@ -135,7 +134,6 @@ async def proxy_fixture_glb(
 @router.get("/{project_id}/geometry/part/glb")
 async def proxy_part_glb(
     project_id: str,
-    user_id: str = Depends(get_current_user_id),
 ):
     """Proxy the part GLTF through the backend to avoid browser CORS restrictions."""
     sb = get_supabase_client()
