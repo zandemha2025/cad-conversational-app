@@ -3,7 +3,10 @@
  * Watches touchpoints, conversation_messages, and fixture_geometries tables
  * and fires callbacks on changes.
  *
- * In demo mode or when Supabase is not configured, this is a no-op.
+ * NOTE: Realtime Postgres CDC requires an authenticated Supabase session with
+ * RLS policies. Without it, the WebSocket floods the browser console with 401
+ * errors. Workspace.tsx uses polling as a fallback — Realtime only activates
+ * when a valid session token is found in localStorage.
  */
 import { useEffect, useRef } from 'react';
 
@@ -35,70 +38,60 @@ export function useRealtimeProject(
   useEffect(() => {
     if (!projectId || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
 
-    // Dynamically import supabase-js to avoid bundling it when not needed
+    // Only connect Realtime if the user has a valid auth token stored.
+    // Without it, Supabase Realtime rejects the WebSocket and floods the
+    // browser console with 401 errors. Polling covers the same functionality.
+    const token = typeof localStorage !== 'undefined'
+      ? (localStorage.getItem('scalecad_token') ?? localStorage.getItem('sb-access-token'))
+      : null;
+    if (!token) return;
+
     let cleanup = () => {};
 
-    import('@supabase/supabase-js').then(({ createClient }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const supabase = (createClient as any)(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    import('@supabase/supabase-js').then(({ createClient }: any) => {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        realtime: { params: { eventsPerSecond: 10 } },
+      });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const channel = (supabase as any).channel(`project:${projectId}`, {
         config: { presence: { key: currentUserId ?? 'anon' } },
       });
 
-      // ── Postgres CDC changes ──────────────────────────────────────────────
       channel
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'touchpoints',
-          filter: `project_id=eq.${projectId}`,
-        }, (payload: unknown) => callbacks.onTouchpointChange?.(payload))
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'fixture_geometries',
-          filter: `project_id=eq.${projectId}`,
-        }, (payload: unknown) => callbacks.onFixtureGenerated?.(payload))
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'conversation_messages',
-          filter: `project_id=eq.${projectId}`,
-        }, (payload: unknown) => callbacks.onNewMessage?.(payload))
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'project_comments',
-          filter: `project_id=eq.${projectId}`,
-        }, (payload: unknown) => callbacks.onCommentChange?.(payload));
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'touchpoints', filter: `project_id=eq.${projectId}` },
+          (payload: unknown) => callbacks.onTouchpointChange?.(payload))
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fixture_geometries', filter: `project_id=eq.${projectId}` },
+          (payload: unknown) => callbacks.onFixtureGenerated?.(payload))
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_messages', filter: `project_id=eq.${projectId}` },
+          (payload: unknown) => callbacks.onNewMessage?.(payload))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'project_comments', filter: `project_id=eq.${projectId}` },
+          (payload: unknown) => callbacks.onCommentChange?.(payload));
 
-      // ── Presence ──────────────────────────────────────────────────────────
       channel.on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState() as Record<string, PresenceUser[]>;
-        const users = Object.values(state).flat();
-        callbacks.onPresenceChange?.(users);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const state = (channel as any).presenceState() as Record<string, PresenceUser[]>;
+        callbacks.onPresenceChange?.(Object.values(state).flat());
       });
 
       channel.subscribe((status: string) => {
         if (status === 'SUBSCRIBED' && currentUserId) {
-          channel.track({
-            user_id: currentUserId,
-            name: 'You',
-            updated_at: new Date().toISOString(),
-          });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (channel as any).track({ user_id: currentUserId, name: 'You', updated_at: new Date().toISOString() });
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Silently remove channel on auth failure — polling covers the features
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { (supabase as any).removeChannel(channel); } catch (_) { /* ignore */ }
+          cleanup = () => {};
         }
       });
 
       channelRef.current = channel;
-
-      cleanup = () => {
-        supabase.removeChannel(channel);
-      };
-    }).catch(() => {
-      // @supabase/supabase-js not installed — silently skip
-    });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cleanup = () => { try { (supabase as any).removeChannel(channel); } catch (_) { /* ignore */ } };
+    }).catch(() => {});
 
     return () => cleanup();
   }, [projectId, currentUserId]);
