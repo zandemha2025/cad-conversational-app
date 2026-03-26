@@ -57,11 +57,13 @@ def _export_via_zoo(project_id: str, kcl: str, fmt: str) -> str:
         log.warning("ZOO_API_KEY not set — returning mock URL: %s", mock_url)
         return mock_url
 
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
+    from app.services.zoo_service import _zoo_url
+    conv_url, extra_headers = _zoo_url("/file/conversion")
+    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
     payload = {"src_format": "kcl", "output_format": fmt, "body": kcl}
 
     resp = httpx.post(
-        f"{settings.ZOO_API_URL}/file/conversion",
+        conv_url,
         json=payload,
         headers=headers,
         timeout=60,

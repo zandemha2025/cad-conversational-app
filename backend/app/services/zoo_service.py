@@ -31,6 +31,26 @@ POLL_INTERVAL = 5
 POLL_MAX = 25      # 125 s max polling
 
 
+def _zoo_url(path: str, **query_params: str) -> tuple[str, dict]:
+    """
+    Build a Zoo.dev request URL and headers.
+    When ZOO_PROXY_URL is set, routes through the Vercel proxy to bypass
+    Fly.io blocked IPs. Otherwise calls api.zoo.dev directly.
+    Returns (url, extra_headers).
+    """
+    if settings.ZOO_PROXY_URL:
+        params = {"path": path, **query_params}
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        url = f"{settings.ZOO_PROXY_URL}?{qs}"
+        extra = {"x-proxy-key": settings.ZOO_PROXY_KEY} if settings.ZOO_PROXY_KEY else {}
+        return url, extra
+    base = settings.ZOO_API_URL.rstrip("/")
+    if query_params:
+        qs = "&".join(f"{k}={v}" for k, v in query_params.items())
+        return f"{base}{path}?{qs}", {}
+    return f"{base}{path}", {}
+
+
 # ── stub GLB ─────────────────────────────────────────────────────────────────
 
 def _generate_stub_glb(width_mm: float = 200, depth_mm: float = 150, height_mm: float = 15) -> bytes:
@@ -97,14 +117,12 @@ def _safe_b64decode(s: str) -> bytes | None:
 # ── polling ───────────────────────────────────────────────────────────────────
 
 async def _poll_text_to_cad(client: httpx.AsyncClient, op_id: str) -> dict | None:
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
     for _ in range(POLL_MAX):
         await asyncio.sleep(POLL_INTERVAL)
         try:
-            resp = await client.get(
-                f"{settings.ZOO_API_URL}/user/text-to-cad/{op_id}",
-                headers=headers,
-            )
+            poll_url, extra_headers = _zoo_url(f"/user/text-to-cad/{op_id}")
+            headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
+            resp = await client.get(poll_url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -134,13 +152,12 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
         log.warning("ZOO_API_KEY not set — using stub GLB")
         return {**empty, "gltf_url": _upload_stub(project_id, version)}
 
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
-
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/glb", kcl="true")
+            headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
             resp = await client.post(
-                f"{settings.ZOO_API_URL}/ai/text-to-cad/glb",
-                params={"kcl": "true"},
+                cad_url,
                 json={"prompt": prompt},
                 headers=headers,
             )
@@ -223,12 +240,12 @@ async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: s
         "stl":   "source.glb",
     }
     want_key = format_key_map.get(output_format.lower(), "source.step")
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
-
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/glb")
+            headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
             resp = await client.post(
-                f"{settings.ZOO_API_URL}/ai/text-to-cad/glb",
+                cad_url,
                 json={"prompt": prompt},
                 headers=headers,
             )
