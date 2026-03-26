@@ -69,6 +69,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [showTour, setShowTour]   = useState(false);
   const [projectName, setProjectName] = useState<string>('');
   const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
   const { state, dispatch }       = useWorkspace();
   const { user } = useAuth();
   const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
@@ -92,6 +93,18 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
   // Load fixture geometry + part features
   const { gltfUrl, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
+
+  // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
+  useEffect(() => {
+    if (!isGenerating || gltfUrl) return;
+    const id = setInterval(refetchGeometry, 5000);
+    return () => clearInterval(id);
+  }, [isGenerating, gltfUrl, refetchGeometry]);
+
+  // Stop polling once geometry arrives
+  useEffect(() => {
+    if (gltfUrl) setIsGenerating(false);
+  }, [gltfUrl]);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {
@@ -269,7 +282,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           <>
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
-                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onComponentSuggestions={setComponentSuggestions} />}
+                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} />}
                 {leftPanel === 'tree'         && <FeatureTree />}
                 {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                 {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}

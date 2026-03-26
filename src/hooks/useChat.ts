@@ -22,6 +22,7 @@ import type { ComponentSuggestion } from '../lib/api';
 interface UseChatOptions {
   projectId: string | undefined;
   initialMessages?: ChatMessage[];
+  onGenerationQueued?: () => void;
 }
 
 interface GenerationJob {
@@ -31,7 +32,7 @@ interface GenerationJob {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
+export function useChat({ projectId, initialMessages = [], onGenerationQueued }: UseChatOptions) {
   const [messages, setMessages]               = useState<ChatMessage[]>(initialMessages);
   const [isThinking, setIsThinking]           = useState(false);
   const [isConnected, setIsConnected]         = useState(false);
@@ -88,6 +89,7 @@ export function useChat({ projectId, initialMessages = [] }: UseChatOptions) {
 
       if (msg.type === 'generation_queued') {
         setActiveGenJob({ jobId: msg.job_id as string, message: msg.message as string });
+        onGenerationQueued?.();
         return;
       }
 

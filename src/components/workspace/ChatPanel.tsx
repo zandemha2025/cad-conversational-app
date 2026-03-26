@@ -24,6 +24,7 @@ const SUGGESTION_CHIPS = [
 interface ChatPanelProps {
   projectId?: string;
   onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
+  onGenerationQueued?: () => void;
 }
 
 interface ProactiveSuggestion {
@@ -31,11 +32,12 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId, onComponentSuggestions }: ChatPanelProps) {
+export default function ChatPanel({ projectId, onComponentSuggestions, onGenerationQueued }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const { messages, isThinking, isConnected, activeGenJob, sendMessage, componentSuggestions } = useChat({
     projectId,
     initialMessages: [],
+    onGenerationQueued,
   });
 
   // Forward component suggestions to Workspace when they arrive
