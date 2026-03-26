@@ -1,24 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Send, Paperclip, Mic, Bot, User, ChevronDown, Sparkles,
-  Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
-  Target, Wifi, Loader2, X, Lightbulb,
+  Wrench, FileText, Crosshair, AlertTriangle,
+  Target, Wifi, Loader2, X, Lightbulb, Download, WifiOff,
 } from 'lucide-react';
 import { useChat } from '../../hooks/useChat';
 import type { ChatMessage } from '../../types';
-
-const SUGGESTION_CHIPS = [
-  'Verify 3-2-1 locating scheme',
-  'Add drill bushing seats',
-  'Find toggle clamp (150N)',
-  'Add GD&T position callout',
-  'Run DFM check',
-  'Generate inspection plan',
-  'Check clamp force adequacy',
-  'Export drawing package',
-  'Mirror about YZ plane',
-  'Export as STEP',
-];
 
 
 interface ChatPanelProps {
@@ -36,7 +23,7 @@ interface ProactiveSuggestion {
 
 export default function ChatPanel({ projectId, projectName, onGenerationQueued, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const { messages, isThinking, isConnected, activeGenJob, sendMessage, clearGenJob, componentSuggestions } = useChat({
+  const { messages, isThinking, isConnected, authFailed, activeGenJob, sendMessage, clearGenJob, componentSuggestions } = useChat({
     projectId,
     initialMessages: [],
     onGenerationQueued,
@@ -94,7 +81,11 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
           <span className="text-xs font-semibold text-slate-200">ForgeAI Assistant</span>
           {isConnected ? (
             <span className="text-xs text-emerald-400 flex items-center gap-1">
-              <Wifi size={10} />Live
+              <Wifi size={10} />Connected
+            </span>
+          ) : authFailed ? (
+            <span className="text-xs text-slate-500 flex items-center gap-1">
+              <WifiOff size={10} />Reconnecting…
             </span>
           ) : (
             <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -118,15 +109,18 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
         </div>
       )}
 
-      {/* Quick action bar */}
+      {/* Quick action bar — context-aware based on model state */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-cadsurface-700 bg-cadsurface-900/50 shrink-0 overflow-x-auto no-scrollbar">
-        {[
-          { icon: <Wrench size={11} />,        label: 'Hardware',    prompt: 'Find toggle clamp 150N' },
-          { icon: <FileText size={11} />,      label: 'Drawing',     prompt: 'Generate drawing package' },
-          { icon: <Crosshair size={11} />,     label: '3-2-1 Check', prompt: 'Run a 3-2-1 locating check' },
-          { icon: <AlertTriangle size={11} />, label: 'DFM',         prompt: 'Run DFM check' },
-          { icon: <CheckSquare size={11} />,   label: 'Inspection',  prompt: 'Generate inspection plan' },
-        ].map(({ icon, label, prompt }) => (
+        {(fixtureLoaded ? [
+          { icon: <AlertTriangle size={11} />, label: 'Validate',  prompt: 'Run DFM and GD&T validation check' },
+          { icon: <FileText size={11} />,      label: 'Drawing',   prompt: 'Generate drawing package' },
+          { icon: <Download size={11} />,      label: 'Export',    prompt: 'Export as STEP file' },
+          { icon: <Wrench size={11} />,        label: 'Modify',    prompt: 'Suggest design modifications' },
+        ] : [
+          { icon: <Sparkles size={11} />,  label: 'Generate',    prompt: 'Generate a fixture for my part' },
+          { icon: <Crosshair size={11} />, label: 'Design',      prompt: 'Design a locating fixture with clamps' },
+          { icon: <FileText size={11} />,  label: 'Upload STEP', prompt: 'I want to upload a STEP file' },
+        ]).map(({ icon, label, prompt }) => (
           <button
             key={label}
             onClick={() => setInput(prompt)}
@@ -202,19 +196,6 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
         )}
 
         <div ref={bottomRef} />
-      </div>
-
-      {/* Suggestion chips */}
-      <div className="px-3 pb-2 flex gap-1.5 overflow-x-auto shrink-0 no-scrollbar">
-        {SUGGESTION_CHIPS.map((chip) => (
-          <button
-            key={chip}
-            onClick={() => setInput(chip)}
-            className="whitespace-nowrap text-xs text-slate-400 hover:text-slate-200 bg-cadsurface-800 hover:bg-cadsurface-700 border border-cadsurface-700 hover:border-cadblue-600/50 px-2.5 py-1 rounded-full transition-all"
-          >
-            {chip}
-          </button>
-        ))}
       </div>
 
       {/* Input */}

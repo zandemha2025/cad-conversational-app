@@ -207,20 +207,6 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
 
       {isWorkspace ? (
         <>
-          {/* Menu items */}
-          {['File', 'Edit', 'View', 'Insert', 'Tooling', 'Simulate', 'Help'].map((item) => (
-            <button
-              key={item}
-              className={`btn-ghost text-xs px-2 py-1 rounded flex items-center gap-0.5 ${
-                item === 'Tooling' ? 'text-amber-400 hover:text-amber-300' : ''
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-
-          <div className="w-px h-5 bg-cadsurface-700 mx-1 shrink-0" />
-
           {/* Undo/Redo */}
           <button className="btn-ghost p-1.5 rounded" title="Undo"><Undo2 size={14} /></button>
           <button className="btn-ghost p-1.5 rounded" title="Redo"><Redo2 size={14} /></button>
@@ -257,15 +243,15 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
           <div className="flex items-center gap-2 px-2.5 py-1 bg-cadsurface-800/60 border border-cadsurface-700 rounded-lg text-xs shrink-0">
             <div className="flex items-center gap-1.5">
               <Wrench size={11} className="text-amber-400" />
-              <span className="font-mono text-slate-300 font-medium">
-                {partNumber !== '—' ? partNumber : 'No P/N'}
+              <span className={`font-mono font-medium ${partNumber !== '—' ? 'text-slate-300' : 'text-slate-600'}`}>
+                {partNumber}
               </span>
             </div>
             <div className="w-px h-3 bg-cadsurface-600" />
             <div className="flex items-center gap-1">
               <GitBranch size={11} className="text-slate-500" />
-              <span className="font-mono text-emerald-400 font-medium">
-                {revision !== '—' ? `Rev ${revision}` : 'No Rev'}
+              <span className={`font-mono font-medium ${revision !== '—' ? 'text-emerald-400' : 'text-slate-600'}`}>
+                {revision !== '—' ? `Rev ${revision}` : '—'}
               </span>
             </div>
           </div>

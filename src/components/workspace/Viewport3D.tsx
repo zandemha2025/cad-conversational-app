@@ -248,14 +248,14 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       {/* Empty state — shown when no model has been generated yet */}
       {!resolvedGltfUrl && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-          <div className="flex flex-col items-center gap-3 text-center animate-pulse">
-            <div className="w-16 h-16 rounded-2xl bg-cadsurface-800/80 border border-cadsurface-700 flex items-center justify-center">
-              <Box size={28} className="text-slate-600" />
+          <div className="flex flex-col items-center gap-4 text-center max-w-xs px-6">
+            <div className="w-20 h-20 rounded-2xl bg-cadsurface-800/80 border border-cadsurface-700 flex items-center justify-center">
+              <Box size={36} className="text-slate-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-400">No model yet</p>
-              <p className="text-xs text-slate-600 mt-1 max-w-[200px] leading-relaxed">
-                Describe your fixture in the chat to generate a 3D model
+              <p className="text-sm font-semibold text-slate-300">No model loaded</p>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                Describe your design in the AI chat to generate a 3D model, or upload a STEP file to get started
               </p>
             </div>
           </div>
@@ -288,20 +288,20 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         <ViewButton active={false} icon={<RefreshCw size={13} />} label="Reset View" onClick={() => {}} />
       </div>
 
-      {/* Part info */}
-      <div className="absolute top-3 left-3 bg-cadsurface-900/80 border border-cadsurface-700 rounded-lg px-3 py-2 backdrop-blur-sm z-10">
-        <div className="flex items-center gap-2">
-          <p className="text-xs font-medium text-slate-200">{resolvedGltfUrl ? 'Fixture Model' : 'No model'}</p>
-          {resolvedGltfUrl && (
+      {/* Part info — only shown when model is loaded */}
+      {resolvedGltfUrl && (
+        <div className="absolute top-3 left-3 bg-cadsurface-900/80 border border-cadsurface-700 rounded-lg px-3 py-2 backdrop-blur-sm z-10">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium text-slate-200">Fixture Model</p>
             <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
               Live
             </span>
+          </div>
+          {features && (
+            <p className="text-xs text-slate-500 mt-0.5">{features.face_count} faces · {features.hole_count} holes · {Math.round(features.volume_mm3 / 1000)} cm³</p>
           )}
         </div>
-        {features && (
-          <p className="text-xs text-slate-500 mt-0.5">{features.face_count} faces · {features.hole_count} holes · {Math.round(features.volume_mm3 / 1000)} cm³</p>
-        )}
-      </div>
+      )}
 
       {/* Selection info */}
       {state.selectedFeature && (

@@ -36,6 +36,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
   const [messages, setMessages]         = useState<ChatMessage[]>(initialMessages);
   const [isThinking, setIsThinking]     = useState(false);
   const [isConnected, setIsConnected]   = useState(false);
+  const [authFailed, setAuthFailed]     = useState(false);
   const [activeGenJob, setActiveGenJob] = useState<GenerationJob | null>(null);
   const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
 
@@ -101,9 +102,15 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
       if (msg.type === 'error') {
         setIsThinking(false);
         streamingIdRef.current = null;
+        const detail = (msg.detail as string) ?? '';
+        // Auth errors should not appear as chat messages
+        if (/token|auth|unauthorized/i.test(detail)) {
+          setAuthFailed(true);
+          return;
+        }
         setMessages(prev => [...prev, {
           id: `err_${Date.now()}`, role: 'system' as const,
-          content: `⚠ ${msg.detail}`,
+          content: `Error: ${detail}`,
           timestamp: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
         }]);
       }
@@ -142,5 +149,5 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
 
   const clearGenJob = useCallback(() => setActiveGenJob(null), []);
 
-  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, clearGenJob, componentSuggestions };
+  return { messages, isThinking, isConnected, authFailed, activeGenJob, sendMessage, setMessages, clearGenJob, componentSuggestions };
 }

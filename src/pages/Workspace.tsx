@@ -38,8 +38,9 @@ import { fetchTouchpoints, fetchProject } from '../lib/api';
 import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
-  SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
+  Target, ShieldAlert, Download, ClipboardCheck,
   Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen, Upload, Shuffle,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { ComponentSuggestion } from '../lib/api';
 import { generateVariations } from '../lib/api';
@@ -71,6 +72,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('chat');
   const [showLeft, setShowLeft]   = useState(true);
   const [showRight, setShowRight] = useState(true);
+  const [showMore, setShowMore]   = useState(false);
   const [mode, setMode]           = useState<WorkspaceMode>('part');
   const [showTour, setShowTour]   = useState(false);
   const [projectName, setProjectName] = useState<string>('');
@@ -190,13 +192,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
   function getPanelColor(id: LeftPanel, active: boolean) {
     if (!active) {
-      if (id === 'validation') return 'text-red-400 hover:bg-red-950/40';
+      if (id === 'validation') return 'text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300';
       return 'text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300';
     }
     switch (id) {
       case 'hardware':     return 'bg-amber-600 text-white';
       case 'touchpoints':  return 'bg-emerald-700 text-white';
-      case 'validation':   return 'bg-red-700 text-white';
+      case 'validation':   return 'bg-emerald-700 text-white';
       case 'export':       return 'bg-violet-600 text-white';
       case 'approvals':    return 'bg-sky-700 text-white';
       case 'interference':      return 'bg-orange-700 text-white';
@@ -229,6 +231,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
         {mode !== 'drawing' && mode !== 'nodes' && mode !== 'studies' && (
           <div className="hidden md:flex flex-col bg-cadsurface-900 border-r border-cadsurface-700 shrink-0">
             <div className="flex flex-col gap-1 p-1 pt-2">
+              {/* Panel toggle */}
               <button
                 title="Toggle left panel"
                 onClick={() => setShowLeft(p => !p)}
@@ -241,7 +244,9 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 <PanelLeftClose size={15} />
               </button>
               <div className="h-px bg-cadsurface-700 my-1" />
-              {leftButtons.map(btn => {
+
+              {/* Core 4 panels */}
+              {leftButtons.filter(b => ['chat', 'validation', 'export', 'variations'].includes(b.id)).map(btn => {
                 const isActive = leftPanel === btn.id && showLeft;
                 const tourId =
                   btn.id === 'chat'   ? 'tour-chat-btn'   :
@@ -266,7 +271,10 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                   </button>
                 );
               })}
+
               <div className="h-px bg-cadsurface-700 my-1" />
+
+              {/* Upload STEP */}
               <button
                 title="Upload STEP file"
                 onClick={() => setShowUploadDialog(true)}
@@ -274,12 +282,49 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               >
                 <Upload size={15} />
               </button>
-              <button
-                title="Split view"
-                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300 transition-all"
-              >
-                <SplitSquareHorizontal size={15} />
-              </button>
+
+              {/* More tools flyout */}
+              <div className="relative">
+                <button
+                  title="More tools"
+                  onClick={() => setShowMore(p => !p)}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                    showMore
+                      ? 'bg-cadsurface-700 text-slate-200'
+                      : 'text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300'
+                  }`}
+                >
+                  <MoreHorizontal size={15} />
+                </button>
+                {showMore && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
+                    <div className="absolute left-full top-0 ml-1.5 w-52 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1.5 overflow-hidden">
+                      <p className="px-3 py-1 text-xs font-semibold text-slate-600 uppercase tracking-wider">More Tools</p>
+                      {leftButtons.filter(b => !['chat', 'validation', 'export', 'variations'].includes(b.id)).map(btn => (
+                        <button
+                          key={btn.id}
+                          title={btn.title}
+                          onClick={() => { setLeftPanel(btn.id); setShowLeft(true); setShowMore(false); }}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                            leftPanel === btn.id && showLeft
+                              ? 'text-cadblue-400 bg-cadblue-900/20'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-cadsurface-800'
+                          }`}
+                        >
+                          {btn.icon}
+                          <span>{btn.title}</span>
+                          {btn.badge !== undefined && (
+                            <span className="ml-auto w-4 h-4 flex items-center justify-center rounded-full bg-red-600 text-white font-bold" style={{ fontSize: '8px' }}>
+                              {btn.badge}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
