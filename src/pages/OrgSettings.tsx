@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Building2, Users, Plus, Trash2, Shield, AlertTriangle, Loader2 } from 'lucide-react';
 import { fetchOrgMembers, inviteOrgMember, removeOrgMember, updateOrgMemberRole } from '../lib/api';
+import { getAuthToken } from '../lib/storage';
 import type { OrgMember, OrgRole } from '../types';
 
 const ROLE_CONFIG: Record<OrgRole, { label: string; color: string; desc: string }> = {
@@ -10,9 +11,19 @@ const ROLE_CONFIG: Record<OrgRole, { label: string; color: string; desc: string 
   viewer:   { label: 'Viewer',   color: 'bg-slate-800 border-slate-700 text-slate-400',        desc: 'Read only' },
 };
 
-const orgId = 'org1'; // Replace with real org from auth context
+function getOrgIdFromToken(): string | undefined {
+  try {
+    const token = getAuthToken();
+    if (!token) return undefined;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.org_id ?? payload.organization_id ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export default function OrgSettings() {
+  const orgId = getOrgIdFromToken();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -21,15 +32,16 @@ export default function OrgSettings() {
   const [itarEnabled, setItarEnabled] = useState(false);
 
   useEffect(() => {
+    if (!orgId) return;
     setLoading(true);
     fetchOrgMembers(orgId)
       .then((data: unknown) => { if (Array.isArray(data)) setMembers(data as OrgMember[]); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [orgId]);
 
   const handleInvite = async () => {
-    if (!inviteEmail) return;
+    if (!inviteEmail || !orgId) return;
     setInviting(true);
     try {
       await inviteOrgMember(orgId, inviteEmail, inviteRole);
@@ -42,11 +54,13 @@ export default function OrgSettings() {
   };
 
   const handleRemove = async (userId: string) => {
+    if (!orgId) return;
     await removeOrgMember(orgId, userId).catch(() => {});
     setMembers(prev => prev.filter(m => m.user_id !== userId));
   };
 
   const handleRoleChange = async (userId: string, newRole: OrgRole) => {
+    if (!orgId) return;
     await updateOrgMemberRole(orgId, userId, newRole).catch(() => {});
     setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role: newRole } : m));
   };

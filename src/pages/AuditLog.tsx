@@ -36,7 +36,7 @@ export default function AuditLog() {
 
   useEffect(() => {
     setLoading(true);
-    fetchAuditLog('org1', 200)
+    fetchAuditLog(undefined, 200)
       .then((data: unknown) => { if (Array.isArray(data)) setEntries(data as AuditEntry[]); })
       .catch(() => {})
       .finally(() => setLoading(false));
