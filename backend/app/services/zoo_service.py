@@ -28,17 +28,20 @@ async def compile_kcl_to_gltf(project_id: str, kcl_code: str, version: int) -> s
 
     headers = {
         "Authorization": f"Bearer {settings.ZOO_API_KEY}",
-        "Content-Type": "application/json",
     }
-    payload = {
+    params = {
         "src_format": "kcl",
         "output_format": "gltf",
-        "body": kcl_code,
     }
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.post(ZOO_CONVERT_URL, json=payload, headers=headers)
+            resp = await client.post(
+                ZOO_CONVERT_URL,
+                params=params,
+                files={"body": ("fixture.kcl", kcl_code.encode("utf-8"), "text/plain")},
+                headers=headers,
+            )
             resp.raise_for_status()
 
             # Zoo.dev streams back the binary
@@ -72,17 +75,20 @@ async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: s
 
     headers = {
         "Authorization": f"Bearer {settings.ZOO_API_KEY}",
-        "Content-Type": "application/json",
     }
-    payload = {
+    params = {
         "src_format": "kcl",
         "output_format": output_format,
-        "body": kcl_code,
     }
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.post(ZOO_CONVERT_URL, json=payload, headers=headers)
+            resp = await client.post(
+                ZOO_CONVERT_URL,
+                params=params,
+                files={"body": ("fixture.kcl", kcl_code.encode("utf-8"), "text/plain")},
+                headers=headers,
+            )
             resp.raise_for_status()
             data = resp.content
             if not data:
