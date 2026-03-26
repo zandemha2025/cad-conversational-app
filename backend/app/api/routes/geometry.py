@@ -7,8 +7,12 @@ router = APIRouter(prefix="/projects", tags=["geometry"])
 
 
 def _presign_if_private(url: str | None) -> str | None:
-    """Return a 1-hour presigned URL when url points at a private R2 endpoint."""
+    """Return a 1-hour presigned URL when url points at a private R2 endpoint.
+    If the URL is already presigned (has X-Amz-Signature), return it as-is."""
     if not url or "r2.cloudflarestorage.com" not in url:
+        return url
+    # Already presigned — don't double-sign
+    if "X-Amz-Signature" in url:
         return url
     try:
         from app.core.config import settings
