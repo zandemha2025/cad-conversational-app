@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # ── Zoo.dev CAD Kernel ────────────────────────────────────────────────────
     ZOO_API_KEY: str = ""
     ZOO_API_URL: str = "https://api.zoo.dev"
+    ZOO_PROXY_URL: str = ""          # Cloudflare Worker proxy URL (overrides ZOO_API_URL)
+    ZOO_PROXY_SECRET: str = ""       # X-Proxy-Key shared secret
+
+    @computed_field
+    @property
+    def zoo_base_url(self) -> str:
+        return self.ZOO_PROXY_URL.rstrip("/") if self.ZOO_PROXY_URL else self.ZOO_API_URL.rstrip("/")
 
     # ── Redis / Celery ────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"

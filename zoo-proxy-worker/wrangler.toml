@@ -1,0 +1,4 @@
+name = "zoo-proxy"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+account_id = "a32248703ab44e52a6fb413456cbf6a2"

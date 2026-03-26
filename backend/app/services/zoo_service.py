@@ -96,13 +96,20 @@ def _safe_b64decode(s: str) -> bytes | None:
 
 # ── polling ───────────────────────────────────────────────────────────────────
 
+def _zoo_headers() -> dict:
+    h = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
+    if settings.ZOO_PROXY_SECRET:
+        h["X-Proxy-Key"] = settings.ZOO_PROXY_SECRET
+    return h
+
+
 async def _poll_text_to_cad(client: httpx.AsyncClient, op_id: str) -> dict | None:
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
+    headers = _zoo_headers()
     for _ in range(POLL_MAX):
         await asyncio.sleep(POLL_INTERVAL)
         try:
             resp = await client.get(
-                f"{settings.ZOO_API_URL}/user/text-to-cad/{op_id}",
+                f"{settings.zoo_base_url}/user/text-to-cad/{op_id}",
                 headers=headers,
             )
             resp.raise_for_status()
@@ -134,12 +141,12 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
         log.warning("ZOO_API_KEY not set — using stub GLB")
         return {**empty, "gltf_url": _upload_stub(project_id, version)}
 
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
+    headers = _zoo_headers()
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.post(
-                f"{settings.ZOO_API_URL}/ai/text-to-cad/glb",
+                f"{settings.zoo_base_url}/ai/text-to-cad/glb",
                 params={"kcl": "true"},
                 json={"prompt": prompt},
                 headers=headers,
@@ -223,12 +230,12 @@ async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: s
         "stl":   "source.glb",
     }
     want_key = format_key_map.get(output_format.lower(), "source.step")
-    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}"}
+    headers = _zoo_headers()
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.post(
-                f"{settings.ZOO_API_URL}/ai/text-to-cad/glb",
+                f"{settings.zoo_base_url}/ai/text-to-cad/glb",
                 json={"prompt": prompt},
                 headers=headers,
             )
