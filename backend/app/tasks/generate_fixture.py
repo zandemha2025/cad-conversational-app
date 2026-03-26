@@ -86,12 +86,25 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         user_prompt=user_prompt or f"Generate a {template_id} fixture",
     ))
 
-    # ── Zoo.dev compilation ────────────────────────────────────────────────────
-    _publish(project_id, {"status": "compiling", "message": "Compiling KCL → 3D geometry…", "progress": 0.50})
+    # ── Zoo.dev text-to-CAD: generate GLTF + compilable KCL ───────────────────
+    _publish(project_id, {"status": "compiling", "message": "Generating 3D geometry via Zoo.dev…", "progress": 0.50})
 
-    from app.services.zoo_service import compile_kcl_to_gltf
+    from app.services.zoo_service import text_to_cad_gltf
     version = _next_version(sb, project_id)
-    gltf_url = _run_async(compile_kcl_to_gltf(project_id, kcl, version))
+
+    # Use the original user prompt (or a summary extracted from the Gemini KCL
+    # if the prompt is missing) so Zoo.dev gets clear fixture design intent.
+    zoo_prompt = (user_prompt or "").strip()
+    if not zoo_prompt:
+        zoo_prompt = f"Generate a {template_id.replace('_', ' ')} fixture"
+
+    zoo_result = _run_async(text_to_cad_gltf(project_id, zoo_prompt, version))
+    gltf_url  = zoo_result.get("gltf_url")
+    zoo_kcl   = zoo_result.get("kcl")
+
+    # Prefer Zoo.dev's compilable KCL over Gemini's (which may have syntax issues).
+    # Fall back to Gemini KCL if Zoo.dev didn't return one.
+    stored_kcl = zoo_kcl or kcl
 
     # Save fixture geometry record
     fixture_id = str(uuid.uuid4())
@@ -99,44 +112,11 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "id": fixture_id,
         "project_id": project_id,
         "version": version,
-        "kcl": kcl,
+        "kcl": stored_kcl,
         "gltf_url": gltf_url,
         "generation_prompt": user_prompt,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
-
-    # ── Assembly component identification ──────────────────────────────────────
-    _publish(project_id, {"status": "generating", "message": "Identifying assembly components…", "progress": 0.62})
-
-    components = _run_async(gemini.identify_assembly_components(
-        kcl_code=kcl,
-        part_features=features,
-        user_prompt=user_prompt or f"Generate a {template_id} fixture",
-    ))
-
-    comp_now = datetime.now(timezone.utc).isoformat()
-    saved_components = []
-    for comp in components:
-        comp_id = str(uuid.uuid4())
-        try:
-            sb.table("assembly_components").insert({
-                "id": comp_id,
-                "fixture_id": fixture_id,
-                "project_id": project_id,
-                "name": comp.get("name", "Component"),
-                "component_type": comp.get("component_type", "custom"),
-                "description": comp.get("description", ""),
-                "material": comp.get("material", ""),
-                "gltf_url": gltf_url,       # share main model URL for now
-                "position_json": {"x": 0, "y": 0, "z": 0},
-                "rotation_json": {"x": 0, "y": 0, "z": 0},
-                "created_at": comp_now,
-            }).execute()
-            saved_components.append(comp_id)
-        except Exception as e:
-            log.warning("Failed to save assembly component '%s': %s", comp.get("name"), e)
-
-    log.info("Saved %d assembly components for fixture %s", len(saved_components), fixture_id)
 
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.70})
@@ -157,17 +137,6 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "connections_json": node_graph.get("connections", []),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
-
-    # ── Dimension extraction ────────────────────────────────────────────────────
-    _publish(project_id, {"status": "generating", "message": "Extracting dimensions…", "progress": 0.78})
-
-    dimensions = _run_async(gemini.extract_dimensions(
-        kcl=kcl,
-        design_description=user_prompt or "",
-    ))
-    sb.table("fixture_geometries").update({
-        "dimensions_json": dimensions,
-    }).eq("id", fixture_id).execute()
 
     # ── Validation ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "validating", "message": "Running DFM validation…", "progress": 0.85})
