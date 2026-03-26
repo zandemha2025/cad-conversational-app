@@ -92,11 +92,16 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     from app.services.zoo_service import text_to_cad_gltf
     version = _next_version(sb, project_id)
 
-    # Use the original user prompt (or a summary extracted from the Gemini KCL
-    # if the prompt is missing) so Zoo.dev gets clear fixture design intent.
-    zoo_prompt = (user_prompt or "").strip()
-    if not zoo_prompt:
-        zoo_prompt = f"Generate a {template_id.replace('_', ' ')} fixture"
+    # Distill user prompt → clean <200-char geometry description via Gemini.
+    # This ensures Zoo.dev always receives a well-formed geometry prompt
+    # regardless of how the user phrased their request.
+    raw_prompt = (user_prompt or "").strip() or f"Generate a {template_id.replace('_', ' ')} fixture"
+    zoo_prompt = _run_async(gemini.distill_for_zoo(
+        user_prompt=raw_prompt,
+        template_id=template_id,
+        part_features=features,
+    ))
+    log.info("Zoo.dev prompt distilled: '%s' → '%s'", raw_prompt[:80], zoo_prompt[:80])
 
     zoo_result = _run_async(text_to_cad_gltf(project_id, zoo_prompt, version))
     gltf_url  = zoo_result.get("gltf_url")

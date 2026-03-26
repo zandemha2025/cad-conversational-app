@@ -250,6 +250,73 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Zoo.dev prompt distillation (Flash) ──────────────────────────────────
+    async def distill_for_zoo(
+        self,
+        user_prompt: str,
+        template_id: str = "generic_fixture",
+        part_features: dict | None = None,
+    ) -> str:
+        """
+        Convert any user prompt into a clean, short geometry description
+        suitable for Zoo.dev text-to-CAD (<200 chars, pure geometry terms).
+
+        Example:
+          in:  "I need a drill jig for Boeing 737 wing panel assembly with M8 bolt pattern"
+          out: "aluminum plate 200x150x20mm with 4 M8 through-holes at 45mm spacing"
+        """
+        bb = (part_features or {}).get("bounding_box", {})
+        size_hint = ""
+        if bb:
+            x = bb.get("x", 0)
+            y = bb.get("y", 0)
+            z = bb.get("z", 0)
+            if x and y:
+                size_hint = f" Part bounding box: {x:.0f}x{y:.0f}x{z:.0f}mm."
+
+        system = (
+            "You are a CAD geometry translator. Convert the user's fixture design request "
+            "into a concise geometry description for a text-to-3D-CAD system. "
+            "Rules:\n"
+            "- Output ONLY the geometry description, nothing else\n"
+            "- Maximum 180 characters\n"
+            "- Use pure geometry/manufacturing terms (shapes, dimensions, holes, features)\n"
+            "- Include approximate dimensions in mm if inferrable\n"
+            "- No business context, no assembly context, no part names\n"
+            "- Start with the primary material and base shape\n"
+            "- Example output: 'aluminum plate 200x150x20mm with 4 M8 through-holes at 50mm spacing and 2 locating pins'"
+        )
+        prompt = (
+            f"{system}\n\n"
+            f"Fixture type: {template_id.replace('_', ' ')}.{size_hint}\n"
+            f"User request: {user_prompt}\n\n"
+            f"Geometry description:"
+        )
+
+        fallback = _default_zoo_prompt(template_id, bb)
+
+        if not settings.GEMINI_API_KEY:
+            return fallback
+
+        try:
+            model = self._get_flash()
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(
+                None,
+                lambda: model.generate_content(prompt)
+            )
+            result = resp.text.strip().strip('"').strip("'")
+            # Enforce length limit
+            if len(result) > 195:
+                result = result[:192] + "..."
+            if result:
+                log.info("distill_for_zoo: '%s' → '%s'", user_prompt[:60], result[:80])
+                return result
+        except Exception as e:
+            log.error("distill_for_zoo error: %s", e)
+
+        return fallback
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -280,6 +347,22 @@ class GeminiService:
         except Exception as e:
             log.error("explain_dfm_issue error: %s", e)
             return str(e)
+
+
+# ── Zoo.dev prompt fallback ───────────────────────────────────────────────────
+
+def _default_zoo_prompt(template_id: str, bb: dict) -> str:
+    """Return a safe default Zoo.dev geometry prompt when Gemini distillation fails."""
+    w = max(int(bb.get("x", 0)) + 40, 200) if bb else 200
+    d = max(int(bb.get("y", 0)) + 40, 150) if bb else 150
+    type_map = {
+        "drill_jig":      f"aluminum drill jig plate {w}x{d}x20mm with 4 drill bushing holes and 2 locating pins",
+        "cnc_fixture":    f"aluminum CNC machining fixture plate {w}x{d}x25mm with 3-2-1 locating pads and clamp slots",
+        "weld_fixture":   f"steel welding fixture base plate {w}x{d}x30mm with v-block supports and clamp positions",
+        "assembly_jig":   f"aluminum assembly jig plate {w}x{d}x20mm with tooling ball seats and dowel pin holes",
+        "inspection_jig": f"aluminum inspection fixture plate {w}x{d}x15mm with datum surface and part nesting pockets",
+    }
+    return type_map.get(template_id, f"aluminum fixture plate {w}x{d}x20mm with mounting holes and locating features")
 
 
 # ── Fallback proactive suggestions ───────────────────────────────────────────
