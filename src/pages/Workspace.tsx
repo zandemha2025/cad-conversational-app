@@ -23,6 +23,7 @@ import FeatureSearch from '../components/workspace/FeatureSearch';
 import ManufacturingPanel from '../components/workspace/ManufacturingPanel';
 import AssemblyPanel from '../components/workspace/AssemblyPanel';
 import ComponentLibraryPanel from '../components/workspace/ComponentLibraryPanel';
+import UploadDialog from '../components/workspace/UploadDialog';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import OnboardingTour from '../components/OnboardingTour';
@@ -35,7 +36,7 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen, Upload,
 } from 'lucide-react';
 import type { ComponentSuggestion } from '../lib/api';
 
@@ -70,6 +71,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [projectName, setProjectName] = useState<string>('');
   const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
   const { state, dispatch }       = useWorkspace();
   const { user } = useAuth();
   const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
@@ -256,6 +258,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               })}
               <div className="h-px bg-cadsurface-700 my-1" />
               <button
+                title="Upload STEP file"
+                onClick={() => setShowUploadDialog(true)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300 transition-all"
+              >
+                <Upload size={15} />
+              </button>
+              <button
                 title="Split view"
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-cadsurface-800 hover:text-slate-300 transition-all"
               >
@@ -348,6 +357,15 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           </button>
         ))}
       </div>
+
+      {/* Upload dialog */}
+      {showUploadDialog && projectId && (
+        <UploadDialog
+          projectId={projectId}
+          onClose={() => setShowUploadDialog(false)}
+          onComplete={() => refetchGeometry()}
+        />
+      )}
 
       {/* Onboarding tour */}
       <OnboardingTour active={showTour} onDone={() => setShowTour(false)} />

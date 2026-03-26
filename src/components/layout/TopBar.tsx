@@ -30,6 +30,7 @@ import {
   FlaskConical,
 } from 'lucide-react';
 import { fetchProject, createShareLink, type ApiProject, type ShareResponse } from '../../lib/api';
+import { useAuth } from '../../hooks/useAuth';
 
 // ── Share modal ───────────────────────────────────────────────────────────────
 
@@ -167,6 +168,16 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [project, setProject] = useState<ApiProject | null>(null);
+  const { user, logout } = useAuth();
+
+  const userInitials = (() => {
+    if (!user) return '?';
+    const name = user.name || user.email || '';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  })();
+  const displayName = user ? (user.name || user.email || 'User') : 'Guest';
 
   useEffect(() => {
     if (!projectId || !isWorkspace) return;
@@ -302,19 +313,27 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
         </>
       ) : (
         <>
-          {['Dashboard', 'Projects', 'Library', 'Templates'].map((item) => (
+          {[
+            { label: 'Dashboard', path: '/' },
+            { label: 'Projects',  path: '/' },
+            { label: 'Library',   path: '/' },
+            { label: 'Templates', path: '/' },
+          ].map(({ label, path }) => (
             <button
-              key={item}
-              onClick={() => item === 'Projects' && navigate('/')}
-              className={`btn-ghost text-xs px-2.5 py-1 rounded ${item === 'Projects' ? 'text-cadblue-400' : ''}`}
+              key={label}
+              onClick={() => navigate(path)}
+              className={`btn-ghost text-xs px-2.5 py-1 rounded ${label === 'Projects' ? 'text-cadblue-400' : ''}`}
             >
-              {item}
+              {label}
             </button>
           ))}
 
           <div className="flex-1" />
 
-          <button className="flex items-center gap-1.5 text-xs btn-ghost rounded-md px-2 py-1 border border-cadsurface-700 hover:border-amber-600/50 text-amber-400 hover:text-amber-300 transition-colors">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-1.5 text-xs btn-ghost rounded-md px-2 py-1 border border-cadsurface-700 hover:border-amber-600/50 text-amber-400 hover:text-amber-300 transition-colors"
+          >
             <Package size={13} />
             Hardware Library
           </button>
@@ -344,15 +363,15 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
             onClick={() => setShowUserMenu(p => !p)}
             className="w-7 h-7 rounded-full bg-cadblue-600 flex items-center justify-center text-xs font-bold ml-1 cursor-pointer hover:opacity-80"
           >
-            NK
+            {userInitials}
           </button>
           {showUserMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
               <div className="absolute top-full right-0 mt-1 w-48 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
                 <div className="px-3 py-2 border-b border-cadsurface-800">
-                  <p className="text-xs font-semibold text-slate-300">Nazeem K.</p>
-                  <p className="text-xs text-slate-600">Engineer · Admin</p>
+                  <p className="text-xs font-semibold text-slate-300">{displayName}</p>
+                  <p className="text-xs text-slate-600">{user?.email ?? ''}</p>
                 </div>
                 {[
                   { label: 'Team & Org', icon: Users, path: '/org-settings' },
@@ -370,7 +389,10 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
                   </button>
                 ))}
                 <div className="border-t border-cadsurface-800 mt-1">
-                  <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:text-red-400 hover:bg-cadsurface-800 transition-colors">
+                  <button
+                    onClick={() => { logout(); setShowUserMenu(false); navigate('/login'); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:text-red-400 hover:bg-cadsurface-800 transition-colors"
+                  >
                     <LogOut size={13} />
                     Sign out
                   </button>

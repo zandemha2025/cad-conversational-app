@@ -317,9 +317,9 @@ export default function Home() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { icon: <Cpu size={16} className="text-cadblue-400" />,    label: 'Start from prompt', desc: 'Describe your jig or fixture',   color: 'border-cadblue-700/40 hover:border-cadblue-500/60',   action: () => setShowNewProjectModal(true) },
-            { icon: <FolderOpen size={16} className="text-amber-400" />, label: 'Import STEP/IGES',  desc: 'Bring in existing CAD files',    color: 'border-amber-700/40 hover:border-amber-500/60',       action: () => {} },
-            { icon: <Package size={16} className="text-emerald-400" />, label: 'Hardware Library',  desc: 'Bushings, clamps, pins…',         color: 'border-emerald-700/40 hover:border-emerald-500/60',   action: () => navigate('/workspace/p1') },
-            { icon: <Target size={16} className="text-purple-400" />,  label: 'GD&T Templates',    desc: 'Pre-configured callout sets',     color: 'border-purple-700/40 hover:border-purple-500/60',    action: () => {} },
+            { icon: <FolderOpen size={16} className="text-amber-400" />, label: 'Import STEP/IGES',  desc: 'Bring in existing CAD files',    color: 'border-amber-700/40 hover:border-amber-500/60',       action: () => setShowNewProjectModal(true) },
+            { icon: <Package size={16} className="text-emerald-400" />, label: 'Hardware Library',  desc: 'Bushings, clamps, pins…',         color: 'border-emerald-700/40 hover:border-emerald-500/60',   action: () => allProjects.length > 0 ? navigate(`/workspace/${allProjects[0].id}`) : setShowNewProjectModal(true) },
+            { icon: <Target size={16} className="text-purple-400" />,  label: 'GD&T Templates',    desc: 'Pre-configured callout sets',     color: 'border-purple-700/40 hover:border-purple-500/60',    action: () => setShowNewProjectModal(true) },
           ].map((item) => (
             <button
               key={item.label}
@@ -406,7 +406,10 @@ export default function Home() {
               <Zap size={14} className="text-amber-400" />
               Tooling Templates
             </h2>
-            <button className="text-xs text-cadblue-400 hover:text-cadblue-300 flex items-center gap-1">
+            <button
+              onClick={() => setShowNewProjectModal(true)}
+              className="text-xs text-cadblue-400 hover:text-cadblue-300 flex items-center gap-1"
+            >
               Browse all <ChevronRight size={12} />
             </button>
           </div>
@@ -414,6 +417,7 @@ export default function Home() {
             {TOOLING_TEMPLATES.map((t) => (
               <button
                 key={t.label}
+                onClick={() => setShowNewProjectModal(true)}
                 className={`flex flex-col items-center gap-2 p-3 bg-cadsurface-900 border border-cadsurface-700 hover:border-cadblue-600/40 rounded-xl transition-all ${t.bg} group`}
               >
                 <div className="w-10 h-10 rounded-lg bg-cadsurface-800 group-hover:bg-cadsurface-700 flex items-center justify-center transition-colors">
