@@ -1,4 +1,4 @@
-import { useState, Suspense, useCallback, useEffect } from 'react';
+import { useState, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -7,9 +7,45 @@ import {
   ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, ChevronRight, Ruler,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
-import { addTouchpoint, fetchDimensions } from '../../lib/api';
+import { addTouchpoint, fetchDimensions, getToken } from '../../lib/api';
 import type { ApiTouchpoint, DimensionEntry } from '../../lib/api';
 import DimensionOverlay from '../DimensionOverlay';
+
+// ── Auth-aware GLB fetcher ────────────────────────────────────────────────────
+
+function useAuthGltfUrl(gltfUrl: string | null | undefined): string | null {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const prevBlobUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!gltfUrl) {
+      setBlobUrl(null);
+      return;
+    }
+    let cancelled = false;
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    fetch(gltfUrl, { headers })
+      .then(res => {
+        if (!res.ok) throw new Error(`GLB fetch failed: ${res.status}`);
+        return res.blob();
+      })
+      .then(blob => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+        if (prevBlobUrl.current) URL.revokeObjectURL(prevBlobUrl.current);
+        prevBlobUrl.current = url;
+      })
+      .catch(err => {
+        if (!cancelled) console.error('[Viewport3D] GLB fetch error:', err);
+      });
+    return () => { cancelled = true; };
+  }, [gltfUrl]);
+
+  return blobUrl;
+}
 
 // ── Real glTF model ───────────────────────────────────────────────────────────
 
@@ -18,7 +54,7 @@ function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
   onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
   const { scene } = useGLTF(url);
-  const cloned = scene.clone(true);
+  const cloned = useMemo(() => scene.clone(true), [scene]);
 
   // Apply viewMode materials
   if (viewMode === 'wireframe') {
@@ -167,7 +203,8 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   const [dimensions, setDimensions] = useState<DimensionEntry[]>([]);
   const { state, dispatch } = useWorkspace();
 
-  const resolvedGltfUrl = gltfUrl ?? state.gltfUrl;
+  const rawGltfUrl = gltfUrl ?? state.gltfUrl;
+  const resolvedGltfUrl = useAuthGltfUrl(rawGltfUrl);
   const features = state.features;
 
   // Fetch dimensions whenever a fixture is loaded
