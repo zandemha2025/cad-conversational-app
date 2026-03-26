@@ -39,7 +39,7 @@ def _zoo_url(path: str, **query_params: str) -> tuple[str, dict]:
     Returns (url, extra_headers).
     """
     if settings.ZOO_PROXY_URL:
-        params = {"path": path, **query_params}
+        params = {"zoo_path": path, **query_params}
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         url = f"{settings.ZOO_PROXY_URL}?{qs}"
         extra = {"x-proxy-key": settings.ZOO_PROXY_KEY} if settings.ZOO_PROXY_KEY else {}
