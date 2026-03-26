@@ -75,7 +75,7 @@ def proactive_analysis_task(self, project_id: str):
                 import uuid
                 from datetime import datetime, timezone
                 msg_id = str(uuid.uuid4())
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(timezone.utc)
                 await db.execute(
                     text("""
                         INSERT INTO conversation_messages

@@ -33,10 +33,10 @@ interface GenerationJob {
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useChat({ projectId, initialMessages = [], onGenerationQueued }: UseChatOptions) {
-  const [messages, setMessages]               = useState<ChatMessage[]>(initialMessages);
-  const [isThinking, setIsThinking]           = useState(false);
-  const [isConnected, setIsConnected]         = useState(false);
-  const [activeGenJob, setActiveGenJob]       = useState<GenerationJob | null>(null);
+  const [messages, setMessages]         = useState<ChatMessage[]>(initialMessages);
+  const [isThinking, setIsThinking]     = useState(false);
+  const [isConnected, setIsConnected]   = useState(false);
+  const [activeGenJob, setActiveGenJob] = useState<GenerationJob | null>(null);
   const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
 
   const wsRef          = useRef<WebSocket | null>(null);
@@ -140,5 +140,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
     wsRef.current.send(JSON.stringify({ type: 'message', content, attachments }));
   }, []);
 
-  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, componentSuggestions };
+  const clearGenJob = useCallback(() => setActiveGenJob(null), []);
+
+  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, clearGenJob, componentSuggestions };
 }

@@ -25,16 +25,18 @@ export function getToken(): string | null {
 export function setToken(t: string) {
   localStorage.setItem(TOKEN_KEY, t);
 }
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY);
+}
+export function setRefreshToken(t: string) {
+  localStorage.setItem(REFRESH_KEY, t);
+}
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
 }
-function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY);
-}
-function setRefreshToken(t: string) {
-  localStorage.setItem(REFRESH_KEY, t);
-}
+
+// ── Token refresh ─────────────────────────────────────────────────────────────
 
 let _refreshing: Promise<boolean> | null = null;
 
@@ -54,8 +56,11 @@ async function tryRefreshToken(): Promise<boolean> {
       if (data.access_token) setToken(data.access_token);
       if (data.refresh_token) setRefreshToken(data.refresh_token);
       return true;
-    } catch { return false; }
-    finally { _refreshing = null; }
+    } catch {
+      return false;
+    } finally {
+      _refreshing = null;
+    }
   })();
   return _refreshing;
 }
@@ -76,12 +81,11 @@ async function apiFetch<T>(
 
   try {
     const res = await fetch(`${API_URL}/api${path}`, { ...opts, headers });
-    if (res.status === 401 && _retry) {
-      // Try silent token refresh, then retry once
-      const refreshed = await tryRefreshToken();
-      if (refreshed) return apiFetch<T>(path, opts, false);
-    }
     if (!res.ok) {
+      if (res.status === 401 && _retry) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) return apiFetch<T>(path, opts, false);
+      }
       console.error(`[API] ${opts.method ?? 'GET'} ${path} → ${res.status}`);
       return null;
     }
@@ -122,9 +126,9 @@ export interface LoginUser {
 
 export interface LoginResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
   expires_in: number | null;
-  refresh_token?: string;
   user: LoginUser;
 }
 
@@ -279,9 +283,6 @@ export async function runValidation(projectId: string, methods?: string[]) {
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
 export async function fetchNodeGraph(projectId: string) {
-  // Try the /node-graph endpoint (node_graphs table), fall back to /nodes
-  const result = await apiFetch(`/projects/${projectId}/node-graph`);
-  if (result) return result;
   return apiFetch(`/projects/${projectId}/nodes`);
 }
 
@@ -922,128 +923,6 @@ export async function fetchFeatureById(projectId: string, featureId: string): Pr
   return apiFetch<PartFeature>(`/projects/${projectId}/features/${featureId}`);
 }
 
-// ── Manufacturing ──────────────────────────────────────────────────────────────
-
-export interface Machine {
-  id: string;
-  name: string;
-  machine_type: 'fdm_printer' | 'sla_printer' | 'cnc_3axis' | 'cnc_5axis' | 'laser_cutter' | 'manual_shop';
-  make_model?: string;
-  build_volume_json?: { x_mm: number; y_mm: number; z_mm: number };
-  materials_available: string[];
-  hourly_rate: number;
-  setup_time_minutes: number;
-}
-
-export type MachineInput = Omit<Machine, 'id'>;
-
-export interface MachinePreset extends MachineInput {
-  id: string;
-  description?: string;
-}
-
-export interface CostEstimate {
-  recommended_method: string;
-  recommended_machine: string;
-  recommended_material: string;
-  reasoning: string;
-  material_cost_usd: number;
-  machine_time_hours: number;
-  machine_cost_usd: number;
-  hardware_cost_usd: number;
-  total_cost_usd: number;
-  fits_build_volume: boolean;
-  alternative_methods: { method: string; machine: string; estimated_cost: number; tradeoff: string }[];
-}
-
-export interface ShoppingListItem {
-  description: string;
-  quantity: number;
-  mcmaster_pn?: string;
-  estimated_cost: number;
-  category: string;
-}
-
-export interface ShoppingList {
-  items: ShoppingListItem[];
-  total_cost_usd: number;
-}
-
-export interface InventoryItem {
-  id: string;
-  description: string;
-  part_number?: string;
-  quantity_on_hand: number;
-  unit?: string;
-}
-
-export interface InventoryUploadResult {
-  items_parsed: number;
-  items: InventoryItem[];
-}
-
-export interface InventoryMatch {
-  matched: { item: ShoppingListItem; inventory_item: InventoryItem; quantity_available: number }[];
-  missing: ShoppingListItem[];
-  summary: { total_items: number; in_stock: number; need_ordering: number };
-}
-
-export async function fetchMachines(): Promise<Machine[] | null> {
-  return apiFetch<Machine[]>('/manufacturing/machines');
-}
-
-export async function addMachine(machine: MachineInput): Promise<Machine | null> {
-  return apiFetch<Machine>('/manufacturing/machines', {
-    method: 'POST',
-    body: JSON.stringify(machine),
-  });
-}
-
-export async function deleteMachine(id: string): Promise<void> {
-  await apiFetch(`/manufacturing/machines/${id}`, { method: 'DELETE' });
-}
-
-export async function fetchMachinePresets(): Promise<MachinePreset[] | null> {
-  return apiFetch<MachinePreset[]>('/manufacturing/machines/presets');
-}
-
-export async function estimateManufacturingCost(projectId: string): Promise<CostEstimate | null> {
-  return apiFetch<CostEstimate>(`/projects/${projectId}/manufacturing/cost-estimate`, { method: 'POST' });
-}
-
-export async function fetchShoppingList(projectId: string): Promise<ShoppingList | null> {
-  return apiFetch<ShoppingList>(`/projects/${projectId}/manufacturing/shopping-list`);
-}
-
-export async function uploadInventory(file: File): Promise<InventoryUploadResult | null> {
-  const fd = new FormData();
-  fd.append('file', file);
-  return apiUpload<InventoryUploadResult>('/manufacturing/inventory/upload', fd);
-}
-
-export async function fetchInventory(): Promise<InventoryItem[] | null> {
-  return apiFetch<InventoryItem[]>('/manufacturing/inventory');
-}
-
-export async function matchInventory(projectId: string): Promise<InventoryMatch | null> {
-  return apiFetch<InventoryMatch>(`/projects/${projectId}/manufacturing/inventory-match`);
-}
-
-// ── Dimensions ────────────────────────────────────────────────────────────────
-
-export interface DimensionEntry {
-  label: string;
-  value: string;
-  position: [number, number, number];
-  direction?: 'x' | 'y' | 'z';
-  type?: 'diameter' | 'radius' | 'linear';
-}
-
-export async function fetchDimensions(projectId: string): Promise<DimensionEntry[] | null> {
-  const res = await apiFetch<{ dimensions: DimensionEntry[] }>(`/projects/${projectId}/dimensions`);
-  return res?.dimensions ?? null;
-}
-
 // ── Tolerance stack-up ─────────────────────────────────────────────────────────
 
 export interface ToleranceStackRequest {
@@ -1072,125 +951,4 @@ export async function runToleranceStack(
     method: 'POST',
     body: JSON.stringify(params),
   });
-}
-
-// ── Studies ────────────────────────────────────────────────────────────────────
-
-export interface ApiStudyVariation {
-  id: string;
-  study_id: string;
-  variant_index: number;
-  status: 'generating' | 'ready' | 'failed';
-  goals: string[];
-  metrics: {
-    estimated_weight_g: number;
-    material_usage_cc: number;
-    print_time_min: number;
-  };
-  gltf_url: string | null;
-  score: number;
-}
-
-export interface ApiStudy {
-  id: string;
-  project_id: string;
-  status: 'running' | 'complete' | 'failed';
-  count: number;
-  goals: string[];
-  variations: ApiStudyVariation[];
-  created_at: string;
-}
-
-export async function createStudy(
-  projectId: string,
-  body: { count: number; goals: string[] }
-): Promise<ApiStudy | null> {
-  return apiFetch<ApiStudy>(`/projects/${projectId}/studies`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-}
-
-// ── Standard component library ─────────────────────────────────────────────────
-
-export interface StandardComponent {
-  id: string;
-  name: string;
-  category: string;
-  description?: string;
-  specifications: Record<string, string | number>;
-  prompt_hint?: string;
-  thumbnail?: string;
-}
-
-export interface ComponentCategory {
-  name: string;
-  icon: string;
-  color: string;
-}
-
-export interface ComponentLibraryResponse {
-  categories: Record<string, ComponentCategory>;
-  components: StandardComponent[];
-  total: number;
-}
-
-export interface ProjectComponent {
-  id: string;
-  project_id: string;
-  component_id: string;
-  component_name: string;
-  category: string;
-  quantity: number;
-  position_notes: string;
-  specifications: Record<string, string | number>;
-  created_at?: string;
-}
-
-export interface ComponentSuggestion {
-  component_id: string;
-  quantity: number;
-  reason: string;
-}
-
-export async function fetchComponentLibrary(category?: string): Promise<ComponentLibraryResponse | null> {
-  const qs = category ? `?category=${encodeURIComponent(category)}` : '';
-  return apiFetch<ComponentLibraryResponse>(`/components/library${qs}`);
-}
-
-export async function addComponentToProject(
-  projectId: string,
-  body: { component_id: string; quantity: number; position_notes?: string }
-): Promise<ProjectComponent | null> {
-  return apiFetch<ProjectComponent>(`/projects/${projectId}/components/add`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-}
-
-export async function fetchStudies(projectId: string): Promise<ApiStudy[] | null> {
-  return apiFetch<ApiStudy[]>(`/projects/${projectId}/studies`);
-}
-
-export async function fetchStudy(projectId: string, studyId: string): Promise<ApiStudy | null> {
-  return apiFetch<ApiStudy>(`/projects/${projectId}/studies/${studyId}`);
-}
-
-export async function selectStudyVariation(
-  projectId: string,
-  studyId: string,
-  variationId: string,
-): Promise<{ status: string } | null> {
-  return apiFetch<{ status: string }>(
-    `/projects/${projectId}/studies/${studyId}/variations/${variationId}/select`,
-    { method: 'POST' },
-  );
-}
-
-export async function fetchProjectComponents(projectId: string): Promise<ProjectComponent[] | null> {
-  return apiFetch<ProjectComponent[]>(`/projects/${projectId}/components`);
-}
-
-export async function removeProjectComponent(projectId: string, itemId: string): Promise<null> {
-  return apiFetch(`/projects/${projectId}/components/${itemId}`, { method: 'DELETE' });
 }

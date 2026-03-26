@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Send, Paperclip, Mic, Bot, User, ChevronDown, Sparkles,
   Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
-  Target, Wifi, Loader2, X, Lightbulb,
+  Target, Wifi, WifiOff, Loader2, X, Lightbulb,
 } from 'lucide-react';
 import { useChat } from '../../hooks/useChat';
 import type { ChatMessage } from '../../types';
@@ -23,8 +23,9 @@ const SUGGESTION_CHIPS = [
 
 interface ChatPanelProps {
   projectId?: string;
-  onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
   onGenerationQueued?: () => void;
+  onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
+  fixtureLoaded?: boolean;
 }
 
 interface ProactiveSuggestion {
@@ -32,20 +33,25 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId, onComponentSuggestions, onGenerationQueued }: ChatPanelProps) {
+export default function ChatPanel({ projectId, onGenerationQueued, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const { messages, isThinking, isConnected, activeGenJob, sendMessage, componentSuggestions } = useChat({
+  const { messages, isThinking, isConnected, activeGenJob, sendMessage, clearGenJob, componentSuggestions } = useChat({
     projectId,
     initialMessages: [],
     onGenerationQueued,
   });
 
-  // Forward component suggestions to Workspace when they arrive
+  // Forward component suggestions to parent when they arrive
   useEffect(() => {
     if (componentSuggestions.length > 0) {
       onComponentSuggestions?.(componentSuggestions);
     }
   }, [componentSuggestions, onComponentSuggestions]);
+
+  // Clear generation banner once fixture arrives
+  useEffect(() => {
+    if (fixtureLoaded) clearGenJob();
+  }, [fixtureLoaded, clearGenJob]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -105,7 +111,7 @@ export default function ChatPanel({ projectId, onComponentSuggestions, onGenerat
         <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
           <Target size={11} />
           <span className="font-medium">Context:</span>
-          <span className="text-slate-400">ASME Y14.5 · AS9100 · 3-2-1 Locating</span>
+          <span className="text-slate-400">Drill Jig · 3-2-1 Locating · ASME Y14.5 · AS9100</span>
         </div>
       </div>
 
