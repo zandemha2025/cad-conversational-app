@@ -58,8 +58,14 @@ def proactive_analysis_task(self, project_id: str):
 
             # Call Gemini
             try:
-                from app.services.gemini_service import generate_proactive_suggestions
-                suggestions = await generate_proactive_suggestions(context)
+                from app.services.gemini_service import GeminiService
+                gemini = GeminiService()
+                suggestions = await gemini.generate_proactive_suggestions(
+                    part_features=context.get("features", {}),
+                    touchpoints=context.get("touchpoints", []),
+                    validation_results=context.get("validation_summary", []),
+                    environment={},
+                )
             except Exception as e:
                 log.warning("Gemini proactive analysis failed: %s", e)
                 suggestions = _fallback_suggestions(context)
