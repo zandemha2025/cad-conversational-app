@@ -24,6 +24,14 @@ def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text()
 
 
+def _fill_template(template: str, **kwargs) -> str:
+    """Replace {key} placeholders without using str.format() so curly braces
+    in KCL/JSON example code are not misinterpreted as format fields."""
+    for key, value in kwargs.items():
+        template = template.replace(f"{{{key}}}", str(value))
+    return template
+
+
 class GeminiService:
     def __init__(self):
         if settings.GEMINI_API_KEY:
@@ -138,7 +146,8 @@ class GeminiService:
         user_prompt: str,
     ) -> str:
         template = _load_prompt("kcl_generation.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             environment_json=json.dumps(environment, default=str),
@@ -177,7 +186,8 @@ class GeminiService:
         template_id: str,
     ) -> dict:
         template = _load_prompt("node_graph_generation.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             environment_json=json.dumps(environment, default=str),
@@ -215,7 +225,8 @@ class GeminiService:
         except FileNotFoundError:
             return _fallback_suggestions(part_features, touchpoints)
 
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             validation_json=json.dumps(validation_results[:5], default=str),
@@ -250,7 +261,8 @@ class GeminiService:
         part_features: dict,
     ) -> str:
         template = _load_prompt("dfm_analysis.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             process=process,
             issue_title=issue_title,
             issue_detail=issue_detail,

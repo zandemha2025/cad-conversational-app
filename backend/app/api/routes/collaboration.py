@@ -89,8 +89,11 @@ async def ensure_collab_tables() -> None:
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy import text
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
+        # asyncpg cannot execute multiple statements in one call — split them
+        statements = [s.strip() for s in _MIGRATION_SQL.split(";") if s.strip()]
         async with engine.begin() as conn:
-            await conn.execute(text(_MIGRATION_SQL))
+            for stmt in statements:
+                await conn.execute(text(stmt))
         await engine.dispose()
         log.info("Collaboration tables ensured")
     except Exception as exc:

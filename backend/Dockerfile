@@ -25,5 +25,5 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Start FastAPI (Fly.io sets $PORT)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Start Celery worker in background, then FastAPI in foreground (Fly.io sets $PORT)
+CMD ["sh", "-c", "celery -A app.core.celery_app.celery_app worker --loglevel=info -Q normal,low --concurrency=2 & uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
