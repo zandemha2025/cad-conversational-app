@@ -311,6 +311,7 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
   const [generatingIdx, setGeneratingIdx] = useState(0);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareMode, setCompareMode] = useState(false);
+  const [activeVariant, setActiveVariant] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load existing studies on mount
@@ -404,7 +405,8 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
       await selectStudyVariation(projectId, study.id, v.id).catch(() => {});
     }
     dispatch({ type: 'SET_ACTIVE_STUDY', study: study });
-    alert(`Variant ${v.variant_index + 1} selected as active design!`);
+    setActiveVariant(v.variant_index + 1);
+    setTimeout(() => setActiveVariant(null), 3000);
   }, [study, projectId, dispatch]);
 
   // ── Comparison view ──────────────────────────────────────────────────────────
@@ -626,6 +628,16 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
           </div>
         )}
       </div>
+
+      {/* ── Active variant banner ── */}
+      {activeVariant !== null && (
+        <div className="flex items-center gap-2 px-6 py-2 bg-emerald-950/60 border-t border-emerald-700/40 shrink-0">
+          <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+          <span className="text-xs text-emerald-300 font-medium">
+            Variant {activeVariant} set as active design
+          </span>
+        </div>
+      )}
 
       {/* ── Status bar ── */}
       <div className="flex items-center gap-3 px-6 py-1.5 border-t border-cadsurface-700 shrink-0 bg-cadsurface-900/60">

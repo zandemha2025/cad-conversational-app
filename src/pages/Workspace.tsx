@@ -163,7 +163,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'tree',         icon: <TreePine size={15} />,        title: 'Feature Tree' },
     { id: 'hardware',     icon: <Package size={15} />,         title: 'Hardware Library' },
     { id: 'touchpoints',  icon: <Target size={15} />,          title: 'Clamping & Locating' },
-    { id: 'validation',   icon: <ShieldAlert size={15} />,     title: 'Validation', badge: 5 },
+    { id: 'validation',   icon: <ShieldAlert size={15} />,     title: 'Validation' },
     { id: 'export',       icon: <Download size={15} />,        title: 'Export (STEP/IGES/STL/DXF)' },
     { id: 'approvals',    icon: <ClipboardCheck size={15} />,  title: 'Approval Workflow' },
     { id: 'interference',      icon: <Scan size={15} />,         title: 'Interference Check' },

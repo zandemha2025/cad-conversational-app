@@ -426,8 +426,10 @@ export async function generateDrawing(projectId: string) {
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
-export async function fetchAuditLog(orgId: string, limit = 100) {
-  return apiFetch<import('../types').AuditEntry[]>(`/audit?org_id=${orgId}&limit=${limit}`);
+export async function fetchAuditLog(orgId?: string, limit = 100) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (orgId) params.set('org_id', orgId);
+  return apiFetch<import('../types').AuditEntry[]>(`/audit?${params}`);
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
@@ -979,6 +981,7 @@ export interface ProjectComponent {
 export interface ComponentLibraryResponse {
   components: StandardComponent[];
   total: number;
+  categories?: Record<string, { name: string; color: string; count: number }>;
 }
 
 export interface ComponentSuggestion {

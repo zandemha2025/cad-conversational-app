@@ -5,7 +5,7 @@ import type { ApiNodeDef, ApiConnection, ApiNodeParam } from '../../types';
 import {
   FileInput, Printer, Crosshair, AlertTriangle,
   CheckCircle2, FileOutput, RefreshCw, ZoomIn, ZoomOut, Maximize2, Sparkles,
-  Cpu, Info, Loader2, Pencil, Check, X, Move,
+  Cpu, Info, Loader2, Pencil, Check, X, Move, GitBranch,
 } from 'lucide-react';
 
 // ── Category styling ──────────────────────────────────────────────────────────
@@ -232,8 +232,10 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
   const [regenerating, setRegenerating] = useState(false);
   const { graph, loading, refetch } = useNodeGraph(projectId);
 
-  const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>(DEMO_NODES);
-  const [localConns, setLocalConns] = useState<ApiConnection[]>(DEMO_CONNECTIONS);
+  // For demo mode (projectId === 'demo'), use demo data; for real projects, only use real data
+  const isDemo = !projectId || projectId === 'demo' || IS_DEMO;
+  const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>(isDemo ? DEMO_NODES : []);
+  const [localConns, setLocalConns] = useState<ApiConnection[]>(isDemo ? DEMO_CONNECTIONS : []);
 
   // Dragging ref — avoids stale closures and keeps perf high
   const dragRef = useRef<{
@@ -247,11 +249,18 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
 
   useEffect(() => {
     if (graph) {
-      setLocalNodes(graph.nodes.length > 0 ? graph.nodes : DEMO_NODES);
-      setLocalConns(graph.connections.length > 0 ? graph.connections : DEMO_CONNECTIONS);
-      if (!selected && graph.nodes.length > 0) setSelected(graph.nodes[0]?.id ?? null);
+      if (graph.nodes.length > 0) {
+        setLocalNodes(graph.nodes);
+        setLocalConns(graph.connections);
+        if (!selected) setSelected(graph.nodes[0]?.id ?? null);
+      } else if (isDemo) {
+        // Only use demo nodes in demo mode
+        setLocalNodes(DEMO_NODES);
+        setLocalConns(DEMO_CONNECTIONS);
+      }
+      // For real projects with no graph yet, keep empty (show empty state)
     }
-  }, [graph]);
+  }, [graph, isDemo]);
 
   const handleRegenerate = useCallback(async () => {
     setRegenerating(true);
@@ -319,6 +328,8 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
   const depPath = selected ? getDependencyPath(selected, localConns) : new Set<string>();
   const hasSelection = selected !== null;
 
+  const noGraph = !loading && !isDemo && localNodes.length === 0;
+
   const CANVAS_W = Math.max(1400, localNodes.reduce((m, n) => Math.max(m, n.x + n.w + 80), 1400));
   const CANVAS_H = Math.max(700,  localNodes.reduce((m, n) => Math.max(m, n.y + n.h + 80), 700));
 
@@ -359,8 +370,31 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
         </div>
       </div>
 
+      {/* Empty state for real projects with no graph */}
+      {noGraph && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-sm px-6">
+            <div className="w-16 h-16 rounded-2xl bg-violet-900/20 border border-violet-700/30 flex items-center justify-center mx-auto mb-4">
+              <GitBranch size={26} className="text-violet-400" />
+            </div>
+            <p className="text-sm font-semibold text-slate-300 mb-1">No Node Graph Yet</p>
+            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+              Generate a fixture via AI Chat to build the node graph. The graph will appear here once generation completes.
+            </p>
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="flex items-center gap-2 text-xs px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-medium transition-colors mx-auto"
+            >
+              {regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {regenerating ? 'Generating…' : 'Generate Graph'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Canvas + detail panel */}
-      <div className="flex flex-1 overflow-hidden">
+      {!noGraph && <div className="flex flex-1 overflow-hidden">
         {/* Scrollable canvas */}
         <div
           className="flex-1 overflow-auto"
@@ -493,7 +527,7 @@ export default function NodeEditor({ projectId = 'demo' }: { projectId?: string 
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Status bar */}
       <div className="flex items-center gap-3 px-4 py-1.5 border-t border-cadsurface-700 shrink-0 bg-cadsurface-900/60">

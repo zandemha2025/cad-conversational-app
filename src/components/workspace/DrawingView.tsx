@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Printer, Download,
   Plus, Layers, Tag, Grid3x3, Loader2, RefreshCw,
 } from 'lucide-react';
-import { requestExport, fetchLatestDrawing, generateDrawing, requestDxfExport, requestIgesExport } from '../../lib/api';
+import { fetchLatestDrawing, generateProjectDrawings, directExport } from '../../lib/api';
 import { useJobPoll } from '../../hooks/useJobPoll';
 
 
@@ -16,36 +16,69 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
   const [pdfExporting, setPdfExporting] = useState(false);
   const [serverSvg, setServerSvg] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  useJobPoll(exportJobId ? projectId : null, exportJobId);
+  const { downloadUrl: pdfDownloadUrl } = useJobPoll(exportJobId ? projectId : null, exportJobId);
+
+  // Auto-download PDF when job completes
+  useEffect(() => {
+    if (pdfDownloadUrl) {
+      window.open(pdfDownloadUrl, '_blank');
+      setExportJobId(null);
+    }
+  }, [pdfDownloadUrl]);
 
   // Try to load existing server drawing
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || projectId === 'demo') return;
     fetchLatestDrawing(projectId)
       .then((data: unknown) => {
-        const d = data as { svg_json?: { svg?: string }; pdf_url?: string } | null;
+        const d = data as { svg_json?: { svg?: string } | null } | null;
         if (d?.svg_json?.svg) setServerSvg(d.svg_json.svg);
       })
       .catch(() => {});
   }, [projectId]);
 
   const handleGenerateDrawing = async () => {
+    if (!projectId || projectId === 'demo') return;
     setGenerating(true);
     try {
-      const res = await generateDrawing(projectId) as unknown;
-      const d = res as { svg?: string } | null;
-      if (d?.svg) setServerSvg(d.svg);
+      const res = await generateProjectDrawings(projectId) as unknown;
+      // Backend returns { id, status, drawing: { svg_json: { svg: "..." } } }
+      const d = res as { drawing?: { svg_json?: { svg?: string }; svg?: string } } | null;
+      const svg = d?.drawing?.svg_json?.svg ?? d?.drawing?.svg ?? null;
+      if (svg) setServerSvg(svg);
     } catch {}
     finally { setGenerating(false); }
   };
 
   const handleExportPDF = useCallback(async () => {
+    if (!projectId || projectId === 'demo') return;
     setPdfExporting(true);
     try {
-      const res = await requestExport(projectId, 'pdf');
-      if (res) setExportJobId(res.job_id);
+      const blob = await directExport(projectId, 'step'); // PDF not in directExport, use job
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `drawing-${projectId.slice(0, 8)}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } finally {
       setPdfExporting(false);
+    }
+  }, [projectId]);
+
+  const handleDirectExport = useCallback(async (format: 'dxf' | 'iges') => {
+    if (!projectId || projectId === 'demo') return;
+    const blob = await directExport(projectId, format);
+    if (blob) {
+      const ext = format === 'dxf' ? '.dxf' : '.igs';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `drawing-${projectId.slice(0, 8)}${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   }, [projectId]);
 
@@ -127,14 +160,14 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
           {pdfExporting ? 'Exporting…' : 'Export PDF'}
         </button>
         <button
-          onClick={() => requestDxfExport(projectId)}
+          onClick={() => handleDirectExport('dxf')}
           className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 transition-colors"
           title="Export DXF (laser cut / CNC)"
         >
           <Download size={12} />DXF
         </button>
         <button
-          onClick={() => requestIgesExport(projectId)}
+          onClick={() => handleDirectExport('iges')}
           className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-cadsurface-700 text-slate-400 hover:text-slate-200 hover:border-cadblue-600/50 transition-colors"
           title="Export IGES (CAD interop)"
         >

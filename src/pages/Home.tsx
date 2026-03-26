@@ -265,7 +265,7 @@ export default function Home() {
   const { projects: allProjects, addProject } = useProjects(search || undefined);
 
   useEffect(() => {
-    fetchAuditLog('org1', 5).then((data) => {
+    fetchAuditLog(undefined, 5).then((data) => {
       if (Array.isArray(data)) setRecentActivity(data as Array<{ user_id: string; action: string; created_at: string }>);
     }).catch(() => {});
   }, []);
