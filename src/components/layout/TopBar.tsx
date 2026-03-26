@@ -184,8 +184,8 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
     fetchProject(projectId).then(p => { if (p) setProject(p); }).catch(() => {});
   }, [projectId, isWorkspace]);
 
-  const partNumber  = project?.part_number ?? '—';
-  const revision    = project?.revision ?? '—';
+  const partNumber  = project?.part_number || '';
+  const revision    = project?.revision || '';
   const projectName = project?.name ?? '';
 
   return (
@@ -239,22 +239,24 @@ export default function TopBar({ mode = 'part', onModeChange, projectId, onStart
 
           <div className="flex-1" />
 
-          {/* Project info pill — real data from API */}
-          <div className="flex items-center gap-2 px-2.5 py-1 bg-cadsurface-800/60 border border-cadsurface-700 rounded-lg text-xs shrink-0">
-            <div className="flex items-center gap-1.5">
-              <Wrench size={11} className="text-amber-400" />
-              <span className={`font-mono font-medium ${partNumber !== '—' ? 'text-slate-300' : 'text-slate-600'}`}>
-                {partNumber}
-              </span>
+          {/* Project info pill — real data from API, hidden when no data */}
+          {(partNumber || revision) && (
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-cadsurface-800/60 border border-cadsurface-700 rounded-lg text-xs shrink-0">
+              {partNumber && (
+                <div className="flex items-center gap-1.5">
+                  <Wrench size={11} className="text-amber-400" />
+                  <span className="font-mono font-medium text-slate-300">{partNumber}</span>
+                </div>
+              )}
+              {partNumber && revision && <div className="w-px h-3 bg-cadsurface-600" />}
+              {revision && (
+                <div className="flex items-center gap-1">
+                  <GitBranch size={11} className="text-emerald-400" />
+                  <span className="font-mono font-medium text-emerald-400">Rev {revision}</span>
+                </div>
+              )}
             </div>
-            <div className="w-px h-3 bg-cadsurface-600" />
-            <div className="flex items-center gap-1">
-              <GitBranch size={11} className="text-slate-500" />
-              <span className={`font-mono font-medium ${revision !== '—' ? 'text-emerald-400' : 'text-slate-600'}`}>
-                {revision !== '—' ? `Rev ${revision}` : '—'}
-              </span>
-            </div>
-          </div>
+          )}
 
           {/* Project name + save status */}
           {projectName && (
