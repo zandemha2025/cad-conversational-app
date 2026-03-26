@@ -22,11 +22,8 @@ RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
 # Copy source
 COPY . .
 
-# Make startup script executable
-RUN chmod +x start.sh
-
 # Expose port
 EXPOSE 8000
 
-# Start Celery worker + FastAPI together
-CMD ["sh", "start.sh"]
+# Start Celery worker in background, then FastAPI in foreground (Fly.io sets $PORT)
+CMD ["sh", "-c", "celery -A app.core.celery_app.celery_app worker --loglevel=info -Q normal,low --concurrency=2 & uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

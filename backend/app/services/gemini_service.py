@@ -24,6 +24,14 @@ def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text()
 
 
+def _fill_template(template: str, **kwargs) -> str:
+    """Replace {key} placeholders without using str.format() so curly braces
+    in KCL/JSON example code are not misinterpreted as format fields."""
+    for key, value in kwargs.items():
+        template = template.replace(f"{{{key}}}", str(value))
+    return template
+
+
 class GeminiService:
     def __init__(self):
         if settings.GEMINI_API_KEY:
@@ -138,7 +146,8 @@ class GeminiService:
         user_prompt: str,
     ) -> str:
         template = _load_prompt("kcl_generation.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             environment_json=json.dumps(environment, default=str),
@@ -177,7 +186,8 @@ class GeminiService:
         template_id: str,
     ) -> dict:
         template = _load_prompt("node_graph_generation.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             environment_json=json.dumps(environment, default=str),
@@ -215,7 +225,8 @@ class GeminiService:
         except FileNotFoundError:
             return _fallback_suggestions(part_features, touchpoints)
 
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             part_features_json=json.dumps(part_features, default=str),
             touchpoints_json=json.dumps(touchpoints, default=str),
             validation_json=json.dumps(validation_results[:5], default=str),
@@ -239,138 +250,6 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
-    # ── Assembly component identification (Flash) ─────────────────────────────
-    async def identify_assembly_components(
-        self,
-        kcl_code: str,
-        part_features: dict,
-        user_prompt: str,
-    ) -> list[dict]:
-        """
-        Given a generated KCL fixture, ask Gemini to identify the logical
-        assembly components (base plate, clamps, pins, etc.) and return a
-        structured list.  Returns a list of dicts with keys:
-            name, component_type, description, material
-        """
-        prompt = (
-            "You are a manufacturing fixture engineer. Given this KCL fixture code and part context, "
-            "identify the logical assembly components that make up the fixture.\n\n"
-            "Return ONLY a JSON array (no markdown fences) of objects with these fields:\n"
-            "  - name: short component name (e.g. 'Base Plate', 'Left Clamp', 'Locating Pin')\n"
-            "  - component_type: one of base, clamp, pin, spacer, bracket, bushing, custom\n"
-            "  - description: one sentence describing the component's function\n"
-            "  - material: recommended material (e.g. '6061-T6 Aluminum', 'D2 Tool Steel')\n\n"
-            f"User request: {user_prompt}\n\n"
-            f"Part features: {json.dumps(part_features, default=str)[:800]}\n\n"
-            f"KCL code (first 1500 chars):\n{kcl_code[:1500]}\n\n"
-            "Identify 2–6 components. Return JSON array only."
-        )
-
-        if not settings.GEMINI_API_KEY:
-            return _stub_assembly_components(part_features)
-
-        model = self._get_flash()
-        loop = asyncio.get_event_loop()
-        try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
-            raw = resp.text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-            components = json.loads(raw)
-            if isinstance(components, list):
-                return components[:6]
-        except Exception as e:
-            log.error("identify_assembly_components error: %s", e)
-        return _stub_assembly_components(part_features)
-
-    # ── Component suggestions (Flash) ─────────────────────────────────────────
-    async def suggest_components(
-        self,
-        design_description: str,
-        catalog_hints: list[str],
-    ) -> list[dict]:
-        """
-        Given a fixture design description, return a ranked list of recommended
-        standard components with quantities.
-
-        Returns list of dicts: [{"component_id": str, "quantity": int, "reason": str}, ...]
-        """
-        if not settings.GEMINI_API_KEY:
-            return _fallback_component_suggestions(design_description)
-
-        catalog_text = "\n".join(f"- {h}" for h in catalog_hints)
-        prompt = (
-            "You are a fixture engineering expert. Given the fixture design description below, "
-            "recommend relevant standard catalog components from the provided list.\n\n"
-            f"Design description:\n{design_description}\n\n"
-            f"Available catalog components (id: description):\n{catalog_text}\n\n"
-            "Return a JSON array (no markdown, no prose) of up to 5 recommendations:\n"
-            '[{"component_id": "<id>", "quantity": <int>, "reason": "<one sentence why>"}, ...]\n'
-            "Only recommend components that are genuinely useful for this fixture. "
-            "Use the exact component_id strings from the catalog list."
-        )
-
-        model = self._get_flash()
-        loop = asyncio.get_event_loop()
-        try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
-            raw = resp.text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-            result = json.loads(raw)
-            if isinstance(result, list):
-                return result[:5]
-        except Exception as e:
-            log.error("suggest_components error: %s", e)
-        return _fallback_component_suggestions(design_description)
-
-    # ── Dimension extraction (Flash) ──────────────────────────────────────────
-    async def extract_dimensions(
-        self,
-        kcl: str,
-        design_description: str,
-    ) -> list[dict]:
-        """Extract key dimensions from KCL code and design description using Flash."""
-        prompt = (
-            "You are an expert manufacturing engineer. Extract the key dimensions from "
-            "the following fixture design.\n\n"
-            "Return ONLY a JSON array (no markdown, no explanation) with dimension objects:\n"
-            "[\n"
-            '  {"label": "Base Length", "value": "100mm", "position": [50, 0, 0], "direction": "x"},\n'
-            '  {"label": "Wall Thickness", "value": "4mm", "position": [0, 25, 0], "direction": "y"},\n'
-            '  {"label": "M5 Holes ×4", "value": "Ø5.0mm", "position": [10, 10, 0], "type": "diameter"},\n'
-            '  {"label": "Overall Height", "value": "45mm", "position": [0, 0, 22.5], "direction": "z"}\n'
-            "]\n\n"
-            "Rules:\n"
-            "- Extract 6–10 key dimensions: overall envelope, wall thicknesses, hole diameters, "
-            "fillets, critical tolerances\n"
-            "- Positions are in mm relative to the model center (approximate is fine)\n"
-            "- For tolerances include them in the value: \"100.0 ±0.1mm\"\n"
-            "- For diameters use Ø prefix and type \"diameter\"\n"
-            "- Use direction \"x\", \"y\", or \"z\" for linear dimensions\n"
-            "- Labels max 20 characters\n\n"
-            f"KCL Code:\n{kcl[:3000]}\n\n"
-            f"Design description:\n{design_description[:1000]}\n\n"
-            "Respond with ONLY the JSON array:"
-        )
-
-        if not settings.GEMINI_API_KEY:
-            return _stub_dimensions()
-
-        model = self._get_flash()
-        loop = asyncio.get_event_loop()
-        try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
-            raw = resp.text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-            dims = json.loads(raw)
-            if isinstance(dims, list):
-                return dims[:10]
-        except Exception as e:
-            log.error("extract_dimensions error: %s", e)
-        return _stub_dimensions()
-
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -382,7 +261,8 @@ class GeminiService:
         part_features: dict,
     ) -> str:
         template = _load_prompt("dfm_analysis.txt")
-        prompt = template.format(
+        prompt = _fill_template(
+            template,
             process=process,
             issue_title=issue_title,
             issue_detail=issue_detail,
@@ -400,24 +280,6 @@ class GeminiService:
         except Exception as e:
             log.error("explain_dfm_issue error: %s", e)
             return str(e)
-
-
-# ── Fallback component suggestions ────────────────────────────────────────────
-
-def _fallback_component_suggestions(description: str) -> list[dict]:
-    desc_lower = description.lower()
-    suggestions = []
-    if any(w in desc_lower for w in ["clamp", "hold", "fixture", "secure"]):
-        suggestions.append({"component_id": "toggle_clamp_medium", "quantity": 2, "reason": "Horizontal toggle clamps provide reliable work holding for most CNC fixtures."})
-    if any(w in desc_lower for w in ["locat", "datum", "pin", "reference"]):
-        suggestions.append({"component_id": "dowel_pin_6mm", "quantity": 2, "reason": "6mm dowel pins establish precise 3-2-1 datum locations."})
-        suggestions.append({"component_id": "diamond_pin_6mm", "quantity": 1, "reason": "Diamond pin for secondary datum prevents over-constraint."})
-    if any(w in desc_lower for w in ["support", "rest", "pad", "surface"]):
-        suggestions.append({"component_id": "rest_pad_25mm", "quantity": 3, "reason": "Three rest pads define the primary datum plane per 3-2-1 locating."})
-    if any(w in desc_lower for w in ["base", "plate", "table", "mount"]):
-        suggestions.append({"component_id": "fixture_plate_200x200", "quantity": 1, "reason": "Aluminum base plate with M8 grid provides flexible component mounting."})
-        suggestions.append({"component_id": "tslot_nut_m8", "quantity": 4, "reason": "T-slot nuts for securing the fixture to the machine table."})
-    return suggestions[:5]
 
 
 # ── Fallback proactive suggestions ───────────────────────────────────────────
@@ -461,34 +323,6 @@ const base = startSketchOn('XY')
   |> close(%)
   |> extrude(length=baseHeight, %)
 """
-
-
-def _stub_assembly_components(part_features: dict) -> list[dict]:
-    """Fallback component list when Gemini is not configured."""
-    return [
-        {"name": "Base Plate", "component_type": "base",
-         "description": "Primary fixture base that mounts to the machine table.", "material": "6061-T6 Aluminum"},
-        {"name": "Left Clamp", "component_type": "clamp",
-         "description": "Toggle clamp securing the left side of the workpiece.", "material": "6061-T6 Aluminum"},
-        {"name": "Right Clamp", "component_type": "clamp",
-         "description": "Toggle clamp securing the right side of the workpiece.", "material": "6061-T6 Aluminum"},
-        {"name": "Locating Pin ×2", "component_type": "pin",
-         "description": "Precision round/diamond pin pair establishing datum B and C.", "material": "D2 Tool Steel"},
-        {"name": "Spacer Block", "component_type": "spacer",
-         "description": "Sets workpiece height above base plate for clearance.", "material": "6061-T6 Aluminum"},
-    ]
-
-
-def _stub_dimensions() -> list[dict]:
-    return [
-        {"label": "Base Length", "value": "190mm", "position": [95, 0, 0], "direction": "x"},
-        {"label": "Base Width", "value": "140mm", "position": [0, 70, 0], "direction": "y"},
-        {"label": "Base Height", "value": "12mm", "position": [0, 0, 6], "direction": "z"},
-        {"label": "Wall Thickness", "value": "4mm", "position": [95, 35, 6], "direction": "x"},
-        {"label": "M6 Holes ×4", "value": "Ø6.0mm", "position": [20, 20, 12], "type": "diameter"},
-        {"label": "Fillet R", "value": "R2.0mm", "position": [95, 70, 0], "type": "radius"},
-        {"label": "Pin Spacing", "value": "150.0 ±0.05mm", "position": [75, 0, 12], "direction": "x"},
-    ]
 
 
 def _stub_node_graph() -> dict:
