@@ -117,8 +117,8 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
           { icon: <Download size={11} />,      label: 'Export',    prompt: 'Export as STEP file' },
           { icon: <Wrench size={11} />,        label: 'Modify',    prompt: 'Suggest design modifications' },
         ] : [
-          { icon: <Sparkles size={11} />,  label: 'Generate',    prompt: 'Generate a fixture for my part' },
-          { icon: <Crosshair size={11} />, label: 'Design',      prompt: 'Design a locating fixture with clamps' },
+          { icon: <Sparkles size={11} />,  label: 'Generate',    prompt: 'Generate a 3D model from my requirements' },
+          { icon: <Crosshair size={11} />, label: 'Design',      prompt: 'Design a custom part or assembly' },
           { icon: <FileText size={11} />,  label: 'Upload STEP', prompt: 'I want to upload a STEP file' },
         ]).map(({ icon, label, prompt }) => (
           <button

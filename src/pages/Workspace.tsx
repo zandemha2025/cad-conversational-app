@@ -245,8 +245,8 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
               </button>
               <div className="h-px bg-cadsurface-700 my-1" />
 
-              {/* Core 4 panels */}
-              {leftButtons.filter(b => ['chat', 'validation', 'export', 'variations'].includes(b.id)).map(btn => {
+              {/* Core 5 panels */}
+              {leftButtons.filter(b => ['chat', 'tree', 'validation', 'export', 'variations'].includes(b.id)).map(btn => {
                 const isActive = leftPanel === btn.id && showLeft;
                 const tourId =
                   btn.id === 'chat'   ? 'tour-chat-btn'   :
@@ -301,7 +301,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                     <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
                     <div className="absolute left-full top-0 ml-1.5 w-52 bg-cadsurface-900 border border-cadsurface-700 rounded-xl shadow-2xl z-50 py-1.5 overflow-hidden">
                       <p className="px-3 py-1 text-xs font-semibold text-slate-600 uppercase tracking-wider">More Tools</p>
-                      {leftButtons.filter(b => !['chat', 'validation', 'export', 'variations'].includes(b.id)).map(btn => (
+                      {leftButtons.filter(b => !['chat', 'tree', 'validation', 'export', 'variations'].includes(b.id)).map(btn => (
                         <button
                           key={btn.id}
                           title={btn.title}
