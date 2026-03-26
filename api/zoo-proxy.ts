@@ -1,6 +1,10 @@
-// api/zoo-proxy.ts - Vercel serverless proxy for Zoo.dev (bypasses Fly.io blocked IPs)
+// api/zoo-proxy.ts - Vercel Edge function proxying requests to Zoo.dev
+// Uses Edge runtime (no @vercel/node needed, native Request/Response Web APIs)
+// Each individual Zoo.dev API call is fast; the 30-90s job duration is handled
+// by the backend polling loop making multiple GET requests through this proxy.
 export const config = {
-  maxDuration: 120, // Zoo.dev text-to-cad takes 30-90s
+  runtime: 'edge',
+  maxDuration: 60,
 };
 
 export default async function handler(req: Request): Promise<Response> {
@@ -36,7 +40,7 @@ export default async function handler(req: Request): Promise<Response> {
     if (key !== 'path') zooUrl.searchParams.set(key, value);
   });
 
-  // Forward the request
+  // Forward the request to Zoo.dev
   const zooResp = await fetch(zooUrl.toString(), {
     method: req.method,
     headers: {
@@ -46,7 +50,6 @@ export default async function handler(req: Request): Promise<Response> {
     body: req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : undefined,
   });
 
-  // Return the response
   return new Response(zooResp.body, {
     status: zooResp.status,
     headers: {
