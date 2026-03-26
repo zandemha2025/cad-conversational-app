@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Wrench, ChevronDown, ChevronRight, Plus, Trash2, Loader2,
-  DollarSign, ShoppingCart, Package, CheckCircle2, XCircle,
+  DollarSign, ShoppingCart, Package, CheckCircle2,
   Download, RefreshCw, Upload, AlertCircle,
 } from 'lucide-react';
 import {
   fetchMachines, deleteMachine, estimateManufacturingCost,
   fetchShoppingList, uploadInventory, matchInventory,
 } from '../../lib/api';
-import type { Machine, InventoryMatch } from '../../lib/api';
+import type { Machine, InventoryMatch, ShoppingListItem } from '../../lib/api';
 import { useWorkspace } from '../../store/workspaceStore';
 import MachineSetupModal from './MachineSetupModal';
 
@@ -179,7 +179,6 @@ function MachinesSection() {
 function CostEstimateSection({ projectId }: { projectId?: string }) {
   const { state, dispatch } = useWorkspace();
   const [loading, setLoading] = useState(false);
-  const [showAlternatives, setShowAlternatives] = useState(false);
   const hasFixture = !!state.gltfUrl;
   const estimate = state.costEstimate;
 
@@ -187,7 +186,7 @@ function CostEstimateSection({ projectId }: { projectId?: string }) {
     if (!projectId) return;
     setLoading(true);
     const result = await estimateManufacturingCost(projectId);
-    if (result) dispatch({ type: 'SET_COST_ESTIMATE', estimate: result });
+    if (result && result.length > 0) dispatch({ type: 'SET_COST_ESTIMATE', estimate: result[0] });
     setLoading(false);
   }
 
@@ -215,75 +214,33 @@ function CostEstimateSection({ projectId }: { projectId?: string }) {
           </button>
         ) : (
           <div className="space-y-2">
-            {/* Recommendation badge */}
-            <div className={`flex items-center gap-2 p-2.5 rounded-lg border ${
-              estimate.fits_build_volume
-                ? 'bg-emerald-900/20 border-emerald-700/40'
-                : 'bg-red-900/20 border-red-700/40'
-            }`}>
-              <div className={`w-2 h-2 rounded-full shrink-0 ${estimate.fits_build_volume ? 'bg-emerald-400' : 'bg-red-400'}`} />
+            {/* Machine info */}
+            <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-emerald-900/20 border-emerald-700/40">
+              <div className="w-2 h-2 rounded-full shrink-0 bg-emerald-400" />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-slate-200">{estimate.recommended_method}</p>
-                <p className="text-xs text-slate-400 truncate">{estimate.recommended_machine}</p>
+                <p className="text-xs font-semibold text-slate-200">{estimate.machine_name}</p>
+                <p className="text-xs text-slate-400 truncate capitalize">{estimate.machine_type.replace('_', ' ')}</p>
               </div>
             </div>
-
-            {/* Reasoning */}
-            {estimate.reasoning && (
-              <p className="text-xs text-slate-500 leading-relaxed">{estimate.reasoning}</p>
-            )}
 
             {/* Cost breakdown */}
             <div className="bg-cadsurface-800 border border-cadsurface-700 rounded-lg divide-y divide-cadsurface-700">
               <div className="flex justify-between px-3 py-1.5">
                 <span className="text-xs text-slate-400">Material</span>
-                <span className="text-xs text-slate-200 font-mono">{fmt(estimate.material_cost_usd)}</span>
+                <span className="text-xs text-slate-200 font-mono">{fmt(estimate.material_cost)}</span>
               </div>
               <div className="flex justify-between px-3 py-1.5">
                 <span className="text-xs text-slate-400">
                   Machine time
-                  <span className="text-slate-600 ml-1">({estimate.machine_time_hours.toFixed(1)} hr)</span>
+                  <span className="text-slate-600 ml-1">({(estimate.estimated_hours + estimate.setup_hours).toFixed(1)} hr)</span>
                 </span>
-                <span className="text-xs text-slate-200 font-mono">{fmt(estimate.machine_cost_usd)}</span>
-              </div>
-              <div className="flex justify-between px-3 py-1.5">
-                <span className="text-xs text-slate-400">Hardware</span>
-                <span className="text-xs text-slate-200 font-mono">{fmt(estimate.hardware_cost_usd)}</span>
+                <span className="text-xs text-slate-200 font-mono">{fmt(estimate.machine_cost)}</span>
               </div>
               <div className="flex justify-between px-3 py-2">
                 <span className="text-xs font-semibold text-slate-200">Total</span>
-                <span className="text-xs font-semibold text-emerald-400 font-mono">{fmt(estimate.total_cost_usd)}</span>
+                <span className="text-xs font-semibold text-emerald-400 font-mono">{fmt(estimate.total_cost)}</span>
               </div>
             </div>
-
-            {/* Alternative methods */}
-            {estimate.alternative_methods.length > 0 && (
-              <div>
-                <button
-                  onClick={() => setShowAlternatives(p => !p)}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  {showAlternatives ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  Alternative Methods ({estimate.alternative_methods.length})
-                </button>
-                {showAlternatives && (
-                  <div className="mt-2 space-y-1.5">
-                    {estimate.alternative_methods.map((alt, i) => (
-                      <div key={i} className="bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2.5">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-slate-300">{alt.method}</span>
-                          <span className="text-xs text-slate-400 font-mono">{fmt(alt.estimated_cost)}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">{alt.machine}</p>
-                        {alt.tradeoff && (
-                          <p className="text-xs text-amber-400/80 mt-1">{alt.tradeoff}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             <button
               onClick={handleEstimate}
@@ -305,23 +262,23 @@ function CostEstimateSection({ projectId }: { projectId?: string }) {
 function ShoppingListSection({ projectId }: { projectId?: string }) {
   const { state, dispatch } = useWorkspace();
   const [loading, setLoading] = useState(false);
-  const items = state.shoppingList;
+  const items: ShoppingListItem[] = state.shoppingList;
 
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
     fetchShoppingList(projectId).then(data => {
-      if (data?.items) dispatch({ type: 'SET_SHOPPING_LIST', items: data.items });
+      if (data) dispatch({ type: 'SET_SHOPPING_LIST', items: data });
       setLoading(false);
     });
   }, [projectId, dispatch]);
 
-  const totalCost = items.reduce((sum, i) => sum + i.estimated_cost * i.quantity, 0);
+  const totalCost = items.reduce((sum, i) => sum + i.estimated_price * i.quantity_needed, 0);
 
   function exportCsv() {
-    const header = 'Description,Quantity,Part Number,Estimated Cost,Category\n';
+    const header = 'Name,Quantity,Part Number,Supplier,Estimated Price\n';
     const rows = items.map(i =>
-      `"${i.description}",${i.quantity},${i.mcmaster_pn ?? ''},${(i.estimated_cost).toFixed(2)},${i.category}`
+      `"${i.name}",${i.quantity_needed},${i.part_number ?? ''},${i.supplier ?? ''},${i.estimated_price.toFixed(2)}`
     ).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -363,25 +320,19 @@ function ShoppingListSection({ projectId }: { projectId?: string }) {
             {items.map((item, i) => (
               <div key={i} className="flex items-start gap-2 bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-slate-200 leading-snug">{item.description}</p>
+                  <p className="text-xs text-slate-200 leading-snug">{item.name}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-500">Qty: {item.quantity}</span>
-                    <span className="text-xs bg-cadsurface-700 text-slate-500 px-1.5 py-0.5 rounded">{item.category}</span>
-                    {item.mcmaster_pn && (
-                      <a
-                        href={`https://www.mcmaster.com/${item.mcmaster_pn}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-cadblue-400 hover:text-cadblue-300 font-mono underline transition-colors"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        {item.mcmaster_pn}
-                      </a>
+                    <span className="text-xs text-slate-500">Qty: {item.quantity_needed}</span>
+                    {item.supplier && (
+                      <span className="text-xs bg-cadsurface-700 text-slate-500 px-1.5 py-0.5 rounded">{item.supplier}</span>
+                    )}
+                    {item.part_number && (
+                      <span className="text-xs text-cadblue-400 font-mono">{item.part_number}</span>
                     )}
                   </div>
                 </div>
                 <span className="text-xs text-emerald-400 font-mono shrink-0">
-                  {fmt(item.estimated_cost * item.quantity)}
+                  {fmt(item.estimated_price * item.quantity_needed)}
                 </span>
               </div>
             ))}
@@ -401,20 +352,17 @@ function ShoppingListSection({ projectId }: { projectId?: string }) {
 // ── Section D: Inventory ──────────────────────────────────────────────────────
 
 function InventorySection({ projectId }: { projectId?: string }) {
-  const { state, dispatch } = useWorkspace();
+  const { state } = useWorkspace();
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [matching, setMatching] = useState(false);
-  const [matchResult, setMatchResult] = useState<InventoryMatch | null>(null);
+  const [matchResult, setMatchResult] = useState<InventoryMatch[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shoppingItems = state.shoppingList;
 
   const handleFile = useCallback(async (file: File) => {
     setUploading(true);
-    const result = await uploadInventory(file);
-    if (result?.items) {
-      dispatch({ type: 'SET_INVENTORY', items: result.items });
-    }
+    await uploadInventory(file);
     setUploading(false);
 
     // Auto-match after upload if we have shopping list
@@ -424,7 +372,7 @@ function InventorySection({ projectId }: { projectId?: string }) {
       if (match) setMatchResult(match);
       setMatching(false);
     }
-  }, [dispatch, projectId, shoppingItems.length]);
+  }, [projectId, shoppingItems.length]);
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -499,37 +447,20 @@ function InventorySection({ projectId }: { projectId?: string }) {
             <div className="flex items-center gap-2 bg-cadsurface-800 border border-cadsurface-700 rounded-lg px-3 py-2">
               <Package size={13} className="text-slate-400 shrink-0" />
               <p className="text-xs text-slate-300">
-                <span className="font-semibold text-emerald-400">{matchResult.summary.in_stock}</span>
-                {' of '}
-                <span className="font-semibold">{matchResult.summary.total_items}</span>
-                {' items in stock. '}
-                {matchResult.summary.need_ordering > 0 && (
-                  <span className="text-amber-400 font-semibold">{matchResult.summary.need_ordering} need ordering.</span>
-                )}
+                <span className="font-semibold text-emerald-400">{matchResult.length}</span>
+                {' inventory matches found.'}
               </p>
             </div>
 
             {/* Matched items */}
-            {matchResult.matched.map((m, i) => (
+            {matchResult.map((m, i) => (
               <div key={i} className="flex items-start gap-2 bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2.5">
                 <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-200 truncate">{m.item.description}</p>
-                  <p className="text-xs text-slate-500">
-                    Need {m.item.quantity} · Have {m.quantity_available}
-                  </p>
+                  <p className="text-xs text-slate-200 truncate">{m.inventory_item.name}</p>
+                  <p className="text-xs text-slate-500">{m.match_reason}</p>
                 </div>
-              </div>
-            ))}
-
-            {/* Missing items */}
-            {matchResult.missing.map((item, i) => (
-              <div key={i} className="flex items-start gap-2 bg-cadsurface-800 border border-red-900/40 rounded-lg p-2.5">
-                <XCircle size={13} className="text-red-400 shrink-0 mt-0.5" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-200 truncate">{item.description}</p>
-                  <p className="text-xs text-red-400/80">Need to order: {item.quantity}</p>
-                </div>
+                <span className="text-xs text-slate-500 font-mono shrink-0">{Math.round(m.match_score * 100)}%</span>
               </div>
             ))}
           </div>

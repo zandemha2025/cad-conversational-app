@@ -58,7 +58,7 @@ const TEMPLATES: Template[] = [
     border: 'border-amber-700/50',
     bg: 'bg-amber-950/40',
     description: 'MIG/TIG welding fixture for subassembly alignment. V-block and pin locators, strap clamps, heat-resistant support pads.',
-    features: ['V-block locators', 'Pin locating holes', 'Strap clamp T-slots', 'Copper heat pads (placeholder)', 'Clamp force calc'],
+    features: ['V-block locators', 'Pin locating holes', 'Strap clamp T-slots', 'Copper heat pads', 'Clamp force calc'],
     standards: ['ASME Y14.5-2018', 'IATF 16949'],
     suggestedMaterial: 'Mild Steel / Al 5052',
   },

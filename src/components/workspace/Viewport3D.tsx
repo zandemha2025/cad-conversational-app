@@ -7,18 +7,46 @@ import {
   ZoomIn, ZoomOut, Move, RotateCw, Crosshair, Target, ChevronRight, Ruler,
 } from 'lucide-react';
 import { useWorkspace } from '../../store/workspaceStore';
-import { addTouchpoint, fetchDimensions, IS_DEMO } from '../../lib/api';
+import { addTouchpoint, fetchDimensions } from '../../lib/api';
 import type { ApiTouchpoint, DimensionEntry } from '../../lib/api';
 import DimensionOverlay from '../DimensionOverlay';
 
 // ── Real glTF model ───────────────────────────────────────────────────────────
 
-function GltfModel({ url, touchpointMode, onFaceClick }: {
-  url: string; touchpointMode: boolean;
+function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
+  url: string; touchpointMode: boolean; viewMode: string;
   onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
   const { scene } = useGLTF(url);
   const cloned = scene.clone(true);
+
+  // Apply viewMode materials
+  if (viewMode === 'wireframe') {
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map(() => new THREE.MeshBasicMaterial({ wireframe: true, color: '#60a5fa' }));
+        } else {
+          mesh.material = new THREE.MeshBasicMaterial({ wireframe: true, color: '#60a5fa' });
+        }
+      }
+    });
+  } else if (viewMode === 'shaded-wireframe') {
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map((m) => { const n = (m as THREE.MeshStandardMaterial).clone(); n.wireframe = true; return n; });
+        } else {
+          const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+          mat.wireframe = true;
+          mesh.material = mat;
+        }
+      }
+    });
+  }
+
   return (
     <primitive
       object={cloned}
@@ -75,8 +103,8 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, showDimensions, dimensions, onFaceClick }: {
-  gltfUrl?: string | null; touchpointMode: boolean; showAnnotations: boolean;
+function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensions, dimensions, onFaceClick }: {
+  gltfUrl?: string | null; touchpointMode: boolean; viewMode: string;
   showGrid: boolean; showDimensions: boolean; dimensions: DimensionEntry[];
   onFaceClick?: (worldPos: THREE.Vector3) => void;
 }) {
@@ -90,7 +118,7 @@ function SceneContent({ gltfUrl, touchpointMode, showAnnotations, showGrid, show
       <Environment preset="warehouse" />
 
       {gltfUrl && (
-        <GltfModel url={gltfUrl} touchpointMode={touchpointMode} onFaceClick={onFaceClick} />
+        <GltfModel url={gltfUrl} touchpointMode={touchpointMode} viewMode={viewMode} onFaceClick={onFaceClick} />
       )}
 
       {touchpointMode && state.touchpoints.map((tp, i) => (
@@ -144,10 +172,10 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
 
   // Fetch dimensions whenever a fixture is loaded
   useEffect(() => {
-    if (!projectId || IS_DEMO) return;
+    if (!projectId) return;
     fetchDimensions(projectId).then(dims => {
       if (dims && dims.length > 0) {
-        setDimensions(dims);
+        setDimensions(dims.map(d => ({ ...d, tolerance_mm: d.tolerance_mm ?? 0 })));
         setShowDimensions(true); // auto-show when available
       }
     });
@@ -171,7 +199,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
         <Suspense fallback={null}>
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
-            showAnnotations={showAnnotations} showGrid={showGrid}
+            viewMode={viewMode} showGrid={showGrid}
             showDimensions={showDimensions} dimensions={dimensions}
             onFaceClick={handleFaceClick} />
         </Suspense>
@@ -291,10 +319,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       {/* Axis indicator */}
       <div className="absolute bottom-8 left-6 z-10"><AxisIndicator /></div>
 
-      {/* Coordinates */}
-      <div className="absolute bottom-3 left-10 text-xs text-slate-600 font-mono z-10">
-        X: 130.00 &nbsp; Y: 20.00 &nbsp; Z: 15.00
-      </div>
+      {/* Coordinates placeholder — updated via pointer move in future iteration */}
 
       {/* Legend */}
       <div className="absolute bottom-12 right-20 flex items-center gap-3 text-xs text-gray-500 z-10">

@@ -16,28 +16,28 @@ interface Props {
   positionScale?: number;
 }
 
-/** Color code based on tolerance tightness in the value string. */
-function dimColor(value: string): string {
-  // Very tight: ±0.0X
-  if (/±\s*0\.0[0-9]/.test(value)) return '#ef4444'; // red
-  // Any explicit tolerance
-  if (/±/.test(value)) return '#f59e0b';              // amber
-  // Normal
-  return '#10b981';                                    // emerald
+/** Color code based on tolerance tightness. */
+function dimColor(tolerance_mm: number): string {
+  if (tolerance_mm > 0 && tolerance_mm <= 0.05) return '#ef4444'; // very tight — red
+  if (tolerance_mm > 0 && tolerance_mm <= 0.5) return '#f59e0b';  // tight — amber
+  return '#10b981';                                                  // normal — emerald
 }
 
 export default function DimensionOverlay({ dimensions, positionScale = 0.01 }: Props) {
   return (
     <>
       {dimensions.map((dim, i) => {
-        const s = positionScale;
-        const px = (dim.position[0] ?? 0) * s;
-        const py = (dim.position[1] ?? 0) * s;
-        const pz = (dim.position[2] ?? 0) * s;
-        const color = dimColor(dim.value);
+        // Spread annotations around model centroid since API doesn't provide positions
+        const angle = (i / Math.max(dimensions.length, 1)) * Math.PI * 2;
+        const radius = 3 + Math.floor(i / 8);
+        const px = Math.cos(angle) * radius;
+        const py = 2 + i * 0.3;
+        const pz = Math.sin(angle) * radius;
+        const color = dimColor(dim.tolerance_mm);
+        const valueStr = `${dim.value_mm.toFixed(2)} mm${dim.tolerance_mm > 0 ? ` ±${dim.tolerance_mm}` : ''}`;
 
         return (
-          <group key={i} position={[px, py, pz]}>
+          <group key={dim.id} position={[px * positionScale * 100, py * positionScale * 100, pz * positionScale * 100]}>
             {/* Small marker dot */}
             <mesh>
               <sphereGeometry args={[0.012, 6, 6]} />
@@ -73,7 +73,7 @@ export default function DimensionOverlay({ dimensions, positionScale = 0.01 }: P
                     fontFamily: 'sans-serif',
                   }}
                 >
-                  {dim.label}
+                  {dim.name}
                 </div>
                 <div
                   style={{
@@ -84,7 +84,7 @@ export default function DimensionOverlay({ dimensions, positionScale = 0.01 }: P
                     lineHeight: 1.1,
                   }}
                 >
-                  {dim.value}
+                  {valueStr}
                 </div>
               </div>
             </Html>

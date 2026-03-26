@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  IS_DEMO, createStudy, fetchStudy, fetchStudies, selectStudyVariation,
+  createStudy, fetchStudy, fetchStudies, selectStudyVariation,
 } from '../../lib/api';
 import type { ApiStudy, ApiStudyVariation } from '../../lib/api';
 import { useWorkspace } from '../../store/workspaceStore';
@@ -21,48 +21,6 @@ const GOALS = [
 ] as const;
 
 type GoalId = typeof GOALS[number]['id'];
-
-// ── Demo data generator ───────────────────────────────────────────────────────
-
-function makeDemoVariation(i: number, count: number, goals: string[]): ApiStudyVariation {
-  const isLight = goals.includes('weight');
-  const isStrength = goals.includes('strength');
-  const seed = (i + 1) / count;
-
-  const weight = isLight
-    ? 55 + i * 18 + Math.round(seed * 25)
-    : 110 + i * 22 + Math.round(seed * 40);
-  const material = Math.round(weight * (1.4 + seed * 0.7));
-  const printTime = isLight
-    ? 140 + i * 45 + Math.round(seed * 50)
-    : 200 + i * 65 + Math.round(seed * 80);
-  const score = isStrength
-    ? Math.max(0.42, 0.95 - i * 0.07 + seed * 0.05)
-    : Math.max(0.42, 0.72 + seed * 0.22 - i * 0.04);
-
-  return {
-    id: `demo-v${i}`,
-    study_id: 'demo-study',
-    variant_index: i,
-    status: 'ready',
-    goals,
-    metrics: { estimated_weight_g: weight, material_usage_cc: material, print_time_min: printTime },
-    gltf_url: null,
-    score: Math.round(score * 100) / 100,
-  };
-}
-
-function makeDemoStudy(count: number, goals: string[]): ApiStudy {
-  return {
-    id: 'demo-study',
-    project_id: 'demo',
-    status: 'complete',
-    count,
-    goals,
-    variations: Array.from({ length: count }, (_, i) => makeDemoVariation(i, count, goals)),
-    created_at: new Date().toISOString(),
-  };
-}
 
 function formatPrintTime(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -316,7 +274,7 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
 
   // Load existing studies on mount
   useEffect(() => {
-    if (IS_DEMO || !projectId || projectId === 'demo') return;
+    if (!projectId || projectId === 'demo') return;
     fetchStudies(projectId).then(data => {
       if (data && data.length > 0) {
         dispatch({ type: 'SET_STUDIES', studies: data });
@@ -332,57 +290,21 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
     setCompareIds([]);
     setCompareMode(false);
 
-    if (IS_DEMO || projectId === 'demo') {
-      // Simulate progressive generation with per-variant reveal
-      const skeleton: ApiStudy = {
-        id: 'demo-study',
-        project_id: 'demo',
-        status: 'running',
-        count,
-        goals: selectedGoals,
-        variations: Array.from({ length: count }, (_, i) => ({
-          id: `demo-v${i}`,
-          study_id: 'demo-study',
-          variant_index: i,
-          status: 'generating' as const,
-          goals: selectedGoals,
-          metrics: { estimated_weight_g: 0, material_usage_cc: 0, print_time_min: 0 },
-          gltf_url: null,
-          score: 0,
-        })),
-        created_at: new Date().toISOString(),
-      };
-      setStudy(skeleton);
-
-      const complete = makeDemoStudy(count, selectedGoals);
-      for (let i = 0; i < count; i++) {
-        await new Promise(r => setTimeout(r, 900 + Math.random() * 700));
-        setGeneratingIdx(i + 1);
-        const readyVar = { ...complete.variations[i], status: 'ready' as const };
-        setStudy(prev => {
-          if (!prev) return prev;
-          const vars = prev.variations.map((v, idx) => idx === i ? readyVar : v);
-          return { ...prev, variations: vars, status: i === count - 1 ? 'complete' : 'running' };
-        });
-      }
-      dispatch({ type: 'ADD_STUDY', study: complete });
-    } else {
-      const result = await createStudy(projectId, { count, goals: selectedGoals });
-      if (result) {
-        setStudy(result);
-        dispatch({ type: 'ADD_STUDY', study: result });
-        pollRef.current = setInterval(async () => {
-          const updated = await fetchStudy(projectId, result.id);
-          if (updated) {
-            setStudy(updated);
-            if (updated.status === 'complete' || updated.status === 'failed') {
-              clearInterval(pollRef.current!);
-              setGenerating(false);
-            }
+    const result = await createStudy(projectId, { count, goals: selectedGoals });
+    if (result) {
+      setStudy(result);
+      dispatch({ type: 'ADD_STUDY', study: result });
+      pollRef.current = setInterval(async () => {
+        const updated = await fetchStudy(projectId, result.id);
+        if (updated) {
+          setStudy(updated);
+          if (updated.status === 'complete' || updated.status === 'failed') {
+            clearInterval(pollRef.current!);
+            setGenerating(false);
           }
-        }, 2000);
-        return;
-      }
+        }
+      }, 2000);
+      return;
     }
 
     setGenerating(false);
@@ -401,7 +323,7 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
   };
 
   const handleUse = useCallback(async (v: ApiStudyVariation) => {
-    if (!IS_DEMO && study) {
+    if (study) {
       await selectStudyVariation(projectId, study.id, v.id).catch(() => {});
     }
     dispatch({ type: 'SET_ACTIVE_STUDY', study: study });
@@ -655,7 +577,7 @@ export default function StudyMode({ projectId = 'demo' }: { projectId?: string }
           </span>
         </div>
         <span className="text-slate-700">·</span>
-        <span className="text-xs text-slate-600">{IS_DEMO ? 'Demo mode' : `Project ${projectId?.slice(0, 8)}`}</span>
+        <span className="text-xs text-slate-600">{projectId ? `Project ${projectId.slice(0, 8)}` : 'No project'}</span>
         {compareIds.length > 0 && (
           <>
             <span className="text-slate-700">·</span>

@@ -68,6 +68,20 @@ export interface StoredSettings {
   enableDfmWarnings: boolean;
   autoSave: boolean;
   theme: 'dark' | 'light';
+  // Notifications
+  alertOnJobDone: boolean;
+  weeklyDigestEmail: boolean;
+  validationErrorsBeforeExport: boolean;
+  browserNotificationOnDone: boolean;
+  // Hardware
+  preferInStockItems: boolean;
+  showSupplierPricing: boolean;
+  autoSuggestFasteners: boolean;
+  // AI
+  autoGenerateNodeGraph: boolean;
+  autoRunDfmValidation: boolean;
+  includeDesignRationale: boolean;
+  suggestHardwareOnGenerate: boolean;
 }
 
 export function getProjects(): StoredProject[] {
@@ -94,20 +108,34 @@ export function saveBomItems(projectId: string, items: string[]): void {
   lsSet(`bom_${projectId}`, items);
 }
 
+const SETTINGS_DEFAULTS: StoredSettings = {
+  fullName: '',
+  email: '',
+  company: '',
+  role: 'Fixture Design Engineer',
+  defaultGdtStandard: 'ASME Y14.5-2018',
+  defaultQualityStandard: 'AS9100',
+  defaultMaterial: 'Aluminum 6061-T6',
+  aiModel: 'gemini-2.0-flash',
+  enableDfmWarnings: true,
+  autoSave: true,
+  theme: 'dark',
+  alertOnJobDone: true,
+  weeklyDigestEmail: false,
+  validationErrorsBeforeExport: true,
+  browserNotificationOnDone: true,
+  preferInStockItems: true,
+  showSupplierPricing: true,
+  autoSuggestFasteners: false,
+  autoGenerateNodeGraph: true,
+  autoRunDfmValidation: true,
+  includeDesignRationale: false,
+  suggestHardwareOnGenerate: true,
+};
+
 export function getSettings(): StoredSettings {
-  return lsGet<StoredSettings>('settings') ?? {
-    fullName: '',
-    email: '',
-    company: '',
-    role: 'Fixture Design Engineer',
-    defaultGdtStandard: 'ASME Y14.5-2018',
-    defaultQualityStandard: 'AS9100',
-    defaultMaterial: 'Aluminum 6061-T6',
-    aiModel: 'gemini-2.0-flash',
-    enableDfmWarnings: true,
-    autoSave: true,
-    theme: 'dark',
-  };
+  const stored = lsGet<Partial<StoredSettings>>('settings');
+  return { ...SETTINGS_DEFAULTS, ...stored };
 }
 
 export function saveSettings(s: StoredSettings): void {

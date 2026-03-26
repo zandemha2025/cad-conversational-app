@@ -14,7 +14,6 @@ import {
 import {
   fetchComponentLibrary, fetchProjectComponents,
   addComponentToProject, removeProjectComponent,
-  IS_DEMO,
   type StandardComponent, type ProjectComponent, type ComponentLibraryResponse,
   type ComponentSuggestion,
 } from '../../lib/api';
@@ -28,26 +27,6 @@ const CATEGORY_EMOJI: Record<string, string> = {
   bases:        '⬛',
   end_effectors:'🤖',
 };
-
-// ── Demo data ──────────────────────────────────────────────────────────────────
-
-const DEMO_PROJECT_COMPONENTS: ProjectComponent[] = [
-  {
-    id: 'pc1', project_id: 'demo', component_id: 'toggle_clamp_medium',
-    component_name: 'Toggle Clamp - Medium (GH-225D)', category: 'clamps',
-    quantity: 2, position_notes: '', specifications: { holding_force_lbs: 500 },
-  },
-  {
-    id: 'pc2', project_id: 'demo', component_id: 'dowel_pin_6mm',
-    component_name: 'Dowel Pin - 6mm × 20mm', category: 'pins',
-    quantity: 2, position_notes: '', specifications: { diameter_mm: 6, length_mm: 20 },
-  },
-];
-
-const DEMO_SUGGESTIONS: ComponentSuggestion[] = [
-  { component_id: 'rest_pad_25mm', quantity: 3, reason: 'Three rest pads define the primary datum plane.' },
-  { component_id: 'diamond_pin_6mm', quantity: 1, reason: 'Diamond pin for secondary datum prevents over-constraint.' },
-];
 
 // ── Spec pill ──────────────────────────────────────────────────────────────────
 
@@ -181,16 +160,10 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
   const [showCatalog, setShowCatalog] = useState(true);
   const [showProject, setShowProject] = useState(true);
 
-  const suggestions = externalSuggestions ?? (IS_DEMO ? DEMO_SUGGESTIONS : []);
+  const suggestions = externalSuggestions ?? [];
 
   // Load catalog
   useEffect(() => {
-    if (IS_DEMO) {
-      // Build a minimal library from demo data for display
-      setLibrary(null);
-      setLoadingLib(false);
-      return;
-    }
     fetchComponentLibrary().then(data => {
       if (data) setLibrary(data);
       setLoadingLib(false);
@@ -199,8 +172,7 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
 
   // Load project components
   useEffect(() => {
-    if (IS_DEMO || !projectId) {
-      setProjectComponents(DEMO_PROJECT_COMPONENTS);
+    if (!projectId) {
       setLoadingProj(false);
       return;
     }
@@ -211,43 +183,24 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
   }, [projectId]);
 
   const handleAdd = useCallback(async (componentId: string, qty: number) => {
-    if (!projectId && !IS_DEMO) return;
+    if (!projectId) return;
     setAddingId(componentId);
-
-    if (IS_DEMO || !projectId) {
-      // Demo: synthesise a row from the catalog
-      const found = library?.components.find(c => c.id === componentId);
-      if (found) {
-        const fake: ProjectComponent = {
-          id: `pc-${Date.now()}`,
-          project_id: projectId || 'demo',
-          component_id: componentId,
-          component_name: found.name,
-          category: found.category,
-          quantity: qty,
-          position_notes: '',
-          specifications: found.specifications,
-        };
-        setProjectComponents(prev => [...prev, fake]);
-      }
-    } else {
-      const result = await addComponentToProject(projectId, { component_id: componentId, quantity: qty });
-      if (result) setProjectComponents(prev => [...prev, result]);
-    }
-
+    const result = await addComponentToProject(projectId, { component_id: componentId, quantity: qty });
+    if (result) setProjectComponents(prev => [...prev, result]);
     setAddingId(null);
-  }, [projectId, library]);
+  }, [projectId]);
 
   const handleRemove = useCallback(async (itemId: string) => {
     setProjectComponents(prev => prev.filter(c => c.id !== itemId));
-    if (!IS_DEMO && projectId) {
+    if (projectId) {
       await removeProjectComponent(projectId, itemId);
     }
   }, [projectId]);
 
   // Filter catalog
   const allComponents = library?.components ?? [];
-  const categories = library?.categories ?? {};
+  // Derive unique categories from components
+  const categories = [...new Set(allComponents.map(c => c.category))];
   const filtered = allComponents.filter(c => {
     if (activeCategory && c.category !== activeCategory) return false;
     if (search) {
@@ -353,7 +306,7 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
               </div>
 
               {/* Category tabs */}
-              {Object.keys(categories).length > 0 && (
+              {categories.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-2">
                   <button
                     onClick={() => setActiveCategory(null)}
@@ -365,18 +318,17 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
                   >
                     All
                   </button>
-                  {Object.entries(categories).map(([key, cat]) => (
+                  {categories.map(key => (
                     <button
                       key={key}
                       onClick={() => setActiveCategory(activeCategory === key ? null : key)}
                       className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
                         activeCategory === key
-                          ? 'text-white'
+                          ? 'bg-cadblue-600 text-white'
                           : 'bg-cadsurface-700 text-slate-400 hover:text-slate-200'
                       }`}
-                      style={activeCategory === key ? { backgroundColor: cat.color } : {}}
                     >
-                      {CATEGORY_EMOJI[key]} {cat.name}
+                      {CATEGORY_EMOJI[key] ?? '📦'} {key}
                     </button>
                   ))}
                 </div>
@@ -404,11 +356,6 @@ export default function ComponentLibraryPanel({ projectId, suggestions: external
                 </div>
               )}
 
-              {IS_DEMO && (
-                <p className="text-[10px] text-slate-600 text-center mt-3">
-                  Demo mode — catalog loads from live API in production.
-                </p>
-              )}
             </>
           )}
         </section>

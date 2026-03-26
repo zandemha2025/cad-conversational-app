@@ -163,10 +163,10 @@ export default function Settings() {
                 </div>
                 <div className="space-y-1 divide-y divide-gray-800">
                   <Toggle checked={settings.enableDfmWarnings} onChange={v => update({ enableDfmWarnings: v })} label="Show DFM warnings in viewport" />
-                  <Toggle checked={true} onChange={() => {}} label="Alert when generation job completes" />
-                  <Toggle checked={false} onChange={() => {}} label="Weekly project digest email" />
-                  <Toggle checked={true} onChange={() => {}} label="Validation errors before export" />
-                  <Toggle checked={true} onChange={() => {}} label="Browser notification on job done" />
+                  <Toggle checked={settings.alertOnJobDone} onChange={v => update({ alertOnJobDone: v })} label="Alert when generation job completes" />
+                  <Toggle checked={settings.weeklyDigestEmail} onChange={v => update({ weeklyDigestEmail: v })} label="Weekly project digest email" />
+                  <Toggle checked={settings.validationErrorsBeforeExport} onChange={v => update({ validationErrorsBeforeExport: v })} label="Validation errors before export" />
+                  <Toggle checked={settings.browserNotificationOnDone} onChange={v => update({ browserNotificationOnDone: v })} label="Browser notification on job done" />
                 </div>
               </>
             )}
@@ -222,9 +222,9 @@ export default function Settings() {
                   ]} />
                 </Field>
                 <div className="space-y-1 divide-y divide-gray-800">
-                  <Toggle checked={true} onChange={() => {}} label="Prefer in-stock items from hardware library" />
-                  <Toggle checked={true} onChange={() => {}} label="Show supplier pricing in BOM" />
-                  <Toggle checked={false} onChange={() => {}} label="Auto-suggest fastener substitutions" />
+                  <Toggle checked={settings.preferInStockItems} onChange={v => update({ preferInStockItems: v })} label="Prefer in-stock items from hardware library" />
+                  <Toggle checked={settings.showSupplierPricing} onChange={v => update({ showSupplierPricing: v })} label="Show supplier pricing in BOM" />
+                  <Toggle checked={settings.autoSuggestFasteners} onChange={v => update({ autoSuggestFasteners: v })} label="Auto-suggest fastener substitutions" />
                 </div>
               </>
             )}
@@ -243,10 +243,10 @@ export default function Settings() {
                   ]} />
                 </Field>
                 <div className="space-y-1 divide-y divide-gray-800">
-                  <Toggle checked={true} onChange={() => {}} label="Generate node graph after fixture creation" />
-                  <Toggle checked={true} onChange={() => {}} label="Auto-run DFM validation after generation" />
-                  <Toggle checked={false} onChange={() => {}} label="Include design rationale in chat responses" />
-                  <Toggle checked={true} onChange={() => {}} label="Suggest hardware from library when generating" />
+                  <Toggle checked={settings.autoGenerateNodeGraph} onChange={v => update({ autoGenerateNodeGraph: v })} label="Generate node graph after fixture creation" />
+                  <Toggle checked={settings.autoRunDfmValidation} onChange={v => update({ autoRunDfmValidation: v })} label="Auto-run DFM validation after generation" />
+                  <Toggle checked={settings.includeDesignRationale} onChange={v => update({ includeDesignRationale: v })} label="Include design rationale in chat responses" />
+                  <Toggle checked={settings.suggestHardwareOnGenerate} onChange={v => update({ suggestHardwareOnGenerate: v })} label="Suggest hardware from library when generating" />
                 </div>
                 <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
                   <p className="text-xs text-gray-400 font-medium mb-2">Backend Connection</p>

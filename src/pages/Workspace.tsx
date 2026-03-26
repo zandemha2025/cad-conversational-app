@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import ErrorBoundary from '../components/ErrorBoundary';
 import FeatureTree from '../components/workspace/FeatureTree';
 import Viewport3D from '../components/workspace/Viewport3D';
 import ChatPanel from '../components/workspace/ChatPanel';
@@ -277,54 +278,60 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
         {/* Content area */}
         {mode === 'nodes' ? (
           <div className="flex-1 overflow-hidden">
-            <NodeEditor projectId={projectId} />
+            <ErrorBoundary label="Node editor error"><NodeEditor projectId={projectId} /></ErrorBoundary>
           </div>
         ) : mode === 'studies' ? (
           <div className="flex-1 overflow-hidden">
-            <StudyMode projectId={projectId} />
+            <ErrorBoundary label="Study mode error"><StudyMode projectId={projectId} /></ErrorBoundary>
           </div>
         ) : mode === 'drawing' ? (
           <div className="flex-1 overflow-hidden">
-            <DrawingView projectId={projectId} projectName={projectName} />
+            <ErrorBoundary label="Drawing view error"><DrawingView projectId={projectId} projectName={projectName} /></ErrorBoundary>
           </div>
         ) : (
           <>
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
-                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} fixtureLoaded={!!gltfUrl} />}
-                {leftPanel === 'tree'         && <FeatureTree />}
-                {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
-                {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}
-                {leftPanel === 'validation'   && <ValidationPanel projectId={projectId} />}
-                {leftPanel === 'export'       && <ExportPanel projectId={projectId} />}
-                {leftPanel === 'approvals'    && <ApprovalPanel projectId={projectId} />}
-                {leftPanel === 'interference' && <InterferencePanel projectId={projectId} />}
-                {leftPanel === 'constraints'  && <ConstraintsPanel projectId={projectId} />}
-                {leftPanel === 'clamping'          && <ClampingForcePanel projectId={projectId} />}
-                {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
-                {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
-                {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
-                {leftPanel === 'team'              && (
-                  <CollaborationPanel projectId={projectId} viewers={viewers} currentUserId={user?.id} />
-                )}
-                {leftPanel === 'features'          && <FeatureSearch projectId={projectId} />}
-                {leftPanel === 'manufacturing'     && <ManufacturingPanel projectId={projectId} />}
-                {leftPanel === 'assembly'          && <AssemblyPanel projectId={projectId} />}
-                {leftPanel === 'parts'             && <ComponentLibraryPanel projectId={projectId} suggestions={componentSuggestions} />}
+                <ErrorBoundary label="Panel error">
+                  {leftPanel === 'chat'         && <ChatPanel projectId={projectId} projectName={projectName} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} fixtureLoaded={!!gltfUrl} />}
+                  {leftPanel === 'tree'         && <FeatureTree />}
+                  {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
+                  {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}
+                  {leftPanel === 'validation'   && <ValidationPanel projectId={projectId} />}
+                  {leftPanel === 'export'       && <ExportPanel projectId={projectId} />}
+                  {leftPanel === 'approvals'    && <ApprovalPanel projectId={projectId} />}
+                  {leftPanel === 'interference' && <InterferencePanel projectId={projectId} />}
+                  {leftPanel === 'constraints'  && <ConstraintsPanel projectId={projectId} />}
+                  {leftPanel === 'clamping'          && <ClampingForcePanel projectId={projectId} />}
+                  {leftPanel === 'work_instructions' && <WorkInstructionsPanel projectId={projectId} />}
+                  {leftPanel === 'qc_checklist'      && <QcChecklistPanel projectId={projectId} />}
+                  {leftPanel === 'tolerance_stack'   && <ToleranceStackPanel projectId={projectId} />}
+                  {leftPanel === 'team'              && (
+                    <CollaborationPanel projectId={projectId} viewers={viewers} currentUserId={user?.id} />
+                  )}
+                  {leftPanel === 'features'          && <FeatureSearch projectId={projectId} />}
+                  {leftPanel === 'manufacturing'     && <ManufacturingPanel projectId={projectId} />}
+                  {leftPanel === 'assembly'          && <AssemblyPanel projectId={projectId} />}
+                  {leftPanel === 'parts'             && <ComponentLibraryPanel projectId={projectId} suggestions={componentSuggestions} />}
+                </ErrorBoundary>
               </div>
             )}
 
             <div id="tour-viewport" className="flex-1 overflow-hidden relative">
-              <Viewport3D
-                touchpointMode={leftPanel === 'touchpoints' && showLeft}
-                gltfUrl={state.gltfUrl}
-                projectId={projectId}
-              />
+              <ErrorBoundary label="3D viewport error">
+                <Viewport3D
+                  touchpointMode={leftPanel === 'touchpoints' && showLeft}
+                  gltfUrl={state.gltfUrl}
+                  projectId={projectId}
+                />
+              </ErrorBoundary>
             </div>
 
             {showRight && (
               <div id="tour-right-panel" className="w-64 shrink-0 border-l border-cadsurface-700 overflow-hidden hidden md:flex flex-col">
-                <PropertiesPanel projectId={projectId} />
+                <ErrorBoundary label="Properties panel error">
+                  <PropertiesPanel projectId={projectId} />
+                </ErrorBoundary>
               </div>
             )}
 

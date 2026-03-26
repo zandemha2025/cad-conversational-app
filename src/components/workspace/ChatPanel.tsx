@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Send, Paperclip, Mic, Bot, User, ChevronDown, Sparkles,
   Wrench, FileText, Crosshair, AlertTriangle, CheckSquare,
-  Target, Wifi, WifiOff, Loader2, X, Lightbulb,
+  Target, Wifi, Loader2, X, Lightbulb,
 } from 'lucide-react';
 import { useChat } from '../../hooks/useChat';
 import type { ChatMessage } from '../../types';
@@ -23,6 +23,7 @@ const SUGGESTION_CHIPS = [
 
 interface ChatPanelProps {
   projectId?: string;
+  projectName?: string;
   onGenerationQueued?: () => void;
   onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
   fixtureLoaded?: boolean;
@@ -33,7 +34,7 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId, onGenerationQueued, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
+export default function ChatPanel({ projectId, projectName, onGenerationQueued, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const { messages, isThinking, isConnected, activeGenJob, sendMessage, clearGenJob, componentSuggestions } = useChat({
     projectId,
@@ -107,13 +108,15 @@ export default function ChatPanel({ projectId, onGenerationQueued, onComponentSu
       </div>
 
       {/* Context banner */}
-      <div className="px-3 py-1.5 bg-cadblue-950/40 border-b border-cadblue-900/50 shrink-0">
-        <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
-          <Target size={11} />
-          <span className="font-medium">Context:</span>
-          <span className="text-slate-400">Drill Jig · 3-2-1 Locating · ASME Y14.5 · AS9100</span>
+      {(projectName || projectId) && (
+        <div className="px-3 py-1.5 bg-cadblue-950/40 border-b border-cadblue-900/50 shrink-0">
+          <div className="flex items-center gap-1.5 text-xs text-cadblue-400">
+            <Target size={11} />
+            <span className="font-medium">Project:</span>
+            <span className="text-slate-400 truncate">{projectName || projectId?.slice(0, 8)}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Quick action bar */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-cadsurface-700 bg-cadsurface-900/50 shrink-0 overflow-x-auto no-scrollbar">
