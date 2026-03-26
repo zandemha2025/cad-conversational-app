@@ -133,5 +133,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
     wsRef.current.send(JSON.stringify({ type: 'message', content, attachments }));
   }, []);
 
-  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages };
+  const clearGenJob = useCallback(() => setActiveGenJob(null), []);
+
+  return { messages, isThinking, isConnected, activeGenJob, sendMessage, setMessages, clearGenJob };
 }

@@ -263,7 +263,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
           <>
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
-                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onGenerationQueued={() => setIsGenerating(true)} />}
+                {leftPanel === 'chat'         && <ChatPanel projectId={projectId} onGenerationQueued={() => setIsGenerating(true)} fixtureLoaded={!!gltfUrl} />}
                 {leftPanel === 'tree'         && <FeatureTree />}
                 {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                 {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}

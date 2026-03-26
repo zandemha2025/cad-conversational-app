@@ -24,7 +24,13 @@ async def get_validation_results(
     if method:
         query = query.eq("method", method.value)
     res = query.execute()
-    return [ValidationResult(**r) for r in (res.data or [])]
+    results = []
+    for r in (res.data or []):
+        # DB column is issues_json; model field is issues
+        row = dict(r)
+        row.setdefault("issues", row.pop("issues_json", []) or [])
+        results.append(ValidationResult(**row))
+    return results
 
 
 @router.get("/{project_id}/validation/summary", response_model=ValidationSummary)

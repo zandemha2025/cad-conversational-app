@@ -24,6 +24,7 @@ const SUGGESTION_CHIPS = [
 interface ChatPanelProps {
   projectId?: string;
   onGenerationQueued?: () => void;
+  fixtureLoaded?: boolean;
 }
 
 interface ProactiveSuggestion {
@@ -31,13 +32,18 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId, onGenerationQueued }: ChatPanelProps) {
+export default function ChatPanel({ projectId, onGenerationQueued, fixtureLoaded }: ChatPanelProps) {
   const [input, setInput] = useState('');
-  const { messages, isThinking, isConnected, activeGenJob, sendMessage } = useChat({
+  const { messages, isThinking, isConnected, activeGenJob, sendMessage, clearGenJob } = useChat({
     projectId,
     initialMessages: [],
     onGenerationQueued,
   });
+
+  // Clear generation banner once fixture arrives
+  useEffect(() => {
+    if (fixtureLoaded) clearGenJob();
+  }, [fixtureLoaded, clearGenJob]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());

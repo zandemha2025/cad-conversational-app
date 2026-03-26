@@ -51,6 +51,7 @@ async def login(body: UserLogin):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         return TokenResponse(
             access_token=session.access_token,
+            refresh_token=session.refresh_token,
             token_type="bearer",
             user=UserResponse(
                 id=str(user.id),
@@ -63,6 +64,36 @@ async def login(body: UserLogin):
     except Exception as e:
         log.error("login error: %s", e)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(body: dict):
+    """Exchange a Supabase refresh_token for a fresh access_token."""
+    refresh_token = body.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="refresh_token required")
+    sb = get_supabase_auth()
+    try:
+        res = sb.auth.refresh_session(refresh_token)
+        session = res.session
+        user = res.user
+        if not session or not user:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        return TokenResponse(
+            access_token=session.access_token,
+            refresh_token=session.refresh_token,
+            token_type="bearer",
+            user=UserResponse(
+                id=str(user.id),
+                email=user.email,
+                full_name=user.user_metadata.get("full_name") if user.user_metadata else None,
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("refresh error: %s", e)
+        raise HTTPException(status_code=401, detail="Token refresh failed")
 
 
 @router.post("/logout")
