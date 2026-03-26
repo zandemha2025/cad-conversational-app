@@ -68,6 +68,8 @@ from app.api.routes.assembly import router as assembly_router
 from app.api.routes.components import router as components_router
 # Dimension overlay (Feature 3)
 from app.api.routes.dimensions import router as dimensions_router
+# Generate Variations (Sprint 8)
+from app.api.routes.variations import router as variations_router
 
 API = "/api"
 
@@ -117,6 +119,8 @@ app.include_router(assembly_router,           prefix=API)
 app.include_router(components_router,         prefix=API)
 # Dimension overlay (Feature 3)
 app.include_router(dimensions_router,         prefix=API)
+# Generate Variations (Sprint 8)
+app.include_router(variations_router,         prefix=API)
 
 
 # ── Startup migrations ────────────────────────────────────────────────────────
@@ -273,6 +277,25 @@ async def validate_config():
             _log.info("Schema migration: dimensions_json column ensured")
     except Exception as e:
         _log.warning("Schema migration skipped (column may already exist or DATABASE_URL not set): %s", e)
+
+    # Schema migration: add variation columns to fixture_geometries
+    _VARIATION_MIGRATIONS = [
+        "ALTER TABLE fixture_geometries ADD COLUMN IF NOT EXISTS variation_group_id UUID",
+        "ALTER TABLE fixture_geometries ADD COLUMN IF NOT EXISTS variation_index INTEGER DEFAULT 0",
+        "ALTER TABLE fixture_geometries ADD COLUMN IF NOT EXISTS variation_metadata JSONB",
+        "CREATE INDEX IF NOT EXISTS idx_fixture_geom_variation_group ON fixture_geometries(variation_group_id)",
+    ]
+    try:
+        from sqlalchemy import text as sa_text
+        from app.core.database import get_engine
+        engine = get_engine()
+        if engine:
+            async with engine.begin() as conn:
+                for sql in _VARIATION_MIGRATIONS:
+                    await conn.execute(sa_text(sql))
+            _log.info("Schema migration: variation columns ensured")
+    except Exception as e:
+        _log.warning("Variation schema migration skipped: %s", e)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

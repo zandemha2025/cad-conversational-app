@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any
 
 
 class FaceInfo(BaseModel):
@@ -42,3 +43,36 @@ class FixtureGeometryResponse(BaseModel):
     gltf_url: str | None        # Zoo.dev GLTF output
     generation_prompt: str | None
     generated_at: datetime
+
+
+class VariationMetadata(BaseModel):
+    varied_parameter: str
+    varied_value: str
+    label: str = ""
+    description: str | None = None
+
+
+class VariationResponse(BaseModel):
+    id: str
+    project_id: str
+    version: int
+    variation_group_id: str
+    variation_index: int
+    variation_metadata: VariationMetadata | None
+    gltf_url: str | None
+    generation_prompt: str | None
+    generated_at: datetime
+
+
+class VariationGroupResponse(BaseModel):
+    variation_group_id: str
+    prompt: str
+    num_variations: int
+    variations: list[VariationResponse]
+    created_at: datetime
+
+
+class GenerateVariationsRequest(BaseModel):
+    prompt: str
+    num_variations: int = Field(default=5, ge=2, le=10)
+    variation_parameters: list[str] = Field(default_factory=list)

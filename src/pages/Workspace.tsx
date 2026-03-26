@@ -23,6 +23,8 @@ import FeatureSearch from '../components/workspace/FeatureSearch';
 import ManufacturingPanel from '../components/workspace/ManufacturingPanel';
 import AssemblyPanel from '../components/workspace/AssemblyPanel';
 import ComponentLibraryPanel from '../components/workspace/ComponentLibraryPanel';
+import VariationsPanel from '../components/workspace/VariationsPanel';
+import VariationsModal from '../components/workspace/VariationsModal';
 import TopBar from '../components/layout/TopBar';
 import type { WorkspaceMode } from '../components/layout/TopBar';
 import OnboardingTour from '../components/OnboardingTour';
@@ -35,9 +37,10 @@ import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
   SplitSquareHorizontal, Target, ShieldAlert, Download, ClipboardCheck,
-  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen,
+  Scan, Link2, Gauge, FileText, Microscope, Ruler, Users, Search, Wrench, Layers, BookOpen, Shuffle,
 } from 'lucide-react';
 import type { ComponentSuggestion } from '../lib/api';
+import { generateVariations } from '../lib/api';
 
 type LeftPanel =
   | 'chat'
@@ -57,7 +60,8 @@ type LeftPanel =
   | 'features'
   | 'manufacturing'
   | 'assembly'
-  | 'parts';
+  | 'parts'
+  | 'variations';
 
 // ── Inner workspace with access to WorkspaceContext ───────────────────────────
 
@@ -70,6 +74,9 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   const [projectName, setProjectName] = useState<string>('');
   const [componentSuggestions, setComponentSuggestions] = useState<ComponentSuggestion[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showVariationsModal, setShowVariationsModal] = useState(false);
+  const [variationsGenerating, setVariationsGenerating] = useState(false);
+  const [variationsRefresh, setVariationsRefresh] = useState(0);
   const { state, dispatch }       = useWorkspace();
   const { user } = useAuth();
   const [viewers, setViewers]     = useState<import('../hooks/useRealtimeProject').PresenceUser[]>([]);
@@ -175,6 +182,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     { id: 'manufacturing',     icon: <Wrench size={15} />,       title: 'Manufacturing' },
     { id: 'assembly',          icon: <Layers size={15} />,       title: 'Assembly BOM' },
     { id: 'parts',             icon: <BookOpen size={15} />,     title: 'Parts Library' },
+    { id: 'variations',        icon: <Shuffle size={15} />,      title: 'Design Variations' },
   ];
 
   function getPanelColor(id: LeftPanel, active: boolean) {
@@ -199,6 +207,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       case 'manufacturing':     return 'bg-orange-600 text-white';
       case 'assembly':          return 'bg-indigo-700 text-white';
       case 'parts':             return 'bg-violet-700 text-white';
+      case 'variations':        return 'bg-violet-600 text-white';
       default:             return 'bg-cadblue-600 text-white';
     }
   }
@@ -302,6 +311,13 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
                 {leftPanel === 'manufacturing'     && <ManufacturingPanel projectId={projectId} />}
                 {leftPanel === 'assembly'          && <AssemblyPanel projectId={projectId} />}
                 {leftPanel === 'parts'             && <ComponentLibraryPanel projectId={projectId} suggestions={componentSuggestions} />}
+                {leftPanel === 'variations'        && (
+                  <VariationsPanel
+                    projectId={projectId ?? ''}
+                    onGenerateClick={() => setShowVariationsModal(true)}
+                    triggerRefresh={variationsRefresh}
+                  />
+                )}
               </div>
             )}
 
@@ -351,6 +367,33 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
       {/* Onboarding tour */}
       <OnboardingTour active={showTour} onDone={() => setShowTour(false)} />
+
+      {/* Generate Variations modal */}
+      {showVariationsModal && (
+        <VariationsModal
+          projectId={projectId ?? ''}
+          onClose={() => setShowVariationsModal(false)}
+          isGenerating={variationsGenerating}
+          onSubmit={async (prompt, numVariations, params) => {
+            if (!projectId) return;
+            setVariationsGenerating(true);
+            try {
+              await generateVariations(projectId, prompt, numVariations, params);
+              setShowVariationsModal(false);
+              // Switch to variations panel and trigger a poll
+              setLeftPanel('variations');
+              setShowLeft(true);
+              // Poll for new group appearing
+              const pollInterval = setInterval(() => {
+                setVariationsRefresh(r => r + 1);
+              }, 8000);
+              setTimeout(() => clearInterval(pollInterval), 10 * 60 * 1000); // 10 min max
+            } finally {
+              setVariationsGenerating(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

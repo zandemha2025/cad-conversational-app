@@ -55,7 +55,7 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     proj = sb.table("projects").select("*").eq("id", project_id).single().execute().data or {}
     env = proj.get("environment_json") or {}
     printer = proj.get("printer_profile_json") or {}
-    template_id = proj.get("template_id", "generic_fixture")
+    template_id = proj.get("template_id") or "generic_fixture"
 
     # Part features
     geom_res = (
