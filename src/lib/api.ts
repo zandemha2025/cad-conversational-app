@@ -1014,3 +1014,176 @@ export async function addComponentToProject(
 export async function removeProjectComponent(projectId: string, componentId: string): Promise<void> {
   await apiFetch(`/projects/${projectId}/components/${componentId}`, { method: 'DELETE' });
 }
+
+// ── Dimensions (Viewport3D) ────────────────────────────────────────────────────
+
+export interface PartDimension {
+  id: string;
+  name: string;
+  value_mm: number;
+  tolerance_mm?: number;
+  type: string;
+}
+
+export async function fetchDimensions(projectId: string): Promise<PartDimension[] | null> {
+  return apiFetch<PartDimension[]>(`/projects/${projectId}/dimensions`);
+}
+
+// ── Study Mode ─────────────────────────────────────────────────────────────────
+
+export interface ApiStudyVariation {
+  id: string;
+  study_id: string;
+  variant_index: number;
+  status: string;
+  goals: string[];
+  metrics: { estimated_weight_g: number; material_usage_cc: number; print_time_min: number };
+  gltf_url: string | null;
+  score: number;
+}
+
+export interface ApiStudy {
+  id: string;
+  project_id: string;
+  status: string;
+  count: number;
+  goals: string[];
+  variations: ApiStudyVariation[];
+  created_at: string;
+}
+
+export async function createStudy(
+  projectId: string,
+  params: { count: number; goals: string[] }
+): Promise<ApiStudy | null> {
+  return apiFetch<ApiStudy>(`/projects/${projectId}/studies`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function fetchStudies(projectId: string): Promise<ApiStudy[] | null> {
+  return apiFetch<ApiStudy[]>(`/projects/${projectId}/studies`);
+}
+
+export async function fetchStudy(projectId: string, studyId: string): Promise<ApiStudy | null> {
+  return apiFetch<ApiStudy>(`/projects/${projectId}/studies/${studyId}`);
+}
+
+export async function selectStudyVariation(
+  projectId: string,
+  studyId: string,
+  variationId: string
+): Promise<void> {
+  await apiFetch(`/projects/${projectId}/studies/${studyId}/select`, {
+    method: 'POST',
+    body: JSON.stringify({ variation_id: variationId }),
+  });
+}
+
+// ── Machine / Manufacturing ────────────────────────────────────────────────────
+
+export interface Machine {
+  id: string;
+  user_id: string;
+  name: string;
+  machine_type: 'fdm_printer' | 'sla_printer' | 'cnc_3axis' | 'cnc_5axis' | 'laser_cutter' | 'manual_shop';
+  make_model: string;
+  build_volume_json: { x_mm: number; y_mm: number; z_mm: number };
+  materials_available: string[];
+  hourly_rate: number;
+  setup_time_minutes: number;
+}
+
+export type MachineInput = Omit<Machine, 'id' | 'user_id'>;
+
+export interface MachinePreset extends MachineInput {
+  id: string;
+  description: string;
+}
+
+export interface CostEstimate {
+  machine_id: string;
+  machine_name: string;
+  machine_type: string;
+  estimated_hours: number;
+  setup_hours: number;
+  material_cost: number;
+  machine_cost: number;
+  total_cost: number;
+  currency: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  user_id: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: string;
+  specifications: Record<string, string | number>;
+}
+
+export interface InventoryMatch {
+  inventory_item: InventoryItem;
+  bom_item_id: string;
+  match_score: number;
+  match_reason: string;
+}
+
+export interface ShoppingListItem {
+  bom_item_id: string;
+  name: string;
+  quantity_needed: number;
+  estimated_price: number;
+  supplier: string;
+  part_number: string;
+}
+
+export interface DimensionEntry {
+  id: string;
+  name: string;
+  value_mm: number;
+  tolerance_mm: number;
+  type: string;
+}
+
+export async function fetchMachines(): Promise<Machine[] | null> {
+  return apiFetch<Machine[]>('/machines');
+}
+
+export async function addMachine(input: MachineInput): Promise<Machine | null> {
+  return apiFetch<Machine>('/machines', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function deleteMachine(machineId: string): Promise<void> {
+  await apiFetch(`/machines/${machineId}`, { method: 'DELETE' });
+}
+
+export async function fetchMachinePresets(): Promise<MachinePreset[] | null> {
+  return apiFetch<MachinePreset[]>('/machines/presets');
+}
+
+export async function estimateManufacturingCost(
+  projectId: string,
+  machineIds?: string[]
+): Promise<CostEstimate[] | null> {
+  return apiFetch<CostEstimate[]>(`/projects/${projectId}/manufacturing/cost`, {
+    method: 'POST',
+    body: JSON.stringify({ machine_ids: machineIds }),
+  });
+}
+
+export async function fetchShoppingList(projectId: string): Promise<ShoppingListItem[] | null> {
+  return apiFetch<ShoppingListItem[]>(`/projects/${projectId}/manufacturing/shopping-list`);
+}
+
+export async function uploadInventory(file: File): Promise<{ imported: number } | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return apiUpload<{ imported: number }>('/inventory/upload', fd);
+}
+
+export async function matchInventory(projectId: string): Promise<InventoryMatch[] | null> {
+  return apiFetch<InventoryMatch[]>(`/projects/${projectId}/manufacturing/inventory-match`);
+}
