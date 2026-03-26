@@ -8,10 +8,17 @@ Primary: POST /ai/text-to-cad/glb  { "prompt": "..." }
 
 Fallback: stub GLB (minimal base-plate box) when Zoo.dev is unavailable.
 
-File format conversions via:
+File format conversions (synchronous):
   POST /file/conversion/{src_format}/{output_format}
   Content-Type: application/octet-stream
   Body: raw file bytes
+  Response: raw converted file bytes
+
+Examples:
+  STEP → GLB:  POST /file/conversion/step/glb
+  GLB  → STEP: POST /file/conversion/glb/step
+  GLB  → STL:  POST /file/conversion/glb/stl
+  GLB  → IGES: POST /file/conversion/glb/iges
 """
 import asyncio
 import base64
@@ -49,6 +56,82 @@ def _zoo_url(path: str, **query_params: str) -> tuple[str, dict]:
         qs = "&".join(f"{k}={v}" for k, v in query_params.items())
         return f"{base}{path}?{qs}", {}
     return f"{base}{path}", {}
+
+
+# ── direct file format conversion ────────────────────────────────────────────
+
+async def convert_file_format(
+    src_bytes: bytes,
+    src_format: str,
+    output_format: str,
+    project_id: str = "",
+) -> bytes | None:
+    """
+    Convert a CAD file via Zoo.dev POST /file/conversion/{src_format}/{output_format}.
+    Synchronous Zoo.dev endpoint: body = raw bytes, response = converted file bytes.
+    Routed through the Vercel proxy via _zoo_url().
+    Returns converted bytes or None on failure.
+    """
+    if not settings.ZOO_API_KEY:
+        log.warning("ZOO_API_KEY not set — cannot convert %s→%s", src_format, output_format)
+        return None
+    path = f"/file/conversion/{src_format}/{output_format}"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            url, extra_headers = _zoo_url(path)
+            headers = {
+                "Authorization": f"Bearer {settings.ZOO_API_KEY}",
+                "Content-Type": "application/octet-stream",
+                **extra_headers,
+            }
+            resp = await client.post(url, content=src_bytes, headers=headers)
+            resp.raise_for_status()
+            result = resp.content
+            log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
+                     src_format, output_format, project_id, len(result))
+            return result
+    except httpx.HTTPStatusError as e:
+        log.error("Zoo.dev HTTP %d %s→%s project=%s: %s",
+                  e.response.status_code, src_format, output_format, project_id,
+                  e.response.text[:400])
+    except Exception as e:
+        log.error("Zoo.dev %s→%s error project=%s: %s", src_format, output_format, project_id, e)
+    return None
+
+
+def convert_file_format_sync(
+    src_bytes: bytes,
+    src_format: str,
+    output_format: str,
+    project_id: str = "",
+) -> bytes | None:
+    """
+    Synchronous version of convert_file_format() for use in Celery workers.
+    Uses httpx.post() (blocking). Same proxy routing as the async version.
+    """
+    if not settings.ZOO_API_KEY:
+        log.warning("ZOO_API_KEY not set — cannot convert %s→%s", src_format, output_format)
+        return None
+    path = f"/file/conversion/{src_format}/{output_format}"
+    url, extra_headers = _zoo_url(path)
+    headers = {
+        "Authorization": f"Bearer {settings.ZOO_API_KEY}",
+        "Content-Type": "application/octet-stream",
+        **extra_headers,
+    }
+    try:
+        resp = httpx.post(url, content=src_bytes, headers=headers, timeout=TIMEOUT)
+        resp.raise_for_status()
+        log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
+                 src_format, output_format, project_id, len(resp.content))
+        return resp.content
+    except httpx.HTTPStatusError as e:
+        log.error("Zoo.dev HTTP %d %s→%s project=%s: %s",
+                  e.response.status_code, src_format, output_format, project_id,
+                  e.response.text[:400])
+    except Exception as e:
+        log.error("Zoo.dev %s→%s error project=%s: %s", src_format, output_format, project_id, e)
+    return None
 
 
 # ── stub GLB ─────────────────────────────────────────────────────────────────
@@ -221,16 +304,46 @@ async def compile_kcl_to_gltf(project_id: str, kcl_code: str, version: int) -> s
 
 # ── format conversion for exports ─────────────────────────────────────────────
 
-async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: str) -> bytes | None:
+async def compile_kcl_to_format(
+    project_id: str,
+    kcl_code: str,
+    output_format: str,
+    glb_url: str | None = None,
+) -> bytes | None:
     """
-    Convert fixture design to the requested format via Zoo.dev text-to-CAD.
-    output_format: "step", "stl", "gltf", "glb"
+    Convert fixture design to the requested format.
+
+    Fast path (preferred): if glb_url is provided, downloads the existing GLB
+    from R2 and converts via Zoo.dev POST /file/conversion/glb/{output_format}.
+    No polling required — the conversion endpoint is synchronous.
+
+    Slow fallback: if no GLB URL, submits a text-to-CAD AI job and polls for
+    the output file (takes 30–90 s).
+
+    output_format: "step", "stl", "iges", "dxf", "gltf", "glb"
     Returns raw bytes, or None on failure.
     """
     if not settings.ZOO_API_KEY:
         log.warning("ZOO_API_KEY not set — cannot convert to %s", output_format)
         return None
 
+    # ── Fast path: GLB → output_format via file conversion endpoint ──────────
+    if glb_url:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as dl_client:
+                glb_resp = await dl_client.get(glb_url)
+                glb_resp.raise_for_status()
+                glb_bytes = glb_resp.content
+            result = await convert_file_format(glb_bytes, "glb", output_format, project_id)
+            if result:
+                return result
+            log.warning("GLB→%s via file conversion failed for project=%s — falling back to text-to-CAD",
+                        output_format, project_id)
+        except Exception as e:
+            log.warning("Failed to download GLB from %s: %s — falling back to text-to-CAD",
+                        glb_url, e)
+
+    # ── Slow fallback: text-to-CAD AI job ─────────────────────────────────────
     prompt = f"Manufacturing fixture, export as {output_format}"
     format_key_map = {
         "step":  "source.step",
@@ -265,14 +378,14 @@ async def compile_kcl_to_format(project_id: str, kcl_code: str, output_format: s
 
             result = _safe_b64decode(b64)
             if result:
-                log.info("Zoo.dev KCL→%s OK for project=%s (%d bytes)",
+                log.info("Zoo.dev text-to-CAD→%s OK for project=%s (%d bytes)",
                          output_format, project_id, len(result))
             return result
 
     except httpx.HTTPStatusError as e:
-        log.error("Zoo.dev HTTP %d KCL→%s project=%s: %s",
+        log.error("Zoo.dev HTTP %d text-to-CAD→%s project=%s: %s",
                   e.response.status_code, output_format, project_id, e.response.text[:400])
         return None
     except Exception as e:
-        log.error("Zoo.dev KCL→%s error project=%s: %s", output_format, project_id, e)
+        log.error("Zoo.dev text-to-CAD→%s error project=%s: %s", output_format, project_id, e)
         return None

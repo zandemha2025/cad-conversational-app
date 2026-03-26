@@ -225,12 +225,18 @@ async def export_direct(
         .limit(1)
         .execute()
     )
-    has_kcl = bool(fixture_res.data and fixture_res.data[0].get("kcl"))
 
     # Fetch fixture KCL if available (for Zoo.dev / OCCT conversion)
     fixture_kcl = None
     if fixture_res.data and fixture_res.data[0].get("kcl"):
         fixture_kcl = fixture_res.data[0]["kcl"]
+
+    # Best available GLB URL: prefer fixture GLB (AI-generated), fall back to
+    # part GLB (converted from uploaded STEP). Passed to compile_kcl_to_format()
+    # so the fast GLB→format path is used instead of re-running text-to-CAD.
+    fixture_gltf_url = fixture_res.data[0].get("gltf_url") if fixture_res.data else None
+    part_gltf_url = geom_res.data[0].get("gltf_url") if geom_res.data else None
+    best_glb_url = fixture_gltf_url or part_gltf_url
 
     # Full features_json for OCCT engine (keep raw dict/list, not just face list)
     features_json_full = None
@@ -239,10 +245,10 @@ async def export_direct(
 
     # Generate the export file
     if fmt == "stl":
-        # Prefer real geometry from Zoo.dev if KCL is available
-        if fixture_kcl:
+        # Prefer real geometry from Zoo.dev if KCL or existing GLB is available
+        if fixture_kcl or best_glb_url:
             from app.services.zoo_service import compile_kcl_to_format
-            stl_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "stl")
+            stl_bytes = await compile_kcl_to_format(project_id, fixture_kcl or "", "stl", glb_url=best_glb_url)
             if stl_bytes:
                 stl_fn = f"{part_number}_{project_name}.stl".replace(" ", "_")
                 return Response(
@@ -277,10 +283,10 @@ async def export_direct(
         filename = f"{part_number}_{project_name}.stl".replace(" ", "_")
 
     elif fmt == "step":
-        # 1. Try Zoo.dev KCL → STEP (real geometry from fixture)
-        if fixture_kcl:
+        # 1. Try Zoo.dev: GLB → STEP (fast) or KCL → STEP (text-to-CAD fallback)
+        if fixture_kcl or best_glb_url:
             from app.services.zoo_service import compile_kcl_to_format
-            step_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "step")
+            step_bytes = await compile_kcl_to_format(project_id, fixture_kcl or "", "step", glb_url=best_glb_url)
             if step_bytes:
                 step_fn = f"{part_number}_{project_name}.step".replace(" ", "_")
                 return Response(
@@ -325,10 +331,10 @@ async def export_direct(
         filename = f"{part_number}_{project_name}.step".replace(" ", "_")
 
     elif fmt == "iges":
-        # Try Zoo.dev KCL → IGES if available
-        if fixture_kcl:
+        # Try Zoo.dev: GLB → IGES (fast) or KCL → IGES (fallback)
+        if fixture_kcl or best_glb_url:
             from app.services.zoo_service import compile_kcl_to_format
-            iges_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "iges")
+            iges_bytes = await compile_kcl_to_format(project_id, fixture_kcl or "", "iges", glb_url=best_glb_url)
             if iges_bytes:
                 iges_fn = f"{part_number}_{project_name}.igs".replace(" ", "_")
                 return Response(
@@ -361,10 +367,10 @@ async def export_direct(
         filename = f"{part_number}_{project_name}.igs".replace(" ", "_")
 
     elif fmt == "dxf":
-        # Try Zoo.dev KCL → DXF if available
-        if fixture_kcl:
+        # Try Zoo.dev: GLB → DXF (fast) or KCL → DXF (fallback)
+        if fixture_kcl or best_glb_url:
             from app.services.zoo_service import compile_kcl_to_format
-            dxf_bytes = await compile_kcl_to_format(project_id, fixture_kcl, "dxf")
+            dxf_bytes = await compile_kcl_to_format(project_id, fixture_kcl or "", "dxf", glb_url=best_glb_url)
             if dxf_bytes:
                 dxf_fn = f"{part_number}_{project_name}.dxf".replace(" ", "_")
                 return Response(
