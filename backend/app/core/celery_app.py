@@ -11,6 +11,7 @@ celery_app = Celery(
         "app.tasks.generate_fixture",
         "app.tasks.run_validation",
         "app.tasks.export",
+        "app.tasks.proactive_analysis",
     ],
 )
 
