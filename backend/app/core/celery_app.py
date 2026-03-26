@@ -9,6 +9,7 @@ celery_app = Celery(
     include=[
         "app.tasks.process_step",
         "app.tasks.generate_fixture",
+        "app.tasks.generate_variations",
         "app.tasks.run_validation",
         "app.tasks.export",
         "app.tasks.proactive_analysis",
@@ -29,8 +30,9 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_routes={
         "app.tasks.process_step.*":       {"queue": "normal"},
-        "app.tasks.generate_fixture.*":   {"queue": "normal"},
-        "app.tasks.run_validation.*":     {"queue": "normal"},
+        "app.tasks.generate_fixture.*":    {"queue": "normal"},
+        "app.tasks.generate_variations.*": {"queue": "normal"},
+        "app.tasks.run_validation.*":      {"queue": "normal"},
         "app.tasks.export.*":             {"queue": "low"},
         "proactive_analysis_task":        {"queue": "low"},
         "app.tasks.generate_drawing.*":   {"queue": "low"},

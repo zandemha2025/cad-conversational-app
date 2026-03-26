@@ -1217,3 +1217,66 @@ export async function uploadInventory(file: File): Promise<{ imported: number } 
 export async function matchInventory(projectId: string): Promise<InventoryMatch[] | null> {
   return apiFetch<InventoryMatch[]>(`/projects/${projectId}/manufacturing/inventory-match`);
 }
+
+// ── Generate Variations ────────────────────────────────────────────────────────
+
+export interface VariationMetadata {
+  varied_parameter: string;
+  varied_value: string;
+  label: string;
+  description?: string;
+}
+
+export interface VariationItem {
+  id: string;
+  project_id: string;
+  version: number;
+  variation_group_id: string;
+  variation_index: number;
+  variation_metadata: VariationMetadata | null;
+  gltf_url: string | null;
+  generation_prompt: string | null;
+  generated_at: string;
+}
+
+export interface VariationGroup {
+  variation_group_id: string;
+  prompt: string;
+  num_variations: number;
+  variations: VariationItem[];
+  created_at: string;
+}
+
+export interface GenerateVariationsResponse {
+  message: string;
+  variation_group_id: string;
+  project_id: string;
+  num_variations: number;
+}
+
+export async function generateVariations(
+  projectId: string,
+  prompt: string,
+  numVariations: number,
+  variationParameters: string[] = [],
+): Promise<GenerateVariationsResponse | null> {
+  return apiFetch<GenerateVariationsResponse>(`/projects/${projectId}/generate-variations`, {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt,
+      num_variations: numVariations,
+      variation_parameters: variationParameters,
+    }),
+  });
+}
+
+export async function fetchVariationGroups(projectId: string): Promise<VariationGroup[] | null> {
+  return apiFetch<VariationGroup[]>(`/projects/${projectId}/variations`);
+}
+
+export async function fetchVariationGroup(
+  projectId: string,
+  groupId: string,
+): Promise<VariationGroup | null> {
+  return apiFetch<VariationGroup>(`/projects/${projectId}/variations/${groupId}`);
+}

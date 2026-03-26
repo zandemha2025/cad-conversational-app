@@ -250,6 +250,57 @@ class GeminiService:
             log.error("generate_proactive_suggestions error: %s", e)
         return _fallback_suggestions(part_features, touchpoints)
 
+    # ── Variation descriptions (Pro) ─────────────────────────────────────────
+    async def generate_variation_descriptions(
+        self,
+        prompt: str,
+        num_variations: int,
+        variation_parameters: list[str],
+    ) -> list[dict]:
+        """
+        Given a fixture design prompt, return num_variations distinct descriptions
+        each varying the specified parameters. Returns list of dicts:
+          { description, varied_parameter, varied_value, label }
+        """
+        params_str = ", ".join(variation_parameters) if variation_parameters else \
+            "wall_thickness, hole_pattern, base_size, clamp_type"
+
+        prompt_text = (
+            f"You are a CAD fixture design expert. Generate {num_variations} distinct fixture design "
+            f"variations for the following request:\n\nPrompt: \"{prompt}\"\n\n"
+            f"Parameters to vary across the {num_variations} designs: {params_str}\n\n"
+            "Return a JSON array (no markdown fences) of exactly "
+            f"{num_variations} objects. Each object must have:\n"
+            '- "description": a complete, self-contained prompt for a text-to-CAD tool (2-3 sentences, '
+            'metric units, precise geometry — e.g., wall thickness, hole diameters, base plate dimensions)\n'
+            '- "varied_parameter": the primary parameter being changed (e.g., "wall_thickness")\n'
+            '- "varied_value": the specific value for this variation (e.g., "25mm")\n'
+            '- "label": short human label (e.g., "Heavy Wall", "Compact Base", "4-Hole Pattern")\n\n'
+            "Make each variation meaningfully distinct. Use realistic manufacturing dimensions. "
+            "Ensure descriptions are optimized for Zoo.dev text-to-CAD generation."
+        )
+
+        if not settings.GEMINI_API_KEY:
+            return _stub_variation_descriptions(prompt, num_variations)
+
+        model = self._get_pro()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            data = json.loads(raw)
+            if isinstance(data, list) and len(data) == num_variations:
+                return data
+            # If Gemini returned wrong count, pad/trim
+            while len(data) < num_variations:
+                data.append(_stub_variation_descriptions(prompt, 1)[0])
+            return data[:num_variations]
+        except Exception as e:
+            log.error("generate_variation_descriptions error: %s", e)
+            return _stub_variation_descriptions(prompt, num_variations)
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -323,6 +374,33 @@ const base = startSketchOn('XY')
   |> close(%)
   |> extrude(length=baseHeight, %)
 """
+
+
+def _stub_variation_descriptions(prompt: str, num_variations: int) -> list[dict]:
+    """Fallback variation descriptions when Gemini is unavailable."""
+    variations = [
+        {"label": "Standard", "varied_parameter": "wall_thickness", "varied_value": "15mm",
+         "description": f"{prompt}. Standard configuration with 15mm wall thickness and 50mm bolt circle diameter."},
+        {"label": "Heavy Wall", "varied_parameter": "wall_thickness", "varied_value": "25mm",
+         "description": f"{prompt}. Heavy-duty version with 25mm thick walls for maximum rigidity on hard materials."},
+        {"label": "Compact", "varied_parameter": "base_size", "varied_value": "reduced 20%",
+         "description": f"{prompt}. Compact footprint with base dimensions reduced 20%, optimized for small VMC tables."},
+        {"label": "4-Hole Pattern", "varied_parameter": "hole_pattern", "varied_value": "4x90° BCD 60mm",
+         "description": f"{prompt}. 4-hole pattern on 60mm bolt circle diameter, 90° spacing, M8 clearance holes."},
+        {"label": "6-Hole Pattern", "varied_parameter": "hole_pattern", "varied_value": "6x60° BCD 70mm",
+         "description": f"{prompt}. 6-hole pattern on 70mm bolt circle diameter, 60° spacing for balanced clamping."},
+        {"label": "Lightweight", "varied_parameter": "wall_thickness", "varied_value": "8mm",
+         "description": f"{prompt}. Lightweight version with 8mm walls and pocket relief features, suited for aluminum only."},
+        {"label": "Wide Base", "varied_parameter": "base_size", "varied_value": "enlarged 30%",
+         "description": f"{prompt}. Wide-stance base enlarged 30% for improved stability on long overhang operations."},
+        {"label": "High Clamp", "varied_parameter": "clamp_type", "varied_value": "vertical toggle",
+         "description": f"{prompt}. Vertical toggle clamp variant with 300N clamping force, 25mm stroke for tall parts."},
+        {"label": "Side Clamp", "varied_parameter": "clamp_type", "varied_value": "horizontal toggle",
+         "description": f"{prompt}. Horizontal side-entry clamp for unobstructed top access during machining operations."},
+        {"label": "Modular", "varied_parameter": "base_size", "varied_value": "Siegmund 28mm grid",
+         "description": f"{prompt}. Modular design on Siegmund 28mm grid plate, 4x M12 T-nuts, compatible with 5-axis pallets."},
+    ]
+    return variations[:num_variations]
 
 
 def _stub_node_graph() -> dict:
