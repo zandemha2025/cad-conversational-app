@@ -158,7 +158,11 @@ class GeminiService:
                 None,
                 lambda: model.generate_content(prompt)
             )
-            return resp.text.strip()
+            raw = resp.text.strip()
+            # Strip accidental markdown fences
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            return raw
         except Exception as e:
             log.error("generate_kcl error: %s", e)
             return _stub_kcl(part_features)
