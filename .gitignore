@@ -38,3 +38,4 @@ backend/.env.production
 *.bak
 .vercel
 .claude/worktrees/
+cad_outputs/
