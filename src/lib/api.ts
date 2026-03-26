@@ -17,6 +17,7 @@ export const IS_DEMO = false;
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 const TOKEN_KEY = 'scalecad_token';
+const REFRESH_KEY = 'scalecad_refresh_token';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -26,6 +27,37 @@ export function setToken(t: string) {
 }
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY);
+}
+function setRefreshToken(t: string) {
+  localStorage.setItem(REFRESH_KEY, t);
+}
+
+let _refreshing: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (_refreshing) return _refreshing;
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  _refreshing = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) { clearToken(); return false; }
+      const data = await res.json();
+      if (data.access_token) setToken(data.access_token);
+      if (data.refresh_token) setRefreshToken(data.refresh_token);
+      return true;
+    } catch { return false; }
+    finally { _refreshing = null; }
+  })();
+  return _refreshing;
 }
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -33,6 +65,7 @@ export function clearToken() {
 async function apiFetch<T>(
   path: string,
   opts: RequestInit = {},
+  _retry = true,
 ): Promise<T | null> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -43,6 +76,11 @@ async function apiFetch<T>(
 
   try {
     const res = await fetch(`${API_URL}/api${path}`, { ...opts, headers });
+    if (res.status === 401 && _retry) {
+      // Try silent token refresh, then retry once
+      const refreshed = await tryRefreshToken();
+      if (refreshed) return apiFetch<T>(path, opts, false);
+    }
     if (!res.ok) {
       console.error(`[API] ${opts.method ?? 'GET'} ${path} → ${res.status}`);
       return null;
@@ -86,6 +124,7 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   expires_in: number | null;
+  refresh_token?: string;
   user: LoginUser;
 }
 
@@ -95,6 +134,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
     body: JSON.stringify({ email, password }),
   });
   if (res?.access_token) setToken(res.access_token);
+  if (res?.refresh_token) setRefreshToken(res.refresh_token);
   return res;
 }
 
