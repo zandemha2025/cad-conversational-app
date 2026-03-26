@@ -19,7 +19,7 @@ kill_timeout = 30
   ENVIRONMENT   = "production"
   DEBUG         = "false"
   PORT          = "8000"
-  CORS_ORIGINS  = "http://localhost:5173,http://localhost:5174,https://scalecad.app,https://www.scalecad.app,https://suspicious-bell.vercel.app"
+  CORS_ORIGINS  = "http://localhost:5173,http://localhost:5174,https://scalecad.app,https://www.scalecad.app,https://suspicious-bell.vercel.app,https://eager-euler.vercel.app,https://cad-conversational-app.vercel.app"
 
 # Secrets — set via: ./setup.sh (recommended) or fly secrets set KEY=VALUE
 # Required secrets:
