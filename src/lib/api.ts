@@ -952,3 +952,65 @@ export async function runToleranceStack(
     body: JSON.stringify(params),
   });
 }
+
+// ── Component Library ──────────────────────────────────────────────────────────
+
+export interface StandardComponent {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  specifications: Record<string, string | number>;
+  manufacturer?: string;
+  part_number?: string;
+}
+
+export interface ProjectComponent {
+  id: string;
+  project_id: string;
+  component_id: string;
+  component_name: string;
+  category: string;
+  quantity: number;
+  position_notes: string;
+  specifications: Record<string, string | number>;
+}
+
+export interface ComponentLibraryResponse {
+  components: StandardComponent[];
+  total: number;
+}
+
+export interface ComponentSuggestion {
+  component_id: string;
+  quantity: number;
+  reason: string;
+}
+
+export async function fetchComponentLibrary(
+  category?: string, search?: string
+): Promise<ComponentLibraryResponse | null> {
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  if (search) params.set('search', search);
+  const qs = params.toString() ? `?${params}` : '';
+  return apiFetch<ComponentLibraryResponse>(`/components${qs}`);
+}
+
+export async function fetchProjectComponents(projectId: string): Promise<ProjectComponent[] | null> {
+  return apiFetch<ProjectComponent[]>(`/projects/${projectId}/components`);
+}
+
+export async function addComponentToProject(
+  projectId: string,
+  body: { component_id: string; quantity: number; position_notes?: string }
+): Promise<ProjectComponent | null> {
+  return apiFetch<ProjectComponent>(`/projects/${projectId}/components`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function removeProjectComponent(projectId: string, componentId: string): Promise<void> {
+  await apiFetch(`/projects/${projectId}/components/${componentId}`, { method: 'DELETE' });
+}
