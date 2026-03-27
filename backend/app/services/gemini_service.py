@@ -349,6 +349,118 @@ class GeminiService:
             log.error("suggest_components error: %s", e)
         return []
 
+    # ── Prompt decomposition (Flash) ──────────────────────────────────────────
+    async def decompose_prompt(self, user_prompt: str) -> dict:
+        """
+        Analyze whether a design request should be broken into sub-components.
+
+        Returns one of:
+          {"type": "simple", "engine": "zoo"|"cadquery", "prompt": str}
+          {"type": "assembly", "components": [
+            {"name": str, "description": str, "prompt": str,
+             "engine": "zoo"|"cadquery", "component_type": str}
+          ]}
+
+        Engine routing:
+        - "cadquery": precise parametric shapes (plates, holes, cylinders, brackets)
+        - "zoo": organic/freeform shapes or complex descriptions
+        """
+        if not settings.GEMINI_API_KEY:
+            return {"type": "simple", "engine": "zoo", "prompt": user_prompt}
+
+        prompt_text = (
+            "You are a CAD decomposition expert for manufacturing fixture design.\n"
+            "Analyze the following design request and decide: is it a single simple geometry, "
+            "or does it need to be decomposed into 2–5 distinct sub-components?\n\n"
+            "Rules:\n"
+            "1. SIMPLE: 1–2 closely related geometric features → {\"type\": \"simple\"}\n"
+            "2. ASSEMBLY: 3+ distinct components (e.g., base + posts + clamps) → {\"type\": \"assembly\"}\n"
+            "3. Engine routing per component:\n"
+            "   - 'cadquery': use for precise parametric geometry (flat plates, cylinders, "
+            "L-brackets, simple extrusions with known dimensions)\n"
+            "   - 'zoo': use for organic shapes, complex surface forms, or vague descriptions\n"
+            "4. component_type: one of 'base', 'clamp', 'pin', 'spacer', 'bracket', 'bushing', 'custom'\n"
+            "5. Each sub-component prompt must be self-contained and describe ONE simple geometry "
+            "with exact metric dimensions\n"
+            "6. For CadQuery prompts: phrase as 'A [shape] [dimensions]' — e.g., "
+            "'A flat rectangular plate 200mm x 150mm x 10mm with four M8 counterbore holes at corners'\n"
+            "7. Keep assemblies to ≤ 5 sub-components; if unsure, prefer 'simple'\n\n"
+            "Return JSON only (no markdown fences):\n"
+            "Simple: {\"type\": \"simple\", \"engine\": \"cadquery\"|\"zoo\", "
+            "\"prompt\": \"<enhanced clear prompt>\"}\n"
+            "Assembly: {\"type\": \"assembly\", \"components\": [\n"
+            "  {\"name\": \"base_plate\", \"description\": \"Base plate\", "
+            "\"prompt\": \"<complete self-contained geometric prompt>\", "
+            "\"engine\": \"cadquery\"|\"zoo\", "
+            "\"component_type\": \"base\"|\"clamp\"|\"pin\"|\"spacer\"|\"bracket\"|\"bushing\"|\"custom\"}"
+            "]}\n\n"
+            f"Design request: {user_prompt!r}"
+        )
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
+            # Validate structure
+            if result.get("type") not in ("simple", "assembly"):
+                raise ValueError(f"Unknown decomposition type: {result.get('type')}")
+            if result["type"] == "assembly" and not result.get("components"):
+                result = {"type": "simple", "engine": "zoo", "prompt": user_prompt}
+            return result
+        except Exception as e:
+            log.error("decompose_prompt error: %s", e)
+            return {"type": "simple", "engine": "zoo", "prompt": user_prompt}
+
+    # ── CadQuery code generation (Pro) ────────────────────────────────────────
+    async def generate_cadquery_code(self, component_name: str, description: str) -> str:
+        """
+        Generate a CadQuery Python script for one simple geometric component.
+        The script must assign the result to 'result' and export to '/tmp/cq_output.step'.
+        """
+        if not settings.GEMINI_API_KEY:
+            return _stub_cadquery_code(component_name)
+
+        prompt_text = (
+            "You are a CadQuery expert. Generate a Python script to create the following component.\n\n"
+            f"Component: {component_name}\n"
+            f"Description: {description}\n\n"
+            "Requirements:\n"
+            "- Import cadquery as cq\n"
+            "- Build geometry using CadQuery's fluent Workplane API\n"
+            "- Assign the final shape to a variable named 'result'\n"
+            "- Export: cq.exporters.export(result, '/tmp/cq_output.step')\n"
+            "- Use millimeters for all dimensions\n"
+            "- Keep it simple: 1–3 CadQuery operations (box, cylinder, hole, shell, etc.)\n"
+            "- Do NOT add fillets or chamfers unless explicitly required\n\n"
+            "Return ONLY Python code — no markdown fences, no comments, no explanations.\n\n"
+            "Examples:\n"
+            "import cadquery as cq\n"
+            "result = cq.Workplane('XY').box(200, 150, 10)\n"
+            "cq.exporters.export(result, '/tmp/cq_output.step')\n\n"
+            "import cadquery as cq\n"
+            "result = (cq.Workplane('XY').box(200, 150, 10)\n"
+            "    .faces('>Z').workplane()\n"
+            "    .rect(160, 110, forConstruction=True)\n"
+            "    .vertices().cboreHole(10, 16, 8))\n"
+            "cq.exporters.export(result, '/tmp/cq_output.step')\n"
+        )
+
+        model = self._get_pro()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            return raw
+        except Exception as e:
+            log.error("generate_cadquery_code error: %s", e)
+            return _stub_cadquery_code(component_name)
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
@@ -449,6 +561,16 @@ def _stub_variation_descriptions(prompt: str, num_variations: int) -> list[dict]
          "description": f"{prompt}. Modular design on Siegmund 28mm grid plate, 4x M12 T-nuts, compatible with 5-axis pallets."},
     ]
     return variations[:num_variations]
+
+
+def _stub_cadquery_code(component_name: str) -> str:
+    """Fallback CadQuery script when Gemini is unavailable."""
+    return (
+        "import cadquery as cq\n"
+        f"# Stub for {component_name}\n"
+        "result = cq.Workplane('XY').box(200, 150, 10)\n"
+        "cq.exporters.export(result, '/tmp/cq_output.step')\n"
+    )
 
 
 def _stub_node_graph() -> dict:

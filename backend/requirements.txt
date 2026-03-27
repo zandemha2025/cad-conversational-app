@@ -42,6 +42,12 @@ trimesh==4.5.3
 # On arm64/macOS use: conda install -c conda-forge pythonocc-core
 pythonocc-core==7.8.1
 
+# CadQuery — local Python CAD kernel for precise parametric parts.
+# Pre-built wheels available on Linux x86_64 for Python ≤3.11.
+# On Python 3.12+ it may require: pip install cadquery-ocp cadquery
+# Installed with || fallback in Dockerfile so startup doesn't fail if unavailable.
+cadquery==2.4.0
+
 # Utilities
 httpx==0.28.1
 python-slugify==8.0.4

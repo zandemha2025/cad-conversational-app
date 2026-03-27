@@ -1,0 +1,161 @@
+"""
+CadQuery geometry engine — local Python CAD kernel for precise parametric parts.
+
+Best for: flat plates with holes, cylinders, L-brackets, simple extrusions.
+Falls back to Zoo.dev text-to-CAD if CadQuery is not installed or the script fails.
+
+CadQuery installation note:
+  pip install cadquery   (requires Python ≤3.11 for pre-built wheels)
+  On Python 3.12+ you may need: pip install cadquery-ocp cadquery
+  In Fly.io Docker: added to requirements.txt with || fallback in Dockerfile.
+"""
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+import uuid
+
+from app.core.storage import upload_gltf
+
+log = logging.getLogger(__name__)
+
+# Max seconds to let a CadQuery script run before killing it
+CADQUERY_TIMEOUT = 60
+
+
+def is_cadquery_available() -> bool:
+    try:
+        import cadquery  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def execute_cadquery_script(
+    cq_script: str,
+    project_id: str,
+    component_name: str,
+    version: int,
+) -> dict:
+    """
+    Execute a CadQuery Python script, export STEP, convert to GLB, upload to R2.
+    Returns {"gltf_url": str|None, "step_url": str|None, "engine": "cadquery"|"zoo_fallback"}.
+
+    If CadQuery is not installed or the script fails, falls back to Zoo.dev.
+    """
+    safe_name = component_name.replace(" ", "_").lower()
+
+    if not is_cadquery_available():
+        log.warning("CadQuery not installed — falling back to Zoo.dev for '%s'", component_name)
+        return _zoo_fallback(project_id, safe_name, version)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            step_path = os.path.join(tmpdir, "output.step")
+
+            # Patch the export path so scripts that hardcode /tmp/cq_output.step work
+            script = cq_script.replace("/tmp/cq_output.step", step_path)
+            script_path = os.path.join(tmpdir, "script.py")
+            with open(script_path, "w") as f:
+                f.write(script)
+
+            result = subprocess.run(
+                [sys.executable, script_path],
+                timeout=CADQUERY_TIMEOUT,
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                log.error(
+                    "CadQuery script failed for '%s':\n--- stdout ---\n%s\n--- stderr ---\n%s",
+                    component_name,
+                    result.stdout[:800],
+                    result.stderr[:800],
+                )
+                return _zoo_fallback(project_id, safe_name, version)
+
+            if not os.path.exists(step_path) or os.path.getsize(step_path) == 0:
+                log.error("CadQuery produced no STEP file for '%s'", component_name)
+                return _zoo_fallback(project_id, safe_name, version)
+
+            with open(step_path, "rb") as f:
+                step_bytes = f.read()
+
+            log.info("CadQuery OK for '%s' — %d bytes STEP", component_name, len(step_bytes))
+
+        # Upload STEP to R2 (reuse upload_gltf infra with STEP key path)
+        step_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.step"
+        step_url = _upload_step(project_id, step_key, step_bytes)
+
+        # Convert STEP → GLB via Zoo.dev (synchronous)
+        from app.services.zoo_service import convert_file_format_sync
+        glb_bytes = convert_file_format_sync(step_bytes, "step", "glb", project_id)
+
+        if glb_bytes:
+            glb_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.glb"
+            gltf_url = upload_gltf(project_id, glb_key, glb_bytes)
+            log.info("CadQuery→GLB OK for '%s' → %s", component_name, gltf_url)
+            return {"gltf_url": gltf_url, "step_url": step_url, "engine": "cadquery"}
+        else:
+            log.warning("STEP→GLB conversion failed for '%s'; returning STEP only", component_name)
+            return {"gltf_url": None, "step_url": step_url, "engine": "cadquery"}
+
+    except subprocess.TimeoutExpired:
+        log.error("CadQuery timed out after %ds for '%s'", CADQUERY_TIMEOUT, component_name)
+        return _zoo_fallback(project_id, safe_name, version)
+    except Exception as exc:
+        log.error("CadQuery error for '%s': %s", component_name, exc)
+        return _zoo_fallback(project_id, safe_name, version)
+
+
+def _upload_step(project_id: str, key: str, data: bytes) -> str | None:
+    """Upload STEP bytes to R2 under the projects/<id>/step/ prefix."""
+    try:
+        import boto3
+        from botocore.config import Config
+        from app.core.config import settings
+        if not settings.R2_ACCESS_KEY:
+            return None
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.R2_ENDPOINT_URL
+                or f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.R2_ACCESS_KEY,
+            aws_secret_access_key=settings.R2_SECRET_KEY,
+            config=Config(signature_version="s3v4"),
+            region_name="auto",
+        )
+        full_key = f"projects/{project_id}/step/{key}"
+        client.put_object(
+            Bucket=settings.R2_BUCKET,
+            Key=full_key,
+            Body=data,
+            ContentType="application/octet-stream",
+        )
+        return f"{settings.R2_PUBLIC_URL}/{full_key}"
+    except Exception as e:
+        log.error("STEP upload failed: %s", e)
+        return None
+
+
+def _zoo_fallback(project_id: str, component_name: str, version: int) -> dict:
+    """Fall back to Zoo.dev text-to-CAD for this component."""
+    log.info("Using Zoo.dev fallback for CadQuery component '%s'", component_name)
+    from app.services.zoo_service import text_to_cad_gltf
+    import asyncio
+
+    prompt = f"Simple mechanical fixture component: {component_name.replace('_', ' ')}"
+    loop = asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(
+            text_to_cad_gltf(project_id, prompt, version)
+        )
+        return {
+            "gltf_url": result.get("gltf_url"),
+            "step_url": None,
+            "engine": "zoo_fallback",
+        }
+    finally:
+        loop.close()

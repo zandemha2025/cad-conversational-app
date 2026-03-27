@@ -137,7 +137,10 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                 # Still stream a brief explanation
                 explanation_prompt = (
                     f"The engineer requested: {content!r}. "
-                    "Briefly confirm what you're generating and what to expect."
+                    "Briefly confirm what you're generating. "
+                    "If this is a complex multi-component fixture, mention that ForgeAI will "
+                    "automatically decompose it into simple sub-components and generate each one "
+                    "separately for better reliability. Keep it concise — 2-3 sentences max."
                 )
                 full_response = ""
                 async for chunk in gemini.stream_chat(explanation_prompt, history, project_ctx):
