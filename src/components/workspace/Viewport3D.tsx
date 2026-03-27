@@ -1,5 +1,5 @@
 import { useState, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Environment, useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -55,6 +55,31 @@ function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
 }) {
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  const { camera, controls } = useThree();
+
+  // Auto-fit camera to model bounds — handles mm-scale Zoo.dev models
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim < 1e-6) return;
+
+    cloned.position.sub(center); // center model at origin
+
+    const fitDistance = maxDim * 2.5;
+    camera.near = maxDim * 0.001;
+    camera.far = maxDim * 200;
+    camera.position.set(fitDistance, fitDistance * 0.8, fitDistance);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+
+    if (controls) {
+      (controls as THREE.EventDispatcher & { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
+      (controls as THREE.EventDispatcher & { target: THREE.Vector3; update: () => void }).update();
+    }
+  }, [cloned, camera, controls]);
 
   // Apply viewMode materials
   if (viewMode === 'wireframe') {

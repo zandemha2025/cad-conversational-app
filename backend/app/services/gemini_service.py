@@ -102,11 +102,24 @@ class GeminiService:
         )
 
         # Build conversation for the API
-        # Gemini uses "user"/"model"; DB stores "user"/"assistant"
+        # Gemini only accepts "user" and "model" roles.
+        # DB stores "user"/"assistant"; guard against "system" or any other value.
         contents = []
         for h in history[-20:]:
-            role = "model" if h["role"] == "assistant" else h["role"]
-            contents.append({"role": role, "parts": [{"text": h["content"]}]})
+            raw_role = h.get("role", "user")
+            if raw_role == "assistant":
+                role = "model"
+                text = h["content"]
+            elif raw_role == "user":
+                role = "user"
+                text = h["content"]
+            elif raw_role == "system":
+                role = "user"
+                text = f"[System]: {h['content']}"
+            else:
+                role = "user"
+                text = h["content"]
+            contents.append({"role": role, "parts": [{"text": text}]})
         contents.append({"role": "user", "parts": [{"text": user_message}]})
 
         try:
