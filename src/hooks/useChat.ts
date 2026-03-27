@@ -1,8 +1,6 @@
 /**
  * useChat — WebSocket hook for the ForgeAI chat panel.
  *
- * Falls back to smart keyword-matched fixture responses in DEMO MODE.
- *
  * Protocol:
  *   → { type: "auth", token: "..." }
  *   ← { type: "auth_ok" }
@@ -30,6 +28,11 @@ interface GenerationJob {
   message: string;
 }
 
+const MAX_RECONNECT_ATTEMPTS = 10;
+const INITIAL_RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_DELAY = 30000;
+const CONNECTION_TIMEOUT = 15000;
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useChat({ projectId, initialMessages = [], onGenerationQueued }: UseChatOptions) {
@@ -42,23 +45,70 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
 
   const wsRef          = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const unmountedRef = useRef(false);
+
+  const cleanup = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (connectionTimerRef.current) {
+      clearTimeout(connectionTimerRef.current);
+      connectionTimerRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  }, []);
 
   const connect = useCallback(() => {
-    if (!projectId || !WS_URL) return;
+    if (unmountedRef.current || !projectId || !WS_URL) return;
+
+    // Clean up any existing connection first
+    cleanup();
 
     const url = `${WS_URL}/api/projects/${projectId}/chat`;
     const ws  = new WebSocket(url);
     wsRef.current = ws;
 
+    // Connection timeout — if we don't get auth_ok within 15s, retry
+    connectionTimerRef.current = setTimeout(() => {
+      if (!unmountedRef.current && ws.readyState !== WebSocket.OPEN) {
+        console.warn('[Chat] Connection timeout, retrying...');
+        ws.close();
+      }
+    }, CONNECTION_TIMEOUT);
+
     ws.onopen = () => {
-      const token = getToken() || 'demo';
+      const token = getToken();
+      if (!token) {
+        setAuthFailed(true);
+        ws.close();
+        return;
+      }
       ws.send(JSON.stringify({ type: 'auth', token }));
     };
 
     ws.onmessage = (evt) => {
       const msg = JSON.parse(evt.data) as Record<string, unknown>;
 
-      if (msg.type === 'auth_ok') { setIsConnected(true); return; }
+      if (msg.type === 'auth_ok') {
+        setIsConnected(true);
+        reconnectAttemptRef.current = 0; // Reset on successful connection
+        if (connectionTimerRef.current) {
+          clearTimeout(connectionTimerRef.current);
+          connectionTimerRef.current = null;
+        }
+        return;
+      }
 
       if (msg.type === 'thinking') {
         setIsThinking(true);
@@ -118,16 +168,44 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
 
     ws.onclose = () => {
       setIsConnected(false);
-      setTimeout(connect, 3000);
+      if (connectionTimerRef.current) {
+        clearTimeout(connectionTimerRef.current);
+        connectionTimerRef.current = null;
+      }
+
+      // Don't reconnect if unmounted or auth failed
+      if (unmountedRef.current || authFailed) return;
+
+      // Exponential backoff reconnection
+      const attempt = reconnectAttemptRef.current;
+      if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+        setMessages(prev => [...prev, {
+          id: `err_${Date.now()}`, role: 'system' as const,
+          content: 'Connection lost. Please refresh the page to reconnect.',
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        }]);
+        return;
+      }
+
+      const delay = Math.min(
+        INITIAL_RECONNECT_DELAY * Math.pow(1.5, attempt),
+        MAX_RECONNECT_DELAY
+      );
+      reconnectAttemptRef.current = attempt + 1;
+      reconnectTimerRef.current = setTimeout(connect, delay);
     };
 
     ws.onerror = () => ws.close();
-  }, [projectId]);
+  }, [projectId, cleanup, authFailed, onGenerationQueued]);
 
   useEffect(() => {
+    unmountedRef.current = false;
     connect();
-    return () => { wsRef.current?.close(); };
-  }, [connect]);
+    return () => {
+      unmountedRef.current = true;
+      cleanup();
+    };
+  }, [connect, cleanup]);
 
   const sendMessage = useCallback((content: string, attachments: unknown[] = []) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });

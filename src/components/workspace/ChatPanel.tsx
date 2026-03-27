@@ -40,6 +40,15 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
   useEffect(() => {
     if (fixtureLoaded) clearGenJob();
   }, [fixtureLoaded, clearGenJob]);
+
+  // Timeout: clear the generation banner after 5 minutes if no result arrives
+  useEffect(() => {
+    if (!activeGenJob) return;
+    const timeout = setTimeout(() => {
+      clearGenJob();
+    }, 5 * 60 * 1000);
+    return () => clearTimeout(timeout);
+  }, [activeGenJob, clearGenJob]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [proactive, setProactive] = useState<ProactiveSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());

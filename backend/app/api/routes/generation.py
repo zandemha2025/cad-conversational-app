@@ -44,12 +44,22 @@ async def generation_ws(websocket: WebSocket, project_id: str):
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":
-                data = json.loads(message["data"])
+                try:
+                    data = json.loads(message["data"])
+                except (json.JSONDecodeError, TypeError) as e:
+                    log.warning("Malformed Redis message on %s: %s", channel, e)
+                    continue
                 await websocket.send_json(data)
-                if data.get("status") in ("done", "error"):
+                if data.get("status") in ("done", "done_with_warnings", "error"):
                     break
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        log.error("Generation WS error project=%s: %s", project_id, e)
+        try:
+            await websocket.send_json({"status": "error", "message": "Connection error"})
+        except Exception:
+            pass
     finally:
         await pubsub.unsubscribe(channel)
         await redis.aclose()

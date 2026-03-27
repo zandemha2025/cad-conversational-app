@@ -294,14 +294,15 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
     Generate fixture GLB via Zoo.dev /ai/text-to-cad/step.
     The /step endpoint returns outputs with source.gltf + source.step;
     source.gltf is then converted to GLB via /file/conversion/gltf/glb.
-    Falls back to stub GLB on failure.
-    Returns {"gltf_url": str|None, "kcl": str|None}.
+    Returns {"gltf_url": str|None, "kcl": str|None, "is_stub": bool, "error": str|None}.
     """
-    empty = {"gltf_url": None, "kcl": None}
+    empty = {"gltf_url": None, "kcl": None, "is_stub": False, "error": None}
 
     if not settings.ZOO_API_KEY:
         log.warning("ZOO_API_KEY not set — using stub GLB")
-        return {**empty, "gltf_url": _upload_stub(project_id, version)}
+        stub_url = _upload_stub(project_id, version)
+        return {**empty, "gltf_url": stub_url, "is_stub": True,
+                "error": "ZOO_API_KEY not configured — placeholder model used"}
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -318,12 +319,16 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
             op_id = job.get("id")
             if not op_id:
                 log.error("Zoo.dev text-to-cad returned no op id: %s", job)
-                return {**empty, "gltf_url": _upload_stub(project_id, version)}
+                stub_url = _upload_stub(project_id, version)
+                return {**empty, "gltf_url": stub_url, "is_stub": True,
+                        "error": "Zoo.dev returned no operation ID"}
 
             log.info("Zoo.dev text-to-cad submitted op=%s project=%s", op_id, project_id)
             data = await _poll_text_to_cad(client, op_id)
             if not data:
-                return {**empty, "gltf_url": _upload_stub(project_id, version)}
+                stub_url = _upload_stub(project_id, version)
+                return {**empty, "gltf_url": stub_url, "is_stub": True,
+                        "error": "Zoo.dev generation timed out or failed — placeholder model used"}
 
             outputs = data.get("outputs") or {}
             kcl_code = data.get("code")
@@ -350,20 +355,25 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
 
             if not glb_bytes:
                 log.error("Zoo.dev: no GLB produced (outputs=%s) op=%s", list(outputs.keys()), op_id)
-                return {"gltf_url": _upload_stub(project_id, version), "kcl": kcl_code}
+                stub_url = _upload_stub(project_id, version)
+                return {"gltf_url": stub_url, "kcl": kcl_code, "is_stub": True,
+                        "error": "Zoo.dev completed but produced no usable geometry — placeholder model used"}
 
             filename = f"{project_id}/fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
             gltf_url = upload_gltf(project_id, filename, glb_bytes)
             log.info("Zoo.dev text-to-cad OK → %s project=%s", gltf_url, project_id)
-            return {"gltf_url": gltf_url, "kcl": kcl_code}
+            return {"gltf_url": gltf_url, "kcl": kcl_code, "is_stub": False, "error": None}
 
     except httpx.HTTPStatusError as e:
+        err_msg = f"Zoo.dev HTTP {e.response.status_code}: {e.response.text[:200]}"
         log.error("Zoo.dev HTTP %d text-to-cad project=%s: %s",
                   e.response.status_code, project_id, e.response.text[:400])
     except Exception as e:
+        err_msg = f"Zoo.dev error: {str(e)[:200]}"
         log.error("Zoo.dev text-to-cad error project=%s: %s", project_id, e)
 
-    return {**empty, "gltf_url": _upload_stub(project_id, version)}
+    stub_url = _upload_stub(project_id, version)
+    return {**empty, "gltf_url": stub_url, "is_stub": True, "error": err_msg}
 
 
 def _upload_stub(project_id: str, version: int) -> str | None:

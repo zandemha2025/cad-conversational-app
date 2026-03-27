@@ -11,8 +11,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import {
-  Shuffle, RefreshCw, ChevronRight, CheckCircle2, Loader2, Box,
-  ArrowLeft, Clock, Layers,
+  Shuffle, RefreshCw, CheckCircle2, Loader2, Box,
+  Clock, Layers,
 } from 'lucide-react';
 import { fetchVariationGroups, fetchVariationGroup } from '../../lib/api';
 import type { VariationGroup, VariationItem } from '../../lib/api';

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import ErrorBoundary from '../components/ErrorBoundary';
 import FeatureTree from '../components/workspace/FeatureTree';
@@ -104,19 +104,44 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   }, [projectId]);
 
   // Load fixture geometry + part features
-  const { gltfUrl, version: fixtureVersion, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
+  const { gltfUrl, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
+
+  // Track the gltfUrl we had when generation started, so we detect NEW models (not existing ones)
+  const gltfUrlWhenGenerationStarted = useRef<string | null>(null);
+  const generationStartTime = useRef<number>(0);
+  const GENERATION_TIMEOUT = 5 * 60 * 1000; // 5 minutes max wait
+
+  // Capture the current gltfUrl when generation starts
+  useEffect(() => {
+    if (isGenerating) {
+      gltfUrlWhenGenerationStarted.current = gltfUrl;
+      generationStartTime.current = Date.now();
+    }
+  }, [isGenerating]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
   useEffect(() => {
-    if (!isGenerating || gltfUrl || fixtureVersion !== null) return;
-    const id = setInterval(refetchGeometry, 5000);
-    return () => clearInterval(id);
-  }, [isGenerating, gltfUrl, fixtureVersion, refetchGeometry]);
+    if (!isGenerating) return;
+    // If we already have a NEW gltfUrl (different from when we started), stop
+    if (gltfUrl && gltfUrl !== gltfUrlWhenGenerationStarted.current) return;
 
-  // Stop polling once generation completes (gltfUrl set) or fixture record exists (even without GLTF)
+    const id = setInterval(() => {
+      // Timeout: stop polling after 5 minutes
+      if (Date.now() - generationStartTime.current > GENERATION_TIMEOUT) {
+        setIsGenerating(false);
+        return;
+      }
+      refetchGeometry();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [isGenerating, gltfUrl, refetchGeometry]);
+
+  // Stop polling once we get a NEW gltfUrl (different from what we had before generation)
   useEffect(() => {
-    if (gltfUrl || fixtureVersion !== null) setIsGenerating(false);
-  }, [gltfUrl, fixtureVersion]);
+    if (isGenerating && gltfUrl && gltfUrl !== gltfUrlWhenGenerationStarted.current) {
+      setIsGenerating(false);
+    }
+  }, [isGenerating, gltfUrl]);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {

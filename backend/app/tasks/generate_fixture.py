@@ -100,6 +100,34 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     log.info("generate_fixture project=%s", project_id)
     sb = get_supabase_client()
 
+    try:
+        return _run_generation_pipeline(self, project_id, user_prompt, sb)
+    except Exception as exc:
+        log.exception("generate_fixture FAILED project=%s: %s", project_id, exc)
+        _publish(project_id, {
+            "status": "error",
+            "message": f"Generation failed: {str(exc)[:200]}",
+            "progress": 0,
+        })
+        # Save error as a conversation message so user sees it in chat
+        try:
+            sb.table("conversation_messages").insert({
+                "id": str(uuid.uuid4()),
+                "project_id": project_id,
+                "role": "system",
+                "content": f"⚠️ Fixture generation failed: {str(exc)[:300]}. Please try again or simplify your request.",
+                "attachments": [],
+                "linked_node_id": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }).execute()
+        except Exception:
+            pass
+        raise
+
+
+def _run_generation_pipeline(self, project_id: str, user_prompt: str | None, sb):
+    """Inner pipeline — separated so top-level task can catch and report errors."""
+
     # ── Fetch context ──────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Assembling context…", "progress": 0.05})
 
@@ -181,11 +209,17 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "generated_at": now_iso,
     }).execute()
 
+    generation_errors: list[str] = []
+
     if is_assembly and components:
         # ── ASSEMBLY PATH ──────────────────────────────────────────────────────
         gltf_url, zoo_kcl, assembly_records = _generate_assembly(
             project_id, components, version, fixture_id, sb, kcl
         )
+        # Check if any components failed
+        failed = [r["name"] for r in assembly_records if not r.get("gltf_url")]
+        if failed:
+            generation_errors.append(f"Components failed to generate: {', '.join(failed)}")
         stored_kcl = zoo_kcl or kcl
     else:
         # ── SINGLE-COMPONENT PATH ──────────────────────────────────────────────
@@ -193,18 +227,35 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
 
         engine_hint = decomposition.get("engine", "zoo")
         log.info("Simple geometry engine_hint=%s project=%s", engine_hint, project_id)
-        if engine_hint == "cadquery":
-            description = decomposition.get("prompt", prompt_text)
-            result = _generate_single_cadquery(project_id, "fixture", description, version)
-            gltf_url = result.get("gltf_url")
+        try:
+            if engine_hint == "cadquery":
+                description = decomposition.get("prompt", prompt_text)
+                result = _generate_single_cadquery(project_id, "fixture", description, version)
+                gltf_url = result.get("gltf_url")
+                zoo_kcl = None
+                if result.get("engine") == "zoo_fallback":
+                    generation_errors.append("CadQuery generation failed; used Zoo.dev fallback")
+            else:
+                result = _generate_single_zoo(project_id, prompt_text, version)
+                gltf_url = result.get("gltf_url")
+                zoo_kcl = result.get("kcl")
+        except Exception as gen_exc:
+            log.error("Geometry generation failed project=%s: %s", project_id, gen_exc)
+            gltf_url = None
             zoo_kcl = None
-        else:
-            result = _generate_single_zoo(project_id, prompt_text, version)
-            gltf_url = result.get("gltf_url")
-            zoo_kcl = result.get("kcl")
+            generation_errors.append(f"Geometry generation error: {str(gen_exc)[:200]}")
 
         stored_kcl = zoo_kcl or kcl
         assembly_records = []
+
+    # Check if we got a stub GLB instead of real geometry
+    is_stub = False
+    if gltf_url and "_stub_" in gltf_url:
+        is_stub = True
+        generation_errors.append(
+            "Zoo.dev could not generate the requested geometry. "
+            "A placeholder model was used. Try rephrasing your request with more specific dimensions."
+        )
 
     # ── Update fixture geometry with final gltf_url and kcl ────────────────────
     sb.table("fixture_geometries").update({
@@ -215,59 +266,113 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.80})
 
-    node_graph = _run_async(gemini.generate_node_graph(
-        part_features=features,
-        touchpoints=touchpoints,
-        environment=env,
-        printer_profile=printer,
-        template_id=template_id,
-    ))
+    try:
+        node_graph = _run_async(gemini.generate_node_graph(
+            part_features=features,
+            touchpoints=touchpoints,
+            environment=env,
+            printer_profile=printer,
+            template_id=template_id,
+        ))
 
-    sb.table("node_graphs").insert({
-        "id": str(uuid.uuid4()),
-        "project_id": project_id,
-        "nodes_json": node_graph.get("nodes", []),
-        "connections_json": node_graph.get("connections", []),
-        "generated_at": now_iso,
-    }).execute()
+        sb.table("node_graphs").insert({
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "nodes_json": node_graph.get("nodes", []),
+            "connections_json": node_graph.get("connections", []),
+            "generated_at": now_iso,
+        }).execute()
+    except Exception as ng_exc:
+        log.error("Node graph generation failed project=%s: %s", project_id, ng_exc)
 
     # ── Validation ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "validating", "message": "Running DFM validation…", "progress": 0.90})
 
-    all_results = validate_all(
-        features=features,
-        printer_profile=printer,
-        touchpoints=touchpoints,
-        project=proj,
-    )
+    try:
+        all_results = validate_all(
+            features=features,
+            printer_profile=printer,
+            touchpoints=touchpoints,
+            project=proj,
+        )
 
-    for method, issues in all_results.items():
-        errors = sum(1 for i in issues if i["severity"] == "error")
-        warnings = sum(1 for i in issues if i["severity"] == "warning")
-        sb.table("validation_results").insert({
-            "id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "method": method,
-            "issues_json": issues,
-            "error_count": errors,
-            "warning_count": warnings,
-            "ran_at": now_iso,
-        }).execute()
+        for method, issues in all_results.items():
+            errors = sum(1 for i in issues if i["severity"] == "error")
+            warnings = sum(1 for i in issues if i["severity"] == "warning")
+            sb.table("validation_results").insert({
+                "id": str(uuid.uuid4()),
+                "project_id": project_id,
+                "method": method,
+                "issues_json": issues,
+                "error_count": errors,
+                "warning_count": warnings,
+                "ran_at": now_iso,
+            }).execute()
+    except Exception as val_exc:
+        log.error("Validation failed project=%s: %s", project_id, val_exc)
 
     # ── Done ───────────────────────────────────────────────────────────────────
-    done_msg = (
-        f"Assembly ready! {len(assembly_records)} components generated."
-        if assembly_records else "Fixture ready!"
-    )
-    _publish(project_id, {
-        "status": "done",
-        "message": done_msg,
-        "progress": 1.0,
-        "fixture_id": fixture_id,
-        "gltf_url": gltf_url,
-        "is_assembly": bool(assembly_records),
-        "assembly_component_count": len(assembly_records),
-    })
+    if not gltf_url:
+        # Total failure — no model at all
+        _publish(project_id, {
+            "status": "error",
+            "message": "Generation failed — no 3D model could be produced. Please try a simpler request or rephrase.",
+            "progress": 0,
+            "fixture_id": fixture_id,
+        })
+        # Save error to chat so user sees it
+        sb.table("conversation_messages").insert({
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "role": "system",
+            "content": "⚠️ I wasn't able to generate a 3D model for this request. This can happen when the geometry is too complex or the description is ambiguous. Try breaking it into simpler parts or adding specific dimensions.",
+            "attachments": [],
+            "linked_node_id": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    elif is_stub:
+        # Partial failure — stub model
+        done_msg = (
+            "⚠️ Generation partially succeeded — a placeholder model was created because "
+            "the CAD engine couldn't fully interpret the request. Try adding specific dimensions "
+            "(e.g., '200mm x 150mm base plate, 12mm thick')."
+        )
+        _publish(project_id, {
+            "status": "done_with_warnings",
+            "message": done_msg,
+            "progress": 1.0,
+            "fixture_id": fixture_id,
+            "gltf_url": gltf_url,
+            "is_stub": True,
+            "warnings": generation_errors,
+            "is_assembly": bool(assembly_records),
+            "assembly_component_count": len(assembly_records),
+        })
+        sb.table("conversation_messages").insert({
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "role": "system",
+            "content": done_msg,
+            "attachments": [],
+            "linked_node_id": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    else:
+        done_msg = (
+            f"Assembly ready! {len(assembly_records)} components generated."
+            if assembly_records else "Fixture ready!"
+        )
+        if generation_errors:
+            done_msg += " (with warnings: " + "; ".join(generation_errors) + ")"
+        _publish(project_id, {
+            "status": "done",
+            "message": done_msg,
+            "progress": 1.0,
+            "fixture_id": fixture_id,
+            "gltf_url": gltf_url,
+            "is_assembly": bool(assembly_records),
+            "assembly_component_count": len(assembly_records),
+        })
 
     try:
         from app.tasks.proactive_analysis import proactive_analysis_task
@@ -275,8 +380,8 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     except Exception as e:
         log.warning("Failed to queue proactive_analysis_task: %s", e)
 
-    log.info("generate_fixture done project=%s fixture=%s components=%d",
-             project_id, fixture_id, len(assembly_records))
+    log.info("generate_fixture done project=%s fixture=%s components=%d errors=%s",
+             project_id, fixture_id, len(assembly_records), generation_errors or "none")
     return {"fixture_id": fixture_id, "gltf_url": gltf_url}
 
 

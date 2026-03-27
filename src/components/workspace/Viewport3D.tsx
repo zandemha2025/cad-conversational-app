@@ -13,16 +13,22 @@ import DimensionOverlay from '../DimensionOverlay';
 
 // ── Auth-aware GLB fetcher ────────────────────────────────────────────────────
 
-function useAuthGltfUrl(gltfUrl: string | null | undefined): string | null {
+function useAuthGltfUrl(gltfUrl: string | null | undefined): { blobUrl: string | null; loading: boolean; error: string | null } {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const prevBlobUrl = useRef<string | null>(null);
 
   useEffect(() => {
     if (!gltfUrl) {
       setBlobUrl(null);
+      setError(null);
+      setLoading(false);
       return;
     }
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     const token = getToken();
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -35,16 +41,28 @@ function useAuthGltfUrl(gltfUrl: string | null | undefined): string | null {
         if (cancelled) return;
         const url = URL.createObjectURL(blob);
         setBlobUrl(url);
+        setLoading(false);
         if (prevBlobUrl.current) URL.revokeObjectURL(prevBlobUrl.current);
         prevBlobUrl.current = url;
       })
       .catch(err => {
-        if (!cancelled) console.error('[Viewport3D] GLB fetch error:', err);
+        if (!cancelled) {
+          console.error('[Viewport3D] GLB fetch error:', err);
+          setError(String(err));
+          setLoading(false);
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Clean up blob URL on unmount
+      if (prevBlobUrl.current) {
+        URL.revokeObjectURL(prevBlobUrl.current);
+        prevBlobUrl.current = null;
+      }
+    };
   }, [gltfUrl]);
 
-  return blobUrl;
+  return { blobUrl, loading, error };
 }
 
 // ── Real glTF model ───────────────────────────────────────────────────────────
@@ -275,7 +293,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   const { state, dispatch } = useWorkspace();
 
   const rawGltfUrl = gltfUrl ?? state.gltfUrl;
-  const resolvedGltfUrl = useAuthGltfUrl(rawGltfUrl);
+  const { blobUrl: resolvedGltfUrl, loading: glbLoading, error: glbError } = useAuthGltfUrl(rawGltfUrl);
   const features = state.features;
 
   // Fetch dimensions whenever a fixture is loaded
@@ -318,8 +336,39 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: 'radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(8,14,26,0.5) 100%)' }} />
 
+      {/* Loading state — shown while GLB is being fetched */}
+      {glbLoading && rawGltfUrl && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <div className="flex flex-col items-center gap-4 text-center max-w-xs px-6">
+            <div className="w-20 h-20 rounded-2xl bg-cadsurface-800/80 border border-cadsurface-700 flex items-center justify-center">
+              <RefreshCw size={36} className="text-cadblue-400 animate-spin" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-300">Loading 3D model…</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error state — shown when GLB fetch failed */}
+      {glbError && !resolvedGltfUrl && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <div className="flex flex-col items-center gap-4 text-center max-w-xs px-6">
+            <div className="w-20 h-20 rounded-2xl bg-red-950/60 border border-red-800/40 flex items-center justify-center">
+              <Box size={36} className="text-red-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-red-300">Failed to load model</p>
+              <p className="text-xs text-red-400/70 mt-1.5 leading-relaxed">
+                The 3D model could not be fetched. Try regenerating from the chat panel.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Empty state — shown when no model has been generated yet */}
-      {!resolvedGltfUrl && (
+      {!resolvedGltfUrl && !glbLoading && !glbError && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <div className="flex flex-col items-center gap-4 text-center max-w-xs px-6">
             <div className="w-20 h-20 rounded-2xl bg-cadsurface-800/80 border border-cadsurface-700 flex items-center justify-center">
