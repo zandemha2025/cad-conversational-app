@@ -225,9 +225,11 @@ async def _poll_text_to_cad(client: httpx.AsyncClient, op_id: str) -> dict | Non
 
 async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
     """
-    Generate fixture GLB via Zoo.dev /ai/text-to-cad/glb.
-    Returns {"gltf_url": str|None, "kcl": str|None}.
+    Generate fixture GLB via Zoo.dev /ai/text-to-cad/step.
+    The /step endpoint returns outputs with source.gltf + source.step;
+    source.gltf is then converted to GLB via /file/conversion/gltf/glb.
     Falls back to stub GLB on failure.
+    Returns {"gltf_url": str|None, "kcl": str|None}.
     """
     empty = {"gltf_url": None, "kcl": None}
 
@@ -237,7 +239,8 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/glb", kcl="true")
+            # Use /ai/text-to-cad/step — the /glb variant no longer returns outputs
+            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/step")
             headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
             resp = await client.post(
                 cad_url,
@@ -257,19 +260,33 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
                 return {**empty, "gltf_url": _upload_stub(project_id, version)}
 
             outputs = data.get("outputs") or {}
-            glb_b64 = outputs.get("source.glb")
-            if not glb_b64:
-                log.error("Zoo.dev result missing source.glb op=%s", op_id)
-                return {"gltf_url": _upload_stub(project_id, version), "kcl": data.get("code")}
+            kcl_code = data.get("code")
 
-            glb_bytes = _safe_b64decode(glb_b64)
+            # Convert source.gltf → GLB; fall back to source.step → GLB
+            glb_bytes = None
+            gltf_b64 = outputs.get("source.gltf")
+            if gltf_b64:
+                gltf_bytes = _safe_b64decode(gltf_b64)
+                if gltf_bytes:
+                    glb_bytes = await convert_file_format(gltf_bytes, "gltf", "glb", project_id)
+                    if not glb_bytes:
+                        log.warning("Zoo.dev gltf→glb conversion failed op=%s, trying step→glb", op_id)
+
             if not glb_bytes:
-                return {"gltf_url": _upload_stub(project_id, version), "kcl": data.get("code")}
+                step_b64 = outputs.get("source.step")
+                if step_b64:
+                    step_bytes = _safe_b64decode(step_b64)
+                    if step_bytes:
+                        glb_bytes = await convert_file_format(step_bytes, "step", "glb", project_id)
+
+            if not glb_bytes:
+                log.error("Zoo.dev: no GLB produced (outputs=%s) op=%s", list(outputs.keys()), op_id)
+                return {"gltf_url": _upload_stub(project_id, version), "kcl": kcl_code}
 
             filename = f"{project_id}/fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
             gltf_url = upload_gltf(project_id, filename, glb_bytes)
             log.info("Zoo.dev text-to-cad OK → %s project=%s", gltf_url, project_id)
-            return {"gltf_url": gltf_url, "kcl": data.get("code")}
+            return {"gltf_url": gltf_url, "kcl": kcl_code}
 
     except httpx.HTTPStatusError as e:
         log.error("Zoo.dev HTTP %d text-to-cad project=%s: %s",
@@ -343,19 +360,19 @@ async def compile_kcl_to_format(
             log.warning("Failed to download GLB from %s: %s — falling back to text-to-CAD",
                         glb_url, e)
 
-    # ── Slow fallback: text-to-CAD AI job ─────────────────────────────────────
+    # ── Slow fallback: text-to-CAD AI job (using /step endpoint which returns outputs) ──
     prompt = f"Manufacturing fixture, export as {output_format}"
     format_key_map = {
         "step":  "source.step",
         "iges":  "source.step",
         "gltf":  "source.gltf",
-        "glb":   "source.glb",
-        "stl":   "source.glb",
+        "glb":   "source.gltf",  # gltf→glb converted below
+        "stl":   "source.step",
     }
     want_key = format_key_map.get(output_format.lower(), "source.step")
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/glb")
+            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/step")
             headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
             resp = await client.post(
                 cad_url,
@@ -376,7 +393,16 @@ async def compile_kcl_to_format(
                 log.warning("Zoo.dev result missing %s for format=%s", want_key, output_format)
                 return None
 
-            result = _safe_b64decode(b64)
+            raw_bytes = _safe_b64decode(b64)
+            if not raw_bytes:
+                return None
+
+            # For GLB output, convert the GLTF JSON to binary GLB
+            if output_format.lower() == "glb" and want_key == "source.gltf":
+                result = await convert_file_format(raw_bytes, "gltf", "glb", project_id)
+            else:
+                result = raw_bytes
+
             if result:
                 log.info("Zoo.dev text-to-CAD→%s OK for project=%s (%d bytes)",
                          output_format, project_id, len(result))

@@ -63,6 +63,18 @@ async def chat_ws(websocket: WebSocket, project_id: str):
             if not content:
                 continue
 
+            # Fetch conversation history BEFORE saving current message,
+            # so stream_chat doesn't see a duplicate user turn at the end.
+            history_res = (
+                sb.table("conversation_messages")
+                .select("role,content")
+                .eq("project_id", project_id)
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            )
+            history = list(reversed(history_res.data or []))
+
             # Save user message
             msg_id = str(uuid.uuid4())
             sb.table("conversation_messages").insert({
@@ -74,17 +86,6 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                 "linked_node_id": node_ref,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }).execute()
-
-            # Fetch conversation history (last 20 messages)
-            history_res = (
-                sb.table("conversation_messages")
-                .select("role,content")
-                .eq("project_id", project_id)
-                .order("created_at", desc=True)
-                .limit(20)
-                .execute()
-            )
-            history = list(reversed(history_res.data or []))
 
             # Fetch project context
             proj_res = sb.table("projects").select("*").eq("id", project_id).single().execute()
