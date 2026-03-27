@@ -86,9 +86,22 @@ async def convert_file_format(
             }
             resp = await client.post(url, content=src_bytes, headers=headers)
             resp.raise_for_status()
-            result = resp.content
-            log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
-                     src_format, output_format, project_id, len(result))
+            # Zoo.dev file conversion now returns JSON {outputs: {source.X: b64}}
+            ct = resp.headers.get("content-type", "")
+            if "json" in ct or resp.content[:1] == b"{":
+                body = resp.json()
+                outputs = (body.get("outputs") or {})
+                out_key = f"source.{output_format}"
+                b64 = outputs.get(out_key) or next(iter(outputs.values()), None)
+                if not b64:
+                    log.error("Zoo.dev %s→%s: no output in response project=%s", src_format, output_format, project_id)
+                    return None
+                result = _safe_b64decode(b64)
+            else:
+                result = resp.content
+            if result:
+                log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
+                         src_format, output_format, project_id, len(result))
             return result
     except httpx.HTTPStatusError as e:
         log.error("Zoo.dev HTTP %d %s→%s project=%s: %s",
@@ -122,9 +135,22 @@ def convert_file_format_sync(
     try:
         resp = httpx.post(url, content=src_bytes, headers=headers, timeout=TIMEOUT)
         resp.raise_for_status()
-        log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
-                 src_format, output_format, project_id, len(resp.content))
-        return resp.content
+        ct = resp.headers.get("content-type", "")
+        if "json" in ct or resp.content[:1] == b"{":
+            body = resp.json()
+            outputs = (body.get("outputs") or {})
+            out_key = f"source.{output_format}"
+            b64 = outputs.get(out_key) or next(iter(outputs.values()), None)
+            if not b64:
+                log.error("Zoo.dev %s→%s: no output in response project=%s", src_format, output_format, project_id)
+                return None
+            result = _safe_b64decode(b64)
+        else:
+            result = resp.content
+        if result:
+            log.info("Zoo.dev %s→%s OK project=%s (%d bytes)",
+                     src_format, output_format, project_id, len(result))
+        return result
     except httpx.HTTPStatusError as e:
         log.error("Zoo.dev HTTP %d %s→%s project=%s: %s",
                   e.response.status_code, src_format, output_format, project_id,
@@ -186,6 +212,46 @@ def _generate_stub_glb(width_mm: float = 200, depth_mm: float = 150, height_mm: 
         + struct.pack("<II", json_len, 0x4E4F534A) + json_padded
         + struct.pack("<II", bin_len,  0x004E4942) + bin_data
     )
+
+
+def _gltf_to_glb(gltf_bytes: bytes) -> bytes:
+    """
+    Convert GLTF JSON (with embedded data-URI buffers) to binary GLB format.
+    Pure Python — no extra API call required.
+    GLB spec: 12-byte header + JSON chunk + optional BIN chunk.
+    """
+    gltf = json.loads(gltf_bytes)
+
+    # Extract and inline all data-URI buffers into a single binary blob.
+    bin_parts: list[bytes] = []
+    for buf in gltf.get("buffers", []):
+        uri = buf.pop("uri", "")
+        if uri.startswith("data:"):
+            b64 = uri.split(",", 1)[1]
+            raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        else:
+            raw = b""
+        buf["byteLength"] = len(raw)
+        bin_parts.append(raw)
+
+    bin_data = b"".join(bin_parts)
+    pad4 = (-len(bin_data)) % 4
+    bin_padded = bin_data + b"\x00" * pad4
+
+    json_raw = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    json_pad = (-len(json_raw)) % 4
+    json_padded = json_raw + b" " * json_pad
+
+    has_bin = len(bin_padded) > 0
+    total = 12 + 8 + len(json_padded) + (8 + len(bin_padded) if has_bin else 0)
+
+    result = (
+        struct.pack("<III", 0x46546C67, 2, total)
+        + struct.pack("<II", len(json_padded), 0x4E4F534A) + json_padded
+    )
+    if has_bin:
+        result += struct.pack("<II", len(bin_padded), 0x004E4942) + bin_padded
+    return result
 
 
 def _safe_b64decode(s: str) -> bytes | None:
@@ -262,15 +328,18 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
             outputs = data.get("outputs") or {}
             kcl_code = data.get("code")
 
-            # Convert source.gltf → GLB; fall back to source.step → GLB
+            # Convert source.gltf → GLB via pure Python (no extra API call).
+            # Falls back to source.step → GLB via Zoo.dev conversion if needed.
             glb_bytes = None
             gltf_b64 = outputs.get("source.gltf")
             if gltf_b64:
                 gltf_bytes = _safe_b64decode(gltf_b64)
                 if gltf_bytes:
-                    glb_bytes = await convert_file_format(gltf_bytes, "gltf", "glb", project_id)
-                    if not glb_bytes:
-                        log.warning("Zoo.dev gltf→glb conversion failed op=%s, trying step→glb", op_id)
+                    try:
+                        glb_bytes = _gltf_to_glb(gltf_bytes)
+                        log.info("Zoo.dev gltf→glb (python) OK op=%s (%d bytes)", op_id, len(glb_bytes))
+                    except Exception as conv_err:
+                        log.warning("Zoo.dev gltf→glb python conversion failed op=%s: %s", op_id, conv_err)
 
             if not glb_bytes:
                 step_b64 = outputs.get("source.step")
