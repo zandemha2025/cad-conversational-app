@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 # Build deps for pythonocc-core
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-dev \
     libx11-dev \
     libxt-dev \
+    libxrender1 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

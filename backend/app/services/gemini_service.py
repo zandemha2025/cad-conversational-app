@@ -376,14 +376,20 @@ class GeminiService:
             "1. SIMPLE: 1–2 closely related geometric features → {\"type\": \"simple\"}\n"
             "2. ASSEMBLY: 3+ distinct components (e.g., base + posts + clamps) → {\"type\": \"assembly\"}\n"
             "3. Engine routing per component:\n"
-            "   - 'cadquery': use for precise parametric geometry (flat plates, cylinders, "
-            "L-brackets, simple extrusions with known dimensions)\n"
-            "   - 'zoo': use for organic shapes, complex surface forms, or vague descriptions\n"
+            "   - 'cadquery': use for ANY geometry with specific dimensions — circular plates, "
+            "rectangular plates, cylinders, tubes, L-brackets, pins, bushings, slotted plates, "
+            "stepped shafts, or any combination of basic shapes with holes/cuts\n"
+            "   - 'zoo': use ONLY for organic/freeform shapes, complex curved surfaces, "
+            "or vague descriptions without specific dimensions\n"
             "4. component_type: one of 'base', 'clamp', 'pin', 'spacer', 'bracket', 'bushing', 'custom'\n"
             "5. Each sub-component prompt must be self-contained and describe ONE simple geometry "
             "with exact metric dimensions\n"
-            "6. For CadQuery prompts: phrase as 'A [shape] [dimensions]' — e.g., "
-            "'A flat rectangular plate 200mm x 150mm x 10mm with four M8 counterbore holes at corners'\n"
+            "6. For CadQuery prompts: preserve the exact shape description from the user. Examples:\n"
+            "   - 'A circular base plate 300mm diameter, 15mm thick with a 50mm central bore'\n"
+            "   - 'A rectangular plate 200mm x 150mm x 10mm with four M8 counterbore holes at corners'\n"
+            "   - 'An L-bracket 100mm tall, 80mm base, 10mm thick with two M6 mounting holes'\n"
+            "   - 'A cylindrical pin 8mm diameter, 30mm tall with a 2mm chamfer'\n"
+            "   CRITICAL: Do NOT rephrase 'circular' as 'rectangular' or change the described shape.\n"
             "7. Keep assemblies to ≤ 5 sub-components; if unsure, prefer 'simple'\n\n"
             "Return JSON only (no markdown fences):\n"
             "Simple: {\"type\": \"simple\", \"engine\": \"cadquery\"|\"zoo\", "
@@ -424,29 +430,11 @@ class GeminiService:
         if not settings.GEMINI_API_KEY:
             return _stub_cadquery_code(component_name)
 
-        prompt_text = (
-            "You are a CadQuery expert. Generate a Python script to create the following component.\n\n"
-            f"Component: {component_name}\n"
-            f"Description: {description}\n\n"
-            "Requirements:\n"
-            "- Import cadquery as cq\n"
-            "- Build geometry using CadQuery's fluent Workplane API\n"
-            "- Assign the final shape to a variable named 'result'\n"
-            "- Export: cq.exporters.export(result, '/tmp/cq_output.step')\n"
-            "- Use millimeters for all dimensions\n"
-            "- Keep it simple: 1–3 CadQuery operations (box, cylinder, hole, shell, etc.)\n"
-            "- Do NOT add fillets or chamfers unless explicitly required\n\n"
-            "Return ONLY Python code — no markdown fences, no comments, no explanations.\n\n"
-            "Examples:\n"
-            "import cadquery as cq\n"
-            "result = cq.Workplane('XY').box(200, 150, 10)\n"
-            "cq.exporters.export(result, '/tmp/cq_output.step')\n\n"
-            "import cadquery as cq\n"
-            "result = (cq.Workplane('XY').box(200, 150, 10)\n"
-            "    .faces('>Z').workplane()\n"
-            "    .rect(160, 110, forConstruction=True)\n"
-            "    .vertices().cboreHole(10, 16, 8))\n"
-            "cq.exporters.export(result, '/tmp/cq_output.step')\n"
+        template = _load_prompt("cadquery_generation.txt")
+        prompt_text = _fill_template(
+            template,
+            component_name=component_name,
+            description=description,
         )
 
         model = self._get_pro()

@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 TIMEOUT = 120.0    # text-to-cad can take 30–90 s
 POLL_INTERVAL = 5
-POLL_MAX = 25      # 125 s max polling
+POLL_MAX = 48      # 240 s max polling (Zoo.dev AI generation averages 90–180 s)
 
 
 def _zoo_url(path: str, **query_params: str) -> tuple[str, dict]:

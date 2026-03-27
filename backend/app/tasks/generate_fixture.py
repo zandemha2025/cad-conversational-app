@@ -170,6 +170,17 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     fixture_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # Pre-insert fixture_geometries so assembly_components FK is valid during generation
+    sb.table("fixture_geometries").insert({
+        "id": fixture_id,
+        "project_id": project_id,
+        "version": version,
+        "kcl": kcl,
+        "gltf_url": None,
+        "generation_prompt": user_prompt,
+        "generated_at": now_iso,
+    }).execute()
+
     if is_assembly and components:
         # ── ASSEMBLY PATH ──────────────────────────────────────────────────────
         gltf_url, zoo_kcl, assembly_records = _generate_assembly(
@@ -181,6 +192,7 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         _publish(project_id, {"status": "compiling", "message": "Generating 3D geometry…", "progress": 0.50})
 
         engine_hint = decomposition.get("engine", "zoo")
+        log.info("Simple geometry engine_hint=%s project=%s", engine_hint, project_id)
         if engine_hint == "cadquery":
             description = decomposition.get("prompt", prompt_text)
             result = _generate_single_cadquery(project_id, "fixture", description, version)
@@ -194,16 +206,11 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         stored_kcl = zoo_kcl or kcl
         assembly_records = []
 
-    # ── Save fixture geometry ──────────────────────────────────────────────────
-    sb.table("fixture_geometries").insert({
-        "id": fixture_id,
-        "project_id": project_id,
-        "version": version,
-        "kcl": stored_kcl,
+    # ── Update fixture geometry with final gltf_url and kcl ────────────────────
+    sb.table("fixture_geometries").update({
         "gltf_url": gltf_url,
-        "generation_prompt": user_prompt,
-        "generated_at": now_iso,
-    }).execute()
+        "kcl": stored_kcl,
+    }).eq("id", fixture_id).execute()
 
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.80})
