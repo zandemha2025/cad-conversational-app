@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # ── AI — Google Gemini ────────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
     GEMINI_FLASH_MODEL: str = "gemini-2.5-flash"
-    GEMINI_PRO_MODEL: str = "gemini-2.5-flash"
+    GEMINI_PRO_MODEL: str = "gemini-2.5-pro"
 
     # ── Zoo.dev CAD Kernel ────────────────────────────────────────────────────
     ZOO_API_KEY: str = ""

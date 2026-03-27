@@ -89,9 +89,13 @@ def execute_cadquery_script(
         step_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.step"
         step_url = _upload_step(project_id, step_key, step_bytes)
 
-        # Convert STEP → GLB via Zoo.dev (synchronous)
-        from app.services.zoo_service import convert_file_format_sync
-        glb_bytes = convert_file_format_sync(step_bytes, "step", "glb", project_id)
+        # Convert STEP → GLB locally first (trimesh + cadquery), fall back to Zoo.dev API
+        glb_bytes = _step_to_glb_local(step_bytes, component_name)
+
+        if not glb_bytes:
+            log.info("Local STEP→GLB failed for '%s', trying Zoo.dev API conversion", component_name)
+            from app.services.zoo_service import convert_file_format_sync
+            glb_bytes = convert_file_format_sync(step_bytes, "step", "glb", project_id)
 
         if glb_bytes:
             glb_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.glb"
@@ -108,6 +112,47 @@ def execute_cadquery_script(
     except Exception as exc:
         log.error("CadQuery error for '%s': %s", component_name, exc)
         return _zoo_fallback(project_id, safe_name, version)
+
+
+def _step_to_glb_local(step_bytes: bytes, component_name: str) -> bytes | None:
+    """Convert STEP bytes to GLB locally using CadQuery tessellation + trimesh."""
+    try:
+        import cadquery as cq
+        import trimesh
+        import numpy as np
+    except ImportError as e:
+        log.warning("Local STEP→GLB deps missing (%s)", e)
+        return None
+
+    step_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
+            f.write(step_bytes)
+            step_path = f.name
+
+        result = cq.importers.importStep(step_path)
+        vertices, triangles = result.tessellate(0.1)
+
+        verts = np.array([(v.x, v.y, v.z) for v in vertices], dtype=np.float32)
+        faces = np.array(triangles, dtype=np.int32)
+
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+        if mesh.is_empty:
+            log.warning("Local STEP→GLB: empty mesh for '%s'", component_name)
+            return None
+
+        glb_data = mesh.export(file_type="glb")
+        log.info("Local STEP→GLB OK for '%s' (%d bytes)", component_name, len(glb_data))
+        return glb_data
+    except Exception as e:
+        log.warning("Local STEP→GLB failed for '%s': %s", component_name, e)
+        return None
+    finally:
+        if step_path:
+            try:
+                os.unlink(step_path)
+            except OSError:
+                pass
 
 
 def _upload_step(project_id: str, key: str, data: bytes) -> str | None:

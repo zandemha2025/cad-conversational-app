@@ -26,27 +26,27 @@ def _client():
     )
 
 
-def _upload(key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
-    """Upload bytes to R2. Returns public URL (or mock if not configured)."""
+def _upload(key: str, data: bytes, content_type: str = "application/octet-stream") -> str | None:
+    """Upload bytes to R2. Returns public URL, or None if R2 is not configured."""
     client = _client()
     if client is None:
-        log.warning("R2 not configured — mock URL for %s", key)
-        return f"{settings.R2_PUBLIC_URL}/mock/{key}"
+        log.error("R2 not configured — cannot upload %s (set R2_ACCESS_KEY, R2_SECRET_KEY, R2_ACCOUNT_ID)", key)
+        return None
     client.put_object(Bucket=settings.R2_BUCKET, Key=key, Body=data, ContentType=content_type)
     return f"{settings.R2_PUBLIC_URL}/{key}"
 
 
-def upload_step_file(project_id: str, filename: str, data: bytes) -> str:
+def upload_step_file(project_id: str, filename: str, data: bytes) -> str | None:
     key = f"projects/{project_id}/step/{filename}"
     return _upload(key, data, "application/octet-stream")
 
 
-def upload_gltf(project_id: str, filename: str, data: bytes) -> str:
+def upload_gltf(project_id: str, filename: str, data: bytes) -> str | None:
     key = f"projects/{project_id}/gltf/{filename}"
     return _upload(key, data, "model/gltf-binary")
 
 
-def upload_export(project_id: str, filename: str, data: bytes, fmt: str) -> str:
+def upload_export(project_id: str, filename: str, data: bytes, fmt: str) -> str | None:
     ct_map = {
         "step": "application/octet-stream",
         "stl":  "model/stl",
@@ -57,10 +57,11 @@ def upload_export(project_id: str, filename: str, data: bytes, fmt: str) -> str:
     return _upload(key, data, ct_map.get(fmt, "application/octet-stream"))
 
 
-def get_signed_download_url(key: str, expires_in: int = 3600) -> str:
+def get_signed_download_url(key: str, expires_in: int = 3600) -> str | None:
     client = _client()
     if client is None:
-        return f"{settings.R2_PUBLIC_URL}/mock/{key}"
+        log.error("R2 not configured — cannot generate signed URL for %s", key)
+        return None
     try:
         return client.generate_presigned_url(
             "get_object",

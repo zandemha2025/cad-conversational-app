@@ -188,6 +188,10 @@ async def validate_config():
         _log.warning("Missing env vars (auth will fail): %s", ", ".join(missing))
     if not settings.GEMINI_API_KEY:
         _log.warning("GEMINI_API_KEY not set — AI features will use stub responses")
+    if not settings.R2_ACCESS_KEY:
+        _log.warning("R2_ACCESS_KEY not set — file uploads will fail (no mock URLs)")
+    if settings.ZOO_API_KEY and not settings.ZOO_PROXY_URL:
+        _log.warning("ZOO_PROXY_URL not set — Zoo.dev calls go direct (may be blocked on Fly.io)")
 
     # Create collaboration tables if they don't exist yet
     from app.api.routes.collaboration import ensure_collab_tables
