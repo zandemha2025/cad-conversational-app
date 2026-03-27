@@ -301,6 +301,41 @@ class GeminiService:
             log.error("generate_variation_descriptions error: %s", e)
             return _stub_variation_descriptions(prompt, num_variations)
 
+    # ── Standard component suggestions (Flash) ────────────────────────────────
+    async def suggest_components(self, user_prompt: str, catalog_hints: list[str]) -> list[dict]:
+        """
+        Suggest standard catalog components relevant to the fixture design.
+        Returns a list of dicts: [{id, reason}, ...] (up to 3 items).
+        """
+        if not settings.GEMINI_API_KEY:
+            return []
+
+        catalog_text = "\n".join(catalog_hints[:50])
+        prompt = (
+            f"You are helping select standard tooling components for a manufacturing fixture.\n"
+            f"Fixture request: {user_prompt!r}\n\n"
+            f"Available catalog components:\n{catalog_text}\n\n"
+            "Select up to 3 components from the catalog that are most relevant to this fixture design. "
+            "Return a JSON array (no markdown fences) of objects with fields: "
+            '"id" (the component id from the catalog) and "reason" (one sentence why it fits). '
+            "Only include components that are genuinely applicable. "
+            "If none are relevant, return an empty array []."
+        )
+
+        model = self._get_flash()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return data[:3]
+        except Exception as e:
+            log.error("suggest_components error: %s", e)
+        return []
+
     # ── DFM explanation (Flash) ────────────────────────────────────────────────
     async def explain_dfm_issue(
         self,
