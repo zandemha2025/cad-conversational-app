@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 TIMEOUT = 120.0    # text-to-cad can take 30–90 s
 POLL_INTERVAL = 5
 POLL_MAX = 48      # 240 s max polling (Zoo.dev AI generation averages 90–180 s)
+MAX_RETRIES = 2    # retry the full text-to-cad call on transient failure
+RETRY_DELAY = 5    # seconds between retries
 
 
 def _zoo_url(path: str, **query_params: str) -> tuple[str, dict]:
@@ -289,11 +291,90 @@ async def _poll_text_to_cad(client: httpx.AsyncClient, op_id: str) -> dict | Non
 
 # ── primary: text-to-CAD endpoint ────────────────────────────────────────────
 
+def _enhance_prompt(raw_prompt: str) -> str:
+    """
+    Enhance a raw user prompt with engineering context so Zoo.dev
+    generates a proper manufacturing fixture instead of abstract art.
+    """
+    # If the prompt already has detailed dimensions / engineering terms, leave it alone
+    engineering_keywords = ("mm", "inch", "diameter", "thick", "radius", "bore", "hole",
+                            "counterbore", "countersink", "chamfer", "fillet", "thread",
+                            "M6", "M8", "M10", "M12", "slot", "keyway")
+    has_detail = any(kw in raw_prompt.lower() for kw in engineering_keywords)
+    if has_detail:
+        return raw_prompt
+
+    return (
+        f"{raw_prompt}. "
+        "This is a manufacturing fixture component made of 6061-T6 aluminum. "
+        "Use precise mechanical dimensions in millimeters. "
+        "Include mounting holes and functional features appropriate for CNC workholding."
+    )
+
+
+async def _try_text_to_cad_once(client: httpx.AsyncClient, prompt: str, project_id: str) -> dict | None:
+    """
+    Single attempt: submit to Zoo.dev text-to-cad and poll for result.
+    Returns the completed job data dict, or None on failure.
+    """
+    cad_url, extra_headers = _zoo_url("/ai/text-to-cad/step")
+    headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
+    resp = await client.post(cad_url, json={"prompt": prompt}, headers=headers)
+    resp.raise_for_status()
+    job = resp.json()
+    op_id = job.get("id")
+    if not op_id:
+        log.error("Zoo.dev text-to-cad returned no op id: %s", job)
+        return None
+
+    log.info("Zoo.dev text-to-cad submitted op=%s project=%s", op_id, project_id)
+    return await _poll_text_to_cad(client, op_id)
+
+
+def _extract_glb(outputs: dict, op_id: str) -> bytes | None:
+    """
+    Try to get GLB bytes from Zoo.dev outputs dict.
+    Tries source.gltf → GLB (pure Python), then source.step → GLB (API conversion).
+    """
+    glb_bytes = None
+    gltf_b64 = outputs.get("source.gltf")
+    if gltf_b64:
+        gltf_bytes = _safe_b64decode(gltf_b64)
+        if gltf_bytes:
+            try:
+                glb_bytes = _gltf_to_glb(gltf_bytes)
+                log.info("Zoo.dev gltf→glb (python) OK op=%s (%d bytes)", op_id, len(glb_bytes))
+            except Exception as conv_err:
+                log.warning("Zoo.dev gltf→glb python conversion failed op=%s: %s", op_id, conv_err)
+
+    if not glb_bytes:
+        step_b64 = outputs.get("source.step")
+        if step_b64:
+            step_bytes = _safe_b64decode(step_b64)
+            if step_bytes:
+                # Run the async conversion in a new event loop for sync callers,
+                # or use the existing one if available
+                try:
+                    loop = asyncio.get_running_loop()
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        glb_bytes = loop.run_until_complete(
+                            convert_file_format(step_bytes, "step", "glb", "")
+                        )
+                except RuntimeError:
+                    glb_bytes = asyncio.run(convert_file_format(step_bytes, "step", "glb", ""))
+                except Exception as e:
+                    log.warning("STEP→GLB conversion failed op=%s: %s", op_id, e)
+
+    return glb_bytes
+
+
 async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
     """
-    Generate fixture GLB via Zoo.dev /ai/text-to-cad/step.
-    The /step endpoint returns outputs with source.gltf + source.step;
-    source.gltf is then converted to GLB via /file/conversion/gltf/glb.
+    Generate fixture GLB via Zoo.dev /ai/text-to-cad/step with retry logic.
+
+    Retries up to MAX_RETRIES times on transient failures (timeouts, 5xx errors).
+    Enhances raw prompts with engineering context for better results.
     Returns {"gltf_url": str|None, "kcl": str|None, "is_stub": bool, "error": str|None}.
     """
     empty = {"gltf_url": None, "kcl": None, "is_stub": False, "error": None}
@@ -304,76 +385,64 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
         return {**empty, "gltf_url": stub_url, "is_stub": True,
                 "error": "ZOO_API_KEY not configured — placeholder model used"}
 
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            # Use /ai/text-to-cad/step — the /glb variant no longer returns outputs
-            cad_url, extra_headers = _zoo_url("/ai/text-to-cad/step")
-            headers = {"Authorization": f"Bearer {settings.ZOO_API_KEY}", **extra_headers}
-            resp = await client.post(
-                cad_url,
-                json={"prompt": prompt},
-                headers=headers,
-            )
-            resp.raise_for_status()
-            job = resp.json()
-            op_id = job.get("id")
-            if not op_id:
-                log.error("Zoo.dev text-to-cad returned no op id: %s", job)
-                stub_url = _upload_stub(project_id, version)
-                return {**empty, "gltf_url": stub_url, "is_stub": True,
-                        "error": "Zoo.dev returned no operation ID"}
+    enhanced_prompt = _enhance_prompt(prompt)
+    last_err = ""
 
-            log.info("Zoo.dev text-to-cad submitted op=%s project=%s", op_id, project_id)
-            data = await _poll_text_to_cad(client, op_id)
-            if not data:
-                stub_url = _upload_stub(project_id, version)
-                return {**empty, "gltf_url": stub_url, "is_stub": True,
-                        "error": "Zoo.dev generation timed out or failed — placeholder model used"}
+    for attempt in range(MAX_RETRIES + 1):
+        if attempt > 0:
+            delay = RETRY_DELAY * attempt
+            log.info("Zoo.dev retry %d/%d in %ds project=%s", attempt, MAX_RETRIES, delay, project_id)
+            await asyncio.sleep(delay)
 
-            outputs = data.get("outputs") or {}
-            kcl_code = data.get("code")
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                data = await _try_text_to_cad_once(client, enhanced_prompt, project_id)
 
-            # Convert source.gltf → GLB via pure Python (no extra API call).
-            # Falls back to source.step → GLB via Zoo.dev conversion if needed.
-            glb_bytes = None
-            gltf_b64 = outputs.get("source.gltf")
-            if gltf_b64:
-                gltf_bytes = _safe_b64decode(gltf_b64)
-                if gltf_bytes:
-                    try:
-                        glb_bytes = _gltf_to_glb(gltf_bytes)
-                        log.info("Zoo.dev gltf→glb (python) OK op=%s (%d bytes)", op_id, len(glb_bytes))
-                    except Exception as conv_err:
-                        log.warning("Zoo.dev gltf→glb python conversion failed op=%s: %s", op_id, conv_err)
+                if not data:
+                    last_err = "Zoo.dev generation timed out or returned no result"
+                    log.warning("Zoo.dev attempt %d failed: no data project=%s", attempt + 1, project_id)
+                    continue  # retry
 
-            if not glb_bytes:
-                step_b64 = outputs.get("source.step")
-                if step_b64:
-                    step_bytes = _safe_b64decode(step_b64)
-                    if step_bytes:
-                        glb_bytes = await convert_file_format(step_bytes, "step", "glb", project_id)
+                outputs = data.get("outputs") or {}
+                kcl_code = data.get("code")
+                op_id = data.get("id", "?")
 
-            if not glb_bytes:
-                log.error("Zoo.dev: no GLB produced (outputs=%s) op=%s", list(outputs.keys()), op_id)
-                stub_url = _upload_stub(project_id, version)
-                return {"gltf_url": stub_url, "kcl": kcl_code, "is_stub": True,
-                        "error": "Zoo.dev completed but produced no usable geometry — placeholder model used"}
+                glb_bytes = _extract_glb(outputs, op_id)
 
-            filename = f"{project_id}/fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
-            gltf_url = upload_gltf(project_id, filename, glb_bytes)
-            log.info("Zoo.dev text-to-cad OK → %s project=%s", gltf_url, project_id)
-            return {"gltf_url": gltf_url, "kcl": kcl_code, "is_stub": False, "error": None}
+                if not glb_bytes:
+                    last_err = f"Zoo.dev completed but produced no usable geometry (outputs: {list(outputs.keys())})"
+                    log.warning("Zoo.dev attempt %d: no GLB from outputs project=%s", attempt + 1, project_id)
+                    continue  # retry
 
-    except httpx.HTTPStatusError as e:
-        err_msg = f"Zoo.dev HTTP {e.response.status_code}: {e.response.text[:200]}"
-        log.error("Zoo.dev HTTP %d text-to-cad project=%s: %s",
-                  e.response.status_code, project_id, e.response.text[:400])
-    except Exception as e:
-        err_msg = f"Zoo.dev error: {str(e)[:200]}"
-        log.error("Zoo.dev text-to-cad error project=%s: %s", project_id, e)
+                filename = f"{project_id}/fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
+                gltf_url = upload_gltf(project_id, filename, glb_bytes)
+                log.info("Zoo.dev text-to-cad OK → %s project=%s (attempt %d)", gltf_url, project_id, attempt + 1)
+                return {"gltf_url": gltf_url, "kcl": kcl_code, "is_stub": False, "error": None}
 
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            last_err = f"Zoo.dev HTTP {status}: {e.response.text[:200]}"
+            log.error("Zoo.dev HTTP %d attempt %d project=%s: %s",
+                      status, attempt + 1, project_id, e.response.text[:400])
+            # Only retry on server errors (5xx) or rate limits (429)
+            if status < 500 and status != 429:
+                break  # client error, don't retry
+
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
+            last_err = f"Zoo.dev connection error: {str(e)[:200]}"
+            log.warning("Zoo.dev timeout/connect attempt %d project=%s: %s", attempt + 1, project_id, e)
+            # Transient — will retry
+
+        except Exception as e:
+            last_err = f"Zoo.dev error: {str(e)[:200]}"
+            log.error("Zoo.dev unexpected error attempt %d project=%s: %s", attempt + 1, project_id, e)
+            break  # unexpected error, don't retry
+
+    # All retries exhausted — fall back to stub
+    log.error("Zoo.dev text-to-cad FAILED after %d attempts project=%s: %s",
+              MAX_RETRIES + 1, project_id, last_err)
     stub_url = _upload_stub(project_id, version)
-    return {**empty, "gltf_url": stub_url, "is_stub": True, "error": err_msg}
+    return {**empty, "gltf_url": stub_url, "is_stub": True, "error": last_err}
 
 
 def _upload_stub(project_id: str, version: int) -> str | None:

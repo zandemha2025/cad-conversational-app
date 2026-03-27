@@ -144,6 +144,32 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
         return;
       }
 
+      // Inline generation progress updates (bypass Celery path)
+      if (msg.type === 'generation_progress') {
+        const progress = msg.progress as number;
+        const message = msg.message as string;
+        setActiveGenJob(prev => prev ? { ...prev, message: `${message} (${Math.round(progress * 100)}%)` } : prev);
+        return;
+      }
+
+      if (msg.type === 'generation_done') {
+        setActiveGenJob(null);
+        // Trigger refetch by signaling generation complete
+        onGenerationQueued?.(); // This sets isGenerating which triggers polling
+        return;
+      }
+
+      if (msg.type === 'generation_error') {
+        setActiveGenJob(null);
+        const detail = (msg.message as string) ?? 'Generation failed';
+        setMessages(prev => [...prev, {
+          id: `err_${Date.now()}`, role: 'system' as const,
+          content: `⚠️ ${detail}`,
+          timestamp: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        }]);
+        return;
+      }
+
       if (msg.type === 'component_suggestions') {
         setComponentSuggestions(msg.suggestions as ComponentSuggestion[]);
         return;
