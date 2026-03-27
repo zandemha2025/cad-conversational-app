@@ -213,6 +213,7 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
   const [projectName, setProjectName] = useState('');
   const [step, setStep] = useState<Step>('pick');
   const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Environment state (dummy)
   const [surface, setSurface] = useState('siegmund');
@@ -268,12 +269,15 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
     }
 
     setIsCreating(false);
-    onClose();
 
     if (newId && onProjectCreated) {
+      onClose();
       onProjectCreated(newId);
-    } else {
+    } else if (!addProject) {
+      onClose();
       navigate('/workspace/new');
+    } else {
+      setCreateError('Failed to create project. Please check your connection and try again.');
     }
   };
 
@@ -862,6 +866,10 @@ export default function NewProjectModal({ onClose, onProjectCreated, addProject 
                 Next
                 <ChevronRight size={13} />
               </button>
+            )}
+
+            {step === 'printer' && createError && (
+              <span className="text-red-400 text-xs mr-2">{createError}</span>
             )}
 
             {step === 'printer' && (
