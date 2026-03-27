@@ -184,7 +184,7 @@ def _generate_stub_glb(width_mm: float = 200, depth_mm: float = 150, height_mm: 
     bin_len    = len(bin_data)
 
     gltf_dict = {
-        "asset": {"version": "2.0", "generator": "ScaleCAD-stub"},
+        "asset": {"version": "2.0", "generator": "ForgeAI-stub"},
         "scene": 0,
         "scenes": [{"nodes": [0], "name": "Scene"}],
         "nodes": [{"mesh": 0, "name": "base_plate"}],
@@ -430,13 +430,18 @@ async def compile_kcl_to_format(
                         glb_url, e)
 
     # ── Slow fallback: text-to-CAD AI job (using /step endpoint which returns outputs) ──
+    # Only step/gltf/glb can be reliably obtained from the text-to-cad outputs dict.
+    # For stl/iges/dxf, return None so the caller can use stub generators instead of
+    # silently returning STEP data with the wrong content type.
+    if output_format.lower() not in ("step", "gltf", "glb"):
+        log.warning("compile_kcl_to_format: GLB→%s conversion failed and slow path does not support this format — returning None", output_format)
+        return None
+
     prompt = f"Manufacturing fixture, export as {output_format}"
     format_key_map = {
         "step":  "source.step",
-        "iges":  "source.step",
         "gltf":  "source.gltf",
         "glb":   "source.gltf",  # gltf→glb converted below
-        "stl":   "source.step",
     }
     want_key = format_key_map.get(output_format.lower(), "source.step")
     try:

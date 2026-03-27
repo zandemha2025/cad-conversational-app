@@ -23,7 +23,7 @@ interface Step {
 const STEPS: Step[] = [
   {
     id: 'welcome',
-    title: 'Welcome to ScaleCAD!',
+    title: 'Welcome to ForgeAI!',
     body: 'Let me show you around the workspace. You can revisit this tour any time using the ? button in the toolbar.',
     target: null,
   },

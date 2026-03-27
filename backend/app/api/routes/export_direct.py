@@ -101,12 +101,12 @@ def _generate_step_stub(project_name: str, part_number: str) -> bytes:
     """Generate a minimal STEP AP203 stub file."""
     content = f"""ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION(('ScaleCAD Export - {project_name}'),'2;1');
-FILE_NAME('{project_name}.step','2024-01-01T00:00:00',('ScaleCAD'),('ScaleCAD'),'ScaleCAD API','ScaleCAD v1.0','');
+FILE_DESCRIPTION(('ForgeAI Export - {project_name}'),'2;1');
+FILE_NAME('{project_name}.step','2024-01-01T00:00:00',('ForgeAI'),('ForgeAI'),'ForgeAI API','ForgeAI v1.0','');
 FILE_SCHEMA(('AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF {{ 1 0 10303 403 1 1 4 }}'));
 ENDSEC;
 DATA;
-#1=PRODUCT('{part_number}','{project_name}','ScaleCAD generated part',(#2));
+#1=PRODUCT('{part_number}','{project_name}','ForgeAI generated part',(#2));
 #2=PRODUCT_CONTEXT('',#3,'mechanical');
 #3=APPLICATION_CONTEXT('configuration controlled 3D designs of mechanical parts and assemblies');
 #4=PRODUCT_DEFINITION_FORMATION('','',#1);
@@ -121,7 +121,7 @@ END-ISO-10303-21;
 def _generate_iges_stub(project_name: str, part_number: str) -> bytes:
     """Generate a minimal IGES 5.3 stub file."""
     # IGES fixed-format 80-column lines
-    start = f"ScaleCAD Export - {project_name[:60]:<60}S      1\n"
+    start = f"ForgeAI Export - {project_name[:61]:<61}S      1\n"
     global_section = (
         f"1H,,1H;,{len(part_number)+2}H'{part_number}',{len(project_name)+2}H'".ljust(72)
         + "G      1\n"
@@ -196,7 +196,7 @@ async def export_direct(
         raise HTTPException(404, "Project not found")
 
     project = proj.data[0]
-    project_name = project.get("name", "ScaleCAD Project")
+    project_name = project.get("name", "ForgeAI Project")
     part_number = project.get("part_number") or "PART-001"
 
     # Fetch geometry features

@@ -135,7 +135,7 @@ export default function SharedView() {
             onClick={() => navigate('/login')}
             className="px-4 py-2 bg-cadblue-600 hover:bg-cadblue-500 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Sign in to ScaleCAD
+            Sign in to ForgeAI
           </button>
         </div>
       </div>
@@ -223,7 +223,7 @@ export default function SharedView() {
           className="flex items-center gap-1.5 px-3 py-1.5 bg-cadblue-600 hover:bg-cadblue-500 text-white text-xs font-medium rounded-lg transition-colors"
         >
           <ExternalLink size={11} />
-          Open in ScaleCAD
+          Open in ForgeAI
         </button>
       </header>
 
@@ -250,7 +250,7 @@ export default function SharedView() {
           {/* Watermark */}
           <div className="absolute bottom-3 right-3 flex items-center gap-1.5 text-xs text-slate-700">
             <Users size={10} />
-            Shared view — ScaleCAD
+            Shared view — ForgeAI
           </div>
         </div>
 
