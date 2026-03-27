@@ -76,8 +76,11 @@ function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
     camera.updateProjectionMatrix();
 
     if (controls) {
-      (controls as THREE.EventDispatcher & { target: THREE.Vector3; update: () => void }).target.set(0, 0, 0);
-      (controls as THREE.EventDispatcher & { target: THREE.Vector3; update: () => void }).update();
+      const orbitControls = controls as any;
+      orbitControls.minDistance = maxDim * 0.1;
+      orbitControls.maxDistance = maxDim * 20;
+      orbitControls.target.set(0, 0, 0);
+      orbitControls.update();
     }
   }, [cloned, camera, controls]);
 
@@ -196,7 +199,7 @@ function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensi
           fadeDistance={35} infiniteGrid />
       )}
 
-      <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={3} maxDistance={60}
+      <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={0.1} maxDistance={100000}
         enabled={!touchpointMode} />
 
       <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
@@ -257,7 +260,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
 
   return (
     <div className="relative w-full h-full bg-cadsurface-950 overflow-hidden select-none">
-      <Canvas shadows camera={{ position: [10, 7, 10], fov: 45, near: 0.1, far: 200 }}
+      <Canvas shadows camera={{ position: [500, 400, 500], fov: 45, near: 0.01, far: 100000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }} className="absolute inset-0">
         <Suspense fallback={null}>
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
