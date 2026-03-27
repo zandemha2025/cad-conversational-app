@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # ── App ───────────────────────────────────────────────────────────────────
-    APP_NAME: str = "ScaleCAD API"
+    APP_NAME: str = "ForgeAI API"
     APP_VERSION: str = "0.1.0"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "change-me-in-production"

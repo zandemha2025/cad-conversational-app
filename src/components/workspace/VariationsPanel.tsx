@@ -284,7 +284,7 @@ export default function VariationsPanel({ projectId, onGenerateClick, triggerRef
               </div>
               <p className="text-sm font-medium text-slate-300 mb-1">Generate Design Variations</p>
               <p className="text-xs text-slate-500 max-w-xs">
-                ScaleCAD generates multiple distinct fixture designs from your description — compare them side by side and pick the best one.
+                ForgeAI generates multiple distinct fixture designs from your description — compare them side by side and pick the best one.
               </p>
               <button
                 onClick={onGenerateClick}

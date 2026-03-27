@@ -4,6 +4,8 @@ Sends full project context to Gemini and generates top 3 suggestions.
 """
 import logging
 import json
+import uuid
+from datetime import datetime, timezone
 from app.core.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -12,92 +14,91 @@ log = logging.getLogger(__name__)
 @celery_app.task(name="proactive_analysis_task", bind=True, max_retries=1)
 def proactive_analysis_task(self, project_id: str):
     """Run proactive AI analysis and save suggestions as system messages."""
-    import asyncio
-    from app.core.database import async_session_factory
-    from sqlalchemy import text
+    from app.core.database import get_supabase_client
 
-    async def _run():
-        _factory = async_session_factory()
-        if _factory is None:
-            log.error("DATABASE_URL not configured — skipping proactive analysis")
-            return []
-        async with _factory() as db:
-            # Fetch project context
-            part_result = await db.execute(
-                text("SELECT features_json FROM part_geometries WHERE project_id = :pid ORDER BY created_at DESC LIMIT 1"),
-                {"pid": project_id},
-            )
-            part_row = part_result.mappings().first()
-            features = part_row["features_json"] if part_row else {}
+    sb = get_supabase_client()
 
-            tp_result = await db.execute(
-                text("SELECT type, label, force_n FROM touchpoints WHERE project_id = :pid"),
-                {"pid": project_id},
-            )
-            touchpoints = [dict(r) for r in tp_result.mappings().all()]
+    # Fetch project context via Supabase SDK
+    part_result = (
+        sb.table("part_geometries")
+        .select("features_json")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    features = {}
+    if part_result.data:
+        features = part_result.data[0].get("features_json") or {}
 
-            val_result = await db.execute(
-                text("SELECT error_count, warning_count, method FROM validation_results WHERE project_id = :pid ORDER BY ran_at DESC LIMIT 3"),
-                {"pid": project_id},
-            )
-            validation = [dict(r) for r in val_result.mappings().all()]
+    tp_result = (
+        sb.table("touchpoints")
+        .select("type,label,force_n")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    touchpoints = tp_result.data or []
 
-            # Build context for Gemini
-            context = {
-                "project_id": project_id,
-                "features": {
-                    "face_count": features.get("face_count", 0),
-                    "hole_count": features.get("hole_count", 0),
-                    "detected_holes": features.get("detected_holes", [])[:5],
-                    "datum_candidates": features.get("datum_candidates", []),
-                    "bounding_box": features.get("bounding_box", {}),
-                },
-                "touchpoints": touchpoints,
-                "validation_summary": validation,
-            }
+    val_result = (
+        sb.table("validation_results")
+        .select("error_count,warning_count,method")
+        .eq("project_id", project_id)
+        .order("ran_at", desc=True)
+        .limit(3)
+        .execute()
+    )
+    validation = val_result.data or []
 
-            # Call Gemini
-            try:
-                from app.services.gemini_service import GeminiService
-                gemini = GeminiService()
-                suggestions = await gemini.generate_proactive_suggestions(
-                    part_features=context.get("features", {}),
-                    touchpoints=context.get("touchpoints", []),
-                    validation_results=context.get("validation_summary", []),
-                    environment={},
-                )
-            except Exception as e:
-                log.warning("Gemini proactive analysis failed: %s", e)
-                suggestions = _fallback_suggestions(context)
+    # Build context for Gemini
+    context = {
+        "project_id": project_id,
+        "features": {
+            "face_count": features.get("face_count", 0),
+            "hole_count": features.get("hole_count", 0),
+            "detected_holes": features.get("detected_holes", [])[:5],
+            "datum_candidates": features.get("datum_candidates", []),
+            "bounding_box": features.get("bounding_box", {}),
+        },
+        "touchpoints": touchpoints,
+        "validation_summary": validation,
+    }
 
-            # Save as system message
-            if suggestions:
-                import uuid
-                from datetime import datetime, timezone
-                msg_id = str(uuid.uuid4())
-                now = datetime.now(timezone.utc)
-                await db.execute(
-                    text("""
-                        INSERT INTO conversation_messages
-                          (id, project_id, role, content, created_at)
-                        VALUES (:id, :pid, 'system', :content, :now)
-                    """),
-                    {
-                        "id": msg_id,
-                        "pid": project_id,
-                        "content": json.dumps({"type": "proactive_suggestions", "suggestions": suggestions}),
-                        "now": now,
-                    },
-                )
-                await db.commit()
-
-            return suggestions
-
+    # Call Gemini
     try:
-        return asyncio.run(_run())
-    except Exception as exc:
-        log.error("Proactive analysis failed for project=%s: %s", project_id, exc)
-        return []
+        import asyncio
+        from app.services.gemini_service import GeminiService
+        gemini = GeminiService()
+
+        loop = asyncio.new_event_loop()
+        try:
+            suggestions = loop.run_until_complete(gemini.generate_proactive_suggestions(
+                part_features=context.get("features", {}),
+                touchpoints=context.get("touchpoints", []),
+                validation_results=context.get("validation_summary", []),
+                environment={},
+            ))
+        finally:
+            loop.close()
+    except Exception as e:
+        log.warning("Gemini proactive analysis failed: %s", e)
+        suggestions = _fallback_suggestions(context)
+
+    # Save as system message
+    if suggestions:
+        msg_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            sb.table("conversation_messages").insert({
+                "id": msg_id,
+                "project_id": project_id,
+                "role": "system",
+                "content": json.dumps({"type": "proactive_suggestions", "suggestions": suggestions}),
+                "created_at": now,
+            }).execute()
+        except Exception as e:
+            log.warning("Failed to save proactive suggestions: %s", e)
+
+    return suggestions
 
 
 def _fallback_suggestions(context: dict) -> list:

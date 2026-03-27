@@ -159,7 +159,7 @@ export default function Settings() {
               <>
                 <div>
                   <h2 className="text-white font-semibold text-lg">Notifications</h2>
-                  <p className="text-gray-500 text-sm mt-1">Control when and how ScaleCAD alerts you.</p>
+                  <p className="text-gray-500 text-sm mt-1">Control when and how ForgeAI alerts you.</p>
                 </div>
                 <div className="space-y-1 divide-y divide-gray-800">
                   <Toggle checked={settings.enableDfmWarnings} onChange={v => update({ enableDfmWarnings: v })} label="Show DFM warnings in viewport" />
@@ -233,7 +233,7 @@ export default function Settings() {
               <>
                 <div>
                   <h2 className="text-white font-semibold text-lg">AI & Generation</h2>
-                  <p className="text-gray-500 text-sm mt-1">Configure how ScaleCAD's AI engine generates fixtures.</p>
+                  <p className="text-gray-500 text-sm mt-1">Configure how ForgeAI's AI engine generates fixtures.</p>
                 </div>
                 <Field label="AI Model">
                   <SSelect value={settings.aiModel} onChange={v => update({ aiModel: v })} options={[

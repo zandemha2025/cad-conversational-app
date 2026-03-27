@@ -79,7 +79,7 @@ class GeminiService:
             return
 
         system_prompt = (
-            "You are an expert manufacturing fixture and tooling engineer inside ScaleCAD — "
+            "You are an expert manufacturing fixture and tooling engineer inside ForgeAI — "
             "a conversational CAD platform. Your specialty is:\n"
             "- CNC machining fixtures: work holding, 3-2-1 locating, datum selection, clamping strategy\n"
             "- Drill jigs: drill bushing sizing (fixed/renewable/liner), leaf/box/plate jig types, "
@@ -408,7 +408,7 @@ def _stub_kcl(part_features: dict) -> str:
     bb = part_features.get("bounding_box", {"x": 150, "y": 100, "z": 20})
     lx = bb.get("x", 150) + 40
     ly = bb.get("y", 100) + 40
-    return f"""// ScaleCAD — stub fixture (Gemini not configured)
+    return f"""// ForgeAI — stub fixture (Gemini not configured)
 const baseLength = {lx}
 const baseWidth  = {ly}
 const baseHeight = 12

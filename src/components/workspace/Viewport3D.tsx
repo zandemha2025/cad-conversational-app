@@ -49,16 +49,26 @@ function useAuthGltfUrl(gltfUrl: string | null | undefined): string | null {
 
 // ── Real glTF model ───────────────────────────────────────────────────────────
 
-function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
+type OrbitCtrl = THREE.EventDispatcher & {
+  target: THREE.Vector3;
+  update: () => void;
+  minDistance: number;
+  maxDistance: number;
+  reset: () => void;
+};
+
+function GltfModel({ url, touchpointMode, viewMode, onFaceClick, cameraAction, onCameraActionDone }: {
   url: string; touchpointMode: boolean; viewMode: string;
   onFaceClick?: (worldPos: THREE.Vector3) => void;
+  cameraAction?: 'fit' | 'reset' | null;
+  onCameraActionDone?: () => void;
 }) {
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
   const { camera, controls } = useThree();
+  const modelBoundsRef = useRef<{ maxDim: number; fitDistance: number } | null>(null);
 
-  // Auto-fit camera to model bounds — handles mm-scale Zoo.dev models
-  useEffect(() => {
+  const fitCamera = useCallback(() => {
     const box = new THREE.Box3().setFromObject(cloned);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
@@ -69,20 +79,49 @@ function GltfModel({ url, touchpointMode, viewMode, onFaceClick }: {
     cloned.position.sub(center); // center model at origin
 
     const fitDistance = maxDim * 2.5;
+    modelBoundsRef.current = { maxDim, fitDistance };
+
     camera.near = maxDim * 0.001;
-    camera.far = maxDim * 200;
+    camera.far = maxDim * 500;
     camera.position.set(fitDistance, fitDistance * 0.8, fitDistance);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
     if (controls) {
-      const orbitControls = controls as any;
-      orbitControls.minDistance = maxDim * 0.1;
-      orbitControls.maxDistance = maxDim * 20;
-      orbitControls.target.set(0, 0, 0);
-      orbitControls.update();
+      const ctrl = controls as OrbitCtrl;
+      ctrl.target.set(0, 0, 0);
+      ctrl.minDistance = maxDim * 0.01;
+      ctrl.maxDistance = maxDim * 100;
+      ctrl.update();
     }
   }, [cloned, camera, controls]);
+
+  // Auto-fit camera to model bounds — handles mm-scale Zoo.dev models
+  useEffect(() => {
+    fitCamera();
+  }, [fitCamera]);
+
+  // Handle external camera actions (Fit All / Reset View)
+  useEffect(() => {
+    if (!cameraAction) return;
+    if (cameraAction === 'fit') {
+      fitCamera();
+    } else if (cameraAction === 'reset') {
+      const bounds = modelBoundsRef.current;
+      if (bounds) {
+        const { fitDistance } = bounds;
+        camera.position.set(fitDistance, fitDistance * 0.8, fitDistance);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        if (controls) {
+          const ctrl = controls as OrbitCtrl;
+          ctrl.target.set(0, 0, 0);
+          ctrl.update();
+        }
+      }
+    }
+    onCameraActionDone?.();
+  }, [cameraAction, fitCamera, camera, controls, onCameraActionDone]);
 
   // Apply viewMode materials
   if (viewMode === 'wireframe') {
@@ -167,10 +206,12 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensions, dimensions, onFaceClick }: {
+function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensions, dimensions, onFaceClick, cameraAction, onCameraActionDone }: {
   gltfUrl?: string | null; touchpointMode: boolean; viewMode: string;
   showGrid: boolean; showDimensions: boolean; dimensions: DimensionEntry[];
   onFaceClick?: (worldPos: THREE.Vector3) => void;
+  cameraAction?: 'fit' | 'reset' | null;
+  onCameraActionDone?: () => void;
 }) {
   const { state } = useWorkspace();
   return (
@@ -182,7 +223,8 @@ function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensi
       <Environment preset="warehouse" />
 
       {gltfUrl && (
-        <GltfModel url={gltfUrl} touchpointMode={touchpointMode} viewMode={viewMode} onFaceClick={onFaceClick} />
+        <GltfModel url={gltfUrl} touchpointMode={touchpointMode} viewMode={viewMode} onFaceClick={onFaceClick}
+          cameraAction={cameraAction} onCameraActionDone={onCameraActionDone} />
       )}
 
       {touchpointMode && state.touchpoints.map((tp, i) => (
@@ -199,7 +241,7 @@ function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensi
           fadeDistance={35} infiniteGrid />
       )}
 
-      <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={0.1} maxDistance={100000}
+      <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={0.001} maxDistance={100000}
         enabled={!touchpointMode} />
 
       <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
@@ -229,6 +271,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
   const [dimensions, setDimensions] = useState<DimensionEntry[]>([]);
+  const [cameraAction, setCameraAction] = useState<'fit' | 'reset' | null>(null);
   const { state, dispatch } = useWorkspace();
 
   const rawGltfUrl = gltfUrl ?? state.gltfUrl;
@@ -266,7 +309,9 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
             viewMode={viewMode} showGrid={showGrid}
             showDimensions={showDimensions} dimensions={dimensions}
-            onFaceClick={handleFaceClick} />
+            onFaceClick={handleFaceClick}
+            cameraAction={cameraAction}
+            onCameraActionDone={() => setCameraAction(null)} />
         </Suspense>
       </Canvas>
 
@@ -292,10 +337,12 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
 
       {/* Left toolbar */}
       <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
-        {([{ icon: Move, label: 'Pan' }, { icon: RotateCw, label: 'Rotate' }, { icon: ZoomIn, label: 'Zoom In' },
-           { icon: ZoomOut, label: 'Zoom Out' }, { icon: Crosshair, label: 'Select' }, { icon: Maximize2, label: 'Fit All' }
-        ] as { icon: React.FC<{ size?: number }>; label: string }[]).map(({ icon: Icon, label }) => (
+        {([{ icon: Move, label: 'Pan', action: null }, { icon: RotateCw, label: 'Rotate', action: null },
+           { icon: ZoomIn, label: 'Zoom In', action: null }, { icon: ZoomOut, label: 'Zoom Out', action: null },
+           { icon: Crosshair, label: 'Select', action: null }, { icon: Maximize2, label: 'Fit All', action: 'fit' }
+        ] as { icon: React.FC<{ size?: number }>; label: string; action: 'fit' | 'reset' | null }[]).map(({ icon: Icon, label, action }) => (
           <button key={label} title={label}
+            onClick={() => { if (action) setCameraAction(action); }}
             className="w-8 h-8 flex items-center justify-center rounded-lg bg-cadsurface-800/80 border border-cadsurface-700 text-slate-400 hover:text-slate-100 hover:bg-cadsurface-700 transition-all backdrop-blur-sm">
             <Icon size={14} />
           </button>
@@ -313,7 +360,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         <ViewButton active={showDimensions} icon={<Ruler size={13} />} label="Dims" onClick={() => setShowDimensions(p => !p)} />
         <ViewButton active={false} icon={<Sun size={13} />} label="Lighting" onClick={() => {}} />
         <ViewButton active={false} icon={<Eye size={13} />} label="Section" onClick={() => {}} />
-        <ViewButton active={false} icon={<RefreshCw size={13} />} label="Reset View" onClick={() => {}} />
+        <ViewButton active={false} icon={<RefreshCw size={13} />} label="Reset View" onClick={() => setCameraAction('reset')} />
       </div>
 
       {/* Part info — only shown when model is loaded */}
