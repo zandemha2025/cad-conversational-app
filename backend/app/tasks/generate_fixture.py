@@ -1,21 +1,24 @@
 """
-Celery task: full fixture generation pipeline.
+Celery task: full fixture generation pipeline with AI decomposition.
 
 Flow:
   1. Fetch project context (features, touchpoints, env, printer, template)
-  2. Gemini Pro → generate KCL
-  3. Zoo.dev → compile KCL → GLTF
-  4. Gemini Pro → generate node graph JSON
-  5. Validation engine → run all checks
-  6. Save everything to DB
-  7. Publish progress events
+  2. Gemini Flash → decompose prompt (simple | assembly with engine routing)
+  3a. Simple: one Zoo.dev or CadQuery call
+  3b. Assembly: parallel sub-component generation (Zoo.dev + CadQuery mix)
+  4. Save fixture_geometries + assembly_components records
+  5. Gemini Pro → generate node graph JSON
+  6. Validation engine → run all checks
+  7. Publish progress events throughout
 """
 import asyncio
 import json
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from celery import shared_task
+
+from celery import shared_task  # noqa: F401 — keep for Celery discovery
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import get_supabase_client
@@ -44,6 +47,54 @@ def _publish(project_id: str, data: dict):
         log.warning("Redis publish failed: %s", e)
 
 
+# ── Single-component generation ───────────────────────────────────────────────
+
+def _generate_single_zoo(project_id: str, prompt: str, version: int) -> dict:
+    from app.services.zoo_service import text_to_cad_gltf
+    return _run_async(text_to_cad_gltf(project_id, prompt, version))
+
+
+def _generate_single_cadquery(
+    project_id: str,
+    component_name: str,
+    description: str,
+    version: int,
+) -> dict:
+    cq_script = _run_async(
+        gemini.generate_cadquery_code(component_name, description)
+    )
+    from app.services.cadquery_service import execute_cadquery_script
+    return execute_cadquery_script(cq_script, project_id, component_name, version)
+
+
+def _generate_component(
+    project_id: str,
+    comp: dict,
+    version: int,
+    index: int,
+) -> dict:
+    """Generate one assembly sub-component. Called from a ThreadPoolExecutor."""
+    name = comp.get("name", f"component_{index}")
+    engine = comp.get("engine", "zoo")
+    prompt = comp.get("prompt", name)
+    description = comp.get("description", prompt)
+
+    log.info("Generating component '%s' via %s project=%s", name, engine, project_id)
+    try:
+        if engine == "cadquery":
+            result = _generate_single_cadquery(project_id, name, description, version)
+        else:
+            result = _generate_single_zoo(project_id, prompt, version)
+        result["name"] = name
+        result["engine_used"] = result.get("engine", engine)
+        return result
+    except Exception as exc:
+        log.error("Component '%s' generation failed: %s", name, exc)
+        return {"name": name, "gltf_url": None, "step_url": None, "engine_used": engine}
+
+
+# ── Main Celery task ──────────────────────────────────────────────────────────
+
 @celery_app.task(name="app.tasks.generate_fixture.generate_fixture_task", bind=True, max_retries=1)
 def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     log.info("generate_fixture project=%s", project_id)
@@ -57,7 +108,6 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     printer = proj.get("printer_profile_json") or {}
     template_id = proj.get("template_id") or "generic_fixture"
 
-    # Part features
     geom_res = (
         sb.table("part_geometries")
         .select("features_json")
@@ -70,12 +120,41 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
     if geom_res.data:
         features = geom_res.data[0].get("features_json") or {}
 
-    # Touchpoints
     tp_res = sb.table("touchpoints").select("*").eq("project_id", project_id).execute()
     touchpoints = tp_res.data or []
 
-    # ── KCL generation ─────────────────────────────────────────────────────────
-    _publish(project_id, {"status": "generating", "message": "Generating KCL code…", "progress": 0.25})
+    prompt_text = (user_prompt or "").strip() or f"Generate a {template_id.replace('_', ' ')} fixture"
+
+    # ── AI decomposition ───────────────────────────────────────────────────────
+    _publish(project_id, {"status": "analyzing", "message": "Analyzing design complexity…", "progress": 0.10})
+
+    decomposition = _run_async(gemini.decompose_prompt(prompt_text))
+    is_assembly = decomposition.get("type") == "assembly"
+    components = decomposition.get("components", [])
+
+    if is_assembly and components:
+        names = ", ".join(c.get("name", "?") for c in components)
+        _publish(project_id, {
+            "status": "decomposing",
+            "message": f"Breaking into {len(components)} sub-components: {names}…",
+            "progress": 0.15,
+            "decomposition": {"type": "assembly", "components": [
+                {"name": c.get("name"), "engine": c.get("engine", "zoo")} for c in components
+            ]},
+        })
+        log.info("Assembly decomposition: %d components — %s", len(components), names)
+    else:
+        # Simple — use Gemini-enhanced prompt or original
+        prompt_text = decomposition.get("prompt", prompt_text)
+        engine_hint = decomposition.get("engine", "zoo")
+        _publish(project_id, {
+            "status": "generating",
+            "message": f"Generating geometry via {'CadQuery' if engine_hint == 'cadquery' else 'Zoo.dev'}…",
+            "progress": 0.20,
+        })
+
+    # ── KCL generation (for parametric node graph) ─────────────────────────────
+    _publish(project_id, {"status": "generating", "message": "Generating parametric model…", "progress": 0.25})
 
     kcl = _run_async(gemini.generate_kcl(
         part_features=features,
@@ -83,31 +162,39 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         environment=env,
         printer_profile=printer,
         template_id=template_id,
-        user_prompt=user_prompt or f"Generate a {template_id} fixture",
+        user_prompt=prompt_text,
     ))
 
-    # ── Zoo.dev text-to-CAD: generate GLTF + compilable KCL ───────────────────
-    _publish(project_id, {"status": "compiling", "message": "Generating 3D geometry via Zoo.dev…", "progress": 0.50})
-
-    from app.services.zoo_service import text_to_cad_gltf
+    # ── Geometry generation ────────────────────────────────────────────────────
     version = _next_version(sb, project_id)
-
-    # Use the original user prompt (or a summary extracted from the Gemini KCL
-    # if the prompt is missing) so Zoo.dev gets clear fixture design intent.
-    zoo_prompt = (user_prompt or "").strip()
-    if not zoo_prompt:
-        zoo_prompt = f"Generate a {template_id.replace('_', ' ')} fixture"
-
-    zoo_result = _run_async(text_to_cad_gltf(project_id, zoo_prompt, version))
-    gltf_url  = zoo_result.get("gltf_url")
-    zoo_kcl   = zoo_result.get("kcl")
-
-    # Prefer Zoo.dev's compilable KCL over Gemini's (which may have syntax issues).
-    # Fall back to Gemini KCL if Zoo.dev didn't return one.
-    stored_kcl = zoo_kcl or kcl
-
-    # Save fixture geometry record
     fixture_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if is_assembly and components:
+        # ── ASSEMBLY PATH ──────────────────────────────────────────────────────
+        gltf_url, zoo_kcl, assembly_records = _generate_assembly(
+            project_id, components, version, fixture_id, sb, kcl
+        )
+        stored_kcl = zoo_kcl or kcl
+    else:
+        # ── SINGLE-COMPONENT PATH ──────────────────────────────────────────────
+        _publish(project_id, {"status": "compiling", "message": "Generating 3D geometry…", "progress": 0.50})
+
+        engine_hint = decomposition.get("engine", "zoo")
+        if engine_hint == "cadquery":
+            description = decomposition.get("prompt", prompt_text)
+            result = _generate_single_cadquery(project_id, "fixture", description, version)
+            gltf_url = result.get("gltf_url")
+            zoo_kcl = None
+        else:
+            result = _generate_single_zoo(project_id, prompt_text, version)
+            gltf_url = result.get("gltf_url")
+            zoo_kcl = result.get("kcl")
+
+        stored_kcl = zoo_kcl or kcl
+        assembly_records = []
+
+    # ── Save fixture geometry ──────────────────────────────────────────────────
     sb.table("fixture_geometries").insert({
         "id": fixture_id,
         "project_id": project_id,
@@ -115,11 +202,11 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         "kcl": stored_kcl,
         "gltf_url": gltf_url,
         "generation_prompt": user_prompt,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso,
     }).execute()
 
     # ── Node graph ─────────────────────────────────────────────────────────────
-    _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.70})
+    _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.80})
 
     node_graph = _run_async(gemini.generate_node_graph(
         part_features=features,
@@ -129,17 +216,16 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         template_id=template_id,
     ))
 
-    graph_id = str(uuid.uuid4())
     sb.table("node_graphs").insert({
-        "id": graph_id,
+        "id": str(uuid.uuid4()),
         "project_id": project_id,
         "nodes_json": node_graph.get("nodes", []),
         "connections_json": node_graph.get("connections", []),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now_iso,
     }).execute()
 
     # ── Validation ─────────────────────────────────────────────────────────────
-    _publish(project_id, {"status": "validating", "message": "Running DFM validation…", "progress": 0.85})
+    _publish(project_id, {"status": "validating", "message": "Running DFM validation…", "progress": 0.90})
 
     all_results = validate_all(
         features=features,
@@ -148,9 +234,8 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
         project=proj,
     )
 
-    now = datetime.now(timezone.utc).isoformat()
     for method, issues in all_results.items():
-        errors   = sum(1 for i in issues if i["severity"] == "error")
+        errors = sum(1 for i in issues if i["severity"] == "error")
         warnings = sum(1 for i in issues if i["severity"] == "warning")
         sb.table("validation_results").insert({
             "id": str(uuid.uuid4()),
@@ -159,34 +244,122 @@ def generate_fixture_task(self, project_id: str, user_prompt: str | None):
             "issues_json": issues,
             "error_count": errors,
             "warning_count": warnings,
-            "ran_at": now,
+            "ran_at": now_iso,
         }).execute()
 
     # ── Done ───────────────────────────────────────────────────────────────────
+    done_msg = (
+        f"Assembly ready! {len(assembly_records)} components generated."
+        if assembly_records else "Fixture ready!"
+    )
     _publish(project_id, {
         "status": "done",
-        "message": "Fixture ready!",
+        "message": done_msg,
         "progress": 1.0,
         "fixture_id": fixture_id,
         "gltf_url": gltf_url,
+        "is_assembly": bool(assembly_records),
+        "assembly_component_count": len(assembly_records),
     })
 
-    # Trigger proactive analysis asynchronously (best effort)
     try:
         from app.tasks.proactive_analysis import proactive_analysis_task
         proactive_analysis_task.apply_async(args=[project_id], queue="low", countdown=5)
     except Exception as e:
         log.warning("Failed to queue proactive_analysis_task: %s", e)
 
-    log.info("generate_fixture done project=%s fixture=%s", project_id, fixture_id)
+    log.info("generate_fixture done project=%s fixture=%s components=%d",
+             project_id, fixture_id, len(assembly_records))
     return {"fixture_id": fixture_id, "gltf_url": gltf_url}
 
+
+def _generate_assembly(
+    project_id: str,
+    components: list[dict],
+    version: int,
+    fixture_id: str,
+    sb,
+    fallback_kcl: str,
+) -> tuple[str | None, str | None, list[dict]]:
+    """
+    Generate all sub-components in parallel and insert assembly_components records.
+    Returns (primary_gltf_url, zoo_kcl, assembly_records).
+    """
+    results: dict[str, dict] = {}
+    total = len(components)
+
+    with ThreadPoolExecutor(max_workers=min(total, 4)) as executor:
+        future_to_comp = {
+            executor.submit(_generate_component, project_id, comp, version, i): comp
+            for i, comp in enumerate(components)
+        }
+        done_count = 0
+        for future in as_completed(future_to_comp):
+            comp = future_to_comp[future]
+            name = comp.get("name", "component")
+            try:
+                result = future.result()
+            except Exception as exc:
+                log.error("Component '%s' future raised: %s", name, exc)
+                result = {"name": name, "gltf_url": None, "step_url": None}
+            results[name] = result
+            done_count += 1
+            _publish(project_id, {
+                "status": "generating",
+                "message": f"Generated {name} ({done_count}/{total})…",
+                "progress": 0.15 + 0.60 * done_count / total,
+            })
+
+    # Save assembly_components and collect records
+    assembly_records = []
+    primary_gltf_url = None
+    zoo_kcl = None
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for i, comp in enumerate(components):
+        name = comp.get("name", f"component_{i}")
+        result = results.get(name, {})
+        gltf_url = result.get("gltf_url")
+        comp_type = comp.get("component_type", "custom")
+
+        if i == 0:
+            primary_gltf_url = gltf_url
+
+        comp_id = str(uuid.uuid4())
+        try:
+            sb.table("assembly_components").insert({
+                "id": comp_id,
+                "fixture_id": fixture_id,
+                "project_id": project_id,
+                "name": name,
+                "component_type": comp_type,
+                "description": comp.get("description", name),
+                "gltf_url": gltf_url,
+                "position_json": None,
+                "rotation_json": None,
+                "material": "6061-T6 aluminum",
+                "created_at": now_iso,
+            }).execute()
+        except Exception as e:
+            log.error("Failed to insert assembly_component '%s': %s", name, e)
+
+        assembly_records.append({
+            "id": comp_id,
+            "name": name,
+            "component_type": comp_type,
+            "gltf_url": gltf_url,
+            "engine": result.get("engine_used", comp.get("engine", "zoo")),
+        })
+
+    return primary_gltf_url, zoo_kcl, assembly_records
+
+
+# ── Supporting tasks ──────────────────────────────────────────────────────────
 
 @celery_app.task(name="app.tasks.generate_fixture.regenerate_subgraph", bind=True)
 def regenerate_subgraph(self, project_id: str, node_id: str):
     """Re-run only the downstream sub-graph from a changed node."""
     log.info("regenerate_subgraph project=%s node=%s", project_id, node_id)
-    # For now: re-run full generation (sub-graph routing is a future optimisation)
     generate_fixture_task.apply_async(args=[project_id, f"Update node {node_id}"], queue="normal")
     return {"status": "queued"}
 

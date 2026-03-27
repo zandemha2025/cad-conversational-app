@@ -19,6 +19,13 @@ RUN grep -v 'pythonocc-core' requirements.txt | pip install --no-cache-dir -r /d
 RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
     || echo "WARN: pythonocc-core wheel not found — OCCT features will use stub fallbacks"
 
+# CadQuery: local Python CAD kernel for precise parametric parts.
+# Requires Python ≤3.11 for official pre-built wheels; on 3.12 try cadquery-ocp.
+# cadquery_service falls back to Zoo.dev automatically if import fails.
+RUN pip install --no-cache-dir cadquery==2.4.0 \
+    || pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0 \
+    || echo "WARN: cadquery not available — CadQuery engine will fall back to Zoo.dev"
+
 # Copy source
 COPY . .
 

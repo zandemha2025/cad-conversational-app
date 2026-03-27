@@ -226,6 +226,15 @@ export async function fetchFixtureGeometry(projectId: string, version?: number) 
   return apiFetch(`/projects/${projectId}/geometry/fixture${qs}`);
 }
 
+export async function fetchAssemblyComponents(projectId: string) {
+  return apiFetch<{
+    fixture_id: string | null;
+    fixture_version: number | null;
+    components: import('../store/workspaceStore').AssemblyComponent[];
+    total: number;
+  }>(`/projects/${projectId}/assembly`);
+}
+
 /**
  * Fetch a GLB/GLTF binary from a backend proxy URL (which requires auth) and return a
  * blob: URL that Three.js / useGLTF can load without needing auth headers.

@@ -34,7 +34,7 @@ import { WorkspaceProvider, useWorkspace } from '../store/workspaceStore';
 import { useFixtureGeometry } from '../hooks/useFixtureGeometry';
 import { useRealtimeProject } from '../hooks/useRealtimeProject';
 import { useAuth } from '../hooks/useAuth';
-import { fetchTouchpoints, fetchProject } from '../lib/api';
+import { fetchTouchpoints, fetchProject, fetchAssemblyComponents } from '../lib/api';
 import type { ApiTouchpoint } from '../lib/api';
 import {
   PanelLeftClose, PanelRightClose, MessageSquare, TreePine, Package,
@@ -154,6 +154,14 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     onFixtureGenerated: () => {
       dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
       refetchGeometry();
+      // Fetch assembly components so Viewport3D can render all sub-parts
+      if (projectId) {
+        fetchAssemblyComponents(projectId).then((data) => {
+          if (data && Array.isArray(data.components) && data.components.length > 0) {
+            dispatch({ type: 'SET_ASSEMBLY_COMPONENTS', components: data.components });
+          }
+        }).catch(() => {});
+      }
     },
     onPresenceChange: (users) => setViewers(users),
     onCommentChange: () => {

@@ -367,14 +367,25 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
       {resolvedGltfUrl && (
         <div className="absolute top-3 left-3 bg-cadsurface-900/80 border border-cadsurface-700 rounded-lg px-3 py-2 backdrop-blur-sm z-10">
           <div className="flex items-center gap-2">
-            <p className="text-xs font-medium text-slate-200">Fixture Model</p>
+            <p className="text-xs font-medium text-slate-200">
+              {state.assemblyComponents.length > 1 ? 'Assembly' : 'Fixture Model'}
+            </p>
             <span className="text-xs bg-emerald-900/40 border border-emerald-700/40 text-emerald-400 px-1.5 py-0.5 rounded">
               Live
             </span>
+            {state.assemblyComponents.length > 1 && (
+              <span className="text-xs bg-indigo-900/40 border border-indigo-700/40 text-indigo-300 px-1.5 py-0.5 rounded">
+                {state.assemblyComponents.length} parts
+              </span>
+            )}
           </div>
-          {features && (
+          {state.assemblyComponents.length > 1 ? (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {state.assemblyComponents.map(c => c.name.replace(/_/g, ' ')).join(' · ')}
+            </p>
+          ) : features ? (
             <p className="text-xs text-slate-500 mt-0.5">{features.face_count} faces · {features.hole_count} holes · {Math.round(features.volume_mm3 / 1000)} cm³</p>
-          )}
+          ) : null}
         </div>
       )}
 
