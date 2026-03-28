@@ -10,6 +10,7 @@ from app.api.deps import get_current_user_id
 from app.core.storage import upload_step_file
 from app.core.config import settings
 from app.core.database import get_supabase_client
+import threading
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -59,11 +60,23 @@ async def upload_step(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }).execute()
 
-    # ── Queue OCCT job ────────────────────────────────────────────────────────
-    from app.tasks.process_step import process_step_upload
-    job = process_step_upload.apply_async(
-        args=[geometry_id, project_id, step_url],
-        queue="normal",
-    )
-
-    return {"job_id": job.id, "geometry_id": geometry_id, "status": "queued"}
+    # ── Queue OCCT job (with sync fallback when Celery is unavailable) ───────
+    from app.tasks.process_step import process_step_upload, process_step_sync
+    try:
+        job = process_step_upload.apply_async(
+            args=[geometry_id, project_id, step_url],
+            queue="normal",
+        )
+        return {"job_id": job.id, "geometry_id": geometry_id, "status": "queued"}
+    except Exception as exc:
+        log.warning(
+            "Celery unavailable (%s) — processing STEP synchronously for project=%s",
+            exc, project_id,
+        )
+        t = threading.Thread(
+            target=process_step_sync,
+            args=(geometry_id, project_id, step_url),
+            daemon=True,
+        )
+        t.start()
+        return {"job_id": None, "geometry_id": geometry_id, "status": "processing"}

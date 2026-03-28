@@ -91,30 +91,9 @@ async def _run_generation_inline(
         if not is_assembly:
             prompt_text = decomposition.get("prompt", prompt_text)
 
-        # ── 3. Generate KCL ──────────────────────────────────────────────────
-        await _ws_send_safe(ws, {
-            "type": "generation_progress", "progress": 0.25,
-            "message": "Generating parametric model…", "job_id": job_id,
-        })
-
-        kcl = await gemini.generate_kcl(
-            part_features=features,
-            touchpoints=touchpoints,
-            environment=env,
-            printer_profile=printer,
-            template_id=template_id,
-            user_prompt=prompt_text,
-        )
-
-        # ── 4. Generate 3D geometry ──────────────────────────────────────────
-        # PRIMARY: CadQuery (Open CASCADE) for precise parametric fixtures
-        # FALLBACK: Zoo.dev text-to-cad AI
-        await _ws_send_safe(ws, {
-            "type": "generation_progress", "progress": 0.40,
-            "message": "Generating precise fixture geometry via CadQuery…", "job_id": job_id,
-        })
-
-        # Determine next version
+        # ── 3. Determine version and pre-insert fixture record ───────────────
+        # Pre-insert with gltf_url=None so GET /geometry/fixture always finds
+        # a row even if generation fails partway through.
         ver_res = (
             sb.table("fixture_geometries")
             .select("version")
@@ -125,6 +104,42 @@ async def _run_generation_inline(
         )
         version = (ver_res.data[0]["version"] + 1) if ver_res.data else 1
         fixture_id = str(uuid.uuid4())
+
+        await _ws_send_safe(ws, {
+            "type": "generation_progress", "progress": 0.25,
+            "message": "Generating parametric model…", "job_id": job_id,
+        })
+
+        try:
+            kcl = await gemini.generate_kcl(
+                part_features=features,
+                touchpoints=touchpoints,
+                environment=env,
+                printer_profile=printer,
+                template_id=template_id,
+                user_prompt=prompt_text,
+            )
+        except Exception as kcl_exc:
+            log.warning("generate_kcl failed project=%s: %s — using empty KCL", project_id, kcl_exc)
+            kcl = ""
+
+        sb.table("fixture_geometries").insert({
+            "id": fixture_id,
+            "project_id": project_id,
+            "version": version,
+            "kcl": kcl,
+            "gltf_url": None,
+            "generation_prompt": user_prompt,
+            "generated_at": now_iso,
+        }).execute()
+
+        # ── 4. Generate 3D geometry ──────────────────────────────────────────
+        # PRIMARY: CadQuery (Open CASCADE) for precise parametric fixtures
+        # FALLBACK: Zoo.dev text-to-cad AI
+        await _ws_send_safe(ws, {
+            "type": "generation_progress", "progress": 0.40,
+            "message": "Generating precise fixture geometry via CadQuery…", "job_id": job_id,
+        })
 
         generation_errors: list[str] = []
         gltf_url = None
@@ -191,16 +206,11 @@ async def _run_generation_inline(
 
         stored_kcl = zoo_kcl or kcl
 
-        # Insert fixture record AFTER generation (so we don't overwrite old model with null gltf_url)
-        sb.table("fixture_geometries").insert({
-            "id": fixture_id,
-            "project_id": project_id,
-            "version": version,
-            "kcl": stored_kcl,
+        # Update the pre-inserted fixture record with final geometry
+        sb.table("fixture_geometries").update({
             "gltf_url": gltf_url,
-            "generation_prompt": user_prompt,
-            "generated_at": now_iso,
-        }).execute()
+            "kcl": stored_kcl,
+        }).eq("id", fixture_id).execute()
 
         # ── 5. Node graph ────────────────────────────────────────────────────
         await _ws_send_safe(ws, {

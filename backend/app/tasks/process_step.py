@@ -94,6 +94,65 @@ def process_step_upload(self, geometry_id: str, project_id: str, step_url: str):
         raise self.retry(exc=exc, countdown=5)
 
 
+def process_step_sync(geometry_id: str, project_id: str, step_url: str) -> None:
+    """
+    Run STEP processing synchronously (no Celery context).
+    Used as a fallback when the Celery broker is unavailable.
+    """
+    log.info("Sync STEP processing geometry_id=%s project=%s", geometry_id, project_id)
+    sb = get_supabase_client()
+    sb.table(PART_GEOMETRIES_TABLE).update({"processing_status": "processing"}).eq("id", geometry_id).execute()
+
+    try:
+        resp = httpx.get(step_url, timeout=30)
+        resp.raise_for_status()
+        step_bytes = resp.content
+
+        gltf_url = None
+        glb_bytes = convert_file_format_sync(step_bytes, "step", "glb", project_id=project_id)
+        if glb_bytes:
+            gltf_url = upload_gltf(project_id, f"{project_id}/part_{geometry_id[:8]}.glb", glb_bytes)
+            log.info("Sync Zoo.dev STEP→GLB OK geometry_id=%s", geometry_id)
+
+        features = None
+        try:
+            from app.services.occt_service import parse_step_file
+            features = parse_step_file(step_bytes)
+        except Exception as e:
+            log.debug("OCCT feature extraction unavailable: %s", e)
+
+        if not gltf_url:
+            try:
+                from app.services.occt_service import convert_step_to_gltf
+                occt_bytes = convert_step_to_gltf(step_bytes)
+                if occt_bytes:
+                    gltf_url = upload_gltf(
+                        project_id, f"{project_id}/part_{geometry_id[:8]}.gltf", occt_bytes
+                    )
+                    log.info("Sync OCCT STEP→GLB fallback OK geometry_id=%s", geometry_id)
+            except Exception as e:
+                log.warning("Sync OCCT fallback also failed geometry_id=%s: %s", geometry_id, e)
+
+        status = "ready" if gltf_url else "error"
+        sb.table(PART_GEOMETRIES_TABLE).update({
+            "features_json": features,
+            "gltf_url": gltf_url,
+            "processing_status": status,
+        }).eq("id", geometry_id).execute()
+
+        _publish_event(project_id, {
+            "type": "geometry_ready" if gltf_url else "error",
+            "geometry_id": geometry_id,
+            "gltf_url": gltf_url,
+        })
+        log.info("Sync STEP processing done geometry_id=%s status=%s", geometry_id, status)
+
+    except Exception as exc:
+        log.exception("Sync STEP processing failed geometry_id=%s: %s", geometry_id, exc)
+        sb.table(PART_GEOMETRIES_TABLE).update({"processing_status": "error"}).eq("id", geometry_id).execute()
+        _publish_event(project_id, {"type": "error", "detail": "STEP processing failed"})
+
+
 def _publish_event(project_id: str, data: dict):
     try:
         import redis
