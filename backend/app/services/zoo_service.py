@@ -407,7 +407,7 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
                     log.warning("Zoo.dev attempt %d: no GLB from outputs project=%s", attempt + 1, project_id)
                     continue  # retry
 
-                filename = f"{project_id}/fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
+                filename = f"fixture_v{version}_{uuid.uuid4().hex[:8]}.glb"
                 gltf_url = upload_gltf(project_id, filename, glb_bytes)
                 log.info("Zoo.dev text-to-cad OK → %s project=%s (attempt %d)", gltf_url, project_id, attempt + 1)
                 return {"gltf_url": gltf_url, "kcl": kcl_code, "is_stub": False, "error": None}
@@ -443,7 +443,7 @@ def _upload_stub(project_id: str, version: int) -> str | None:
     log.warning("Falling back to stub GLB for project=%s", project_id)
     try:
         stub_bytes = _generate_stub_glb()
-        filename   = f"{project_id}/fixture_v{version}_stub_{uuid.uuid4().hex[:8]}.glb"
+        filename   = f"fixture_v{version}_stub_{uuid.uuid4().hex[:8]}.glb"
         url = upload_gltf(project_id, filename, stub_bytes)
         log.info("Stub GLB uploaded → %s", url)
         return url

@@ -56,7 +56,11 @@ async def _run_generation_inline(
             "message": "Assembling context…", "job_id": job_id,
         })
 
-        proj = sb.table("projects").select("*").eq("id", project_id).single().execute().data or {}
+        try:
+            proj = sb.table("projects").select("*").eq("id", project_id).single().execute().data or {}
+        except Exception as e:
+            log.warning("Could not fetch project %s: %s — using empty context", project_id, e)
+            proj = {}
         env = proj.get("environment_json") or {}
         printer = proj.get("printer_profile_json") or {}
         template_id = proj.get("template_id") or "generic_fixture"
@@ -123,7 +127,7 @@ async def _run_generation_inline(
             log.warning("generate_kcl failed project=%s: %s — using empty KCL", project_id, kcl_exc)
             kcl = ""
 
-        sb.table("fixture_geometries").insert({
+        result = sb.table("fixture_geometries").insert({
             "id": fixture_id,
             "project_id": project_id,
             "version": version,
@@ -132,6 +136,9 @@ async def _run_generation_inline(
             "generation_prompt": user_prompt,
             "generated_at": now_iso,
         }).execute()
+        if hasattr(result, 'error') and result.error:
+            log.error("Failed to insert fixture_geometries: %s", result.error)
+            raise Exception(f"DB insert failed: {result.error}")
 
         # ── 4. Generate 3D geometry ──────────────────────────────────────────
         # PRIMARY: CadQuery (Open CASCADE) for precise parametric fixtures
