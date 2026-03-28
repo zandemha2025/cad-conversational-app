@@ -12,28 +12,46 @@ BACKEND_URL = "https://scalecad-api.fly.dev"
 
 
 def _proxy_url_for_r2(url: str | None, proxy_path: str) -> str | None:
-    """Replace a private R2 URL with a backend proxy URL to avoid browser CORS issues."""
-    if not url or "r2.cloudflarestorage.com" not in url:
-        return url
+    """
+    Replace ANY stored R2/GLB URL with a backend proxy URL.
+    The frontend must always fetch GLBs through the backend proxy because:
+      - R2 URLs may not be publicly accessible (CORS, missing custom domain)
+      - The proxy adds auth-aware presigned URL generation
+      - files.scalecad.app may not be configured as a CNAME
+    """
+    if not url:
+        return None
+    # Always proxy GLB/GLTF URLs through the backend
     return f"{BACKEND_URL}/api{proxy_path}"
 
 
 def _get_presigned_url(url: str | None) -> str | None:
-    """Generate a presigned URL for a private R2 object URL."""
-    if not url or "r2.cloudflarestorage.com" not in url:
-        return url
+    """Generate a presigned URL for an R2 object URL (any format)."""
+    if not url:
+        return None
     if "X-Amz-Signature" in url:
-        return url
+        return url  # already signed
     try:
         from app.core.config import settings
         from app.core.storage import get_signed_download_url
-        endpoint_prefix = f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/"
-        key = url.removeprefix(endpoint_prefix)
-        bucket_prefix = f"{settings.R2_BUCKET}/"
-        if key.startswith(bucket_prefix):
-            key = key[len(bucket_prefix):]
+        # Extract the R2 object key from various URL formats:
+        # - https://<account>.r2.cloudflarestorage.com/<bucket>/<key>
+        # - https://files.scalecad.app/<key>  (R2_PUBLIC_URL)
+        # - https://pub-xxx.r2.dev/<key>
+        key = url
+        # Strip known prefixes
+        for prefix in [
+            f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/{settings.R2_BUCKET}/",
+            f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/",
+            f"{settings.R2_PUBLIC_URL}/",
+        ]:
+            if key.startswith(prefix):
+                key = key[len(prefix):]
+                break
         return get_signed_download_url(key, expires_in=3600)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("presigned URL generation failed for %s: %s", url, e)
         return url
 
 

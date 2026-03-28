@@ -31,6 +31,8 @@ kill_timeout = 30
 #   DATABASE_URL
 #   GEMINI_API_KEY
 #   ZOO_API_KEY
+#   ZOO_PROXY_URL          (REQUIRED — Fly.io IPs blocked by Cloudflare/Zoo.dev)
+#   ZOO_PROXY_KEY          (shared secret for x-proxy-key header)
 #   R2_ACCOUNT_ID
 #   R2_ACCESS_KEY
 #   R2_SECRET_KEY

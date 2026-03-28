@@ -104,17 +104,17 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   }, [projectId]);
 
   // Load fixture geometry + part features
-  const { gltfUrl, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
+  const { gltfUrl, version: fixtureVersion, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
 
-  // Track the gltfUrl we had when generation started, so we detect NEW models (not existing ones)
-  const gltfUrlWhenGenerationStarted = useRef<string | null>(null);
+  // Track the fixture VERSION when generation started (not blob URL — blob URLs change every refetch)
+  const versionWhenGenerationStarted = useRef<number | null>(null);
   const generationStartTime = useRef<number>(0);
   const GENERATION_TIMEOUT = 5 * 60 * 1000; // 5 minutes max wait
 
-  // Capture the current gltfUrl when generation starts
+  // Capture the current version when generation starts
   useEffect(() => {
     if (isGenerating) {
-      gltfUrlWhenGenerationStarted.current = gltfUrl;
+      versionWhenGenerationStarted.current = fixtureVersion;
       generationStartTime.current = Date.now();
     }
   }, [isGenerating]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -122,8 +122,9 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
   useEffect(() => {
     if (!isGenerating) return;
-    // If we already have a NEW gltfUrl (different from when we started), stop
-    if (gltfUrl && gltfUrl !== gltfUrlWhenGenerationStarted.current) return;
+    // If we already have a NEW version (higher than when we started), stop
+    if (fixtureVersion !== null && versionWhenGenerationStarted.current !== null
+        && fixtureVersion > versionWhenGenerationStarted.current) return;
 
     const id = setInterval(() => {
       // Timeout: stop polling after 5 minutes
@@ -134,14 +135,15 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
       refetchGeometry();
     }, 5000);
     return () => clearInterval(id);
-  }, [isGenerating, gltfUrl, refetchGeometry]);
+  }, [isGenerating, fixtureVersion, refetchGeometry]);
 
-  // Stop polling once we get a NEW gltfUrl (different from what we had before generation)
+  // Stop polling once we get a NEW version (higher than what we had before generation)
   useEffect(() => {
-    if (isGenerating && gltfUrl && gltfUrl !== gltfUrlWhenGenerationStarted.current) {
+    if (isGenerating && fixtureVersion !== null && versionWhenGenerationStarted.current !== null
+        && fixtureVersion > versionWhenGenerationStarted.current) {
       setIsGenerating(false);
     }
-  }, [isGenerating, gltfUrl]);
+  }, [isGenerating, fixtureVersion]);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {

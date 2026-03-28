@@ -331,7 +331,7 @@ async def _try_text_to_cad_once(client: httpx.AsyncClient, prompt: str, project_
     return await _poll_text_to_cad(client, op_id)
 
 
-def _extract_glb(outputs: dict, op_id: str) -> bytes | None:
+async def _extract_glb(outputs: dict, op_id: str) -> bytes | None:
     """
     Try to get GLB bytes from Zoo.dev outputs dict.
     Tries source.gltf → GLB (pure Python), then source.step → GLB (API conversion).
@@ -352,17 +352,10 @@ def _extract_glb(outputs: dict, op_id: str) -> bytes | None:
         if step_b64:
             step_bytes = _safe_b64decode(step_b64)
             if step_bytes:
-                # Run the async conversion in a new event loop for sync callers,
-                # or use the existing one if available
                 try:
-                    loop = asyncio.get_running_loop()
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        glb_bytes = loop.run_until_complete(
-                            convert_file_format(step_bytes, "step", "glb", "")
-                        )
-                except RuntimeError:
-                    glb_bytes = asyncio.run(convert_file_format(step_bytes, "step", "glb", ""))
+                    glb_bytes = await convert_file_format(step_bytes, "step", "glb", "")
+                    if glb_bytes:
+                        log.info("Zoo.dev step→glb (API) OK op=%s (%d bytes)", op_id, len(glb_bytes))
                 except Exception as e:
                     log.warning("STEP→GLB conversion failed op=%s: %s", op_id, e)
 
@@ -407,7 +400,7 @@ async def text_to_cad_gltf(project_id: str, prompt: str, version: int) -> dict:
                 kcl_code = data.get("code")
                 op_id = data.get("id", "?")
 
-                glb_bytes = _extract_glb(outputs, op_id)
+                glb_bytes = await _extract_glb(outputs, op_id)
 
                 if not glb_bytes:
                     last_err = f"Zoo.dev completed but produced no usable geometry (outputs: {list(outputs.keys())})"

@@ -198,7 +198,10 @@ async def validate_config():
     if not settings.R2_ACCESS_KEY:
         _log.warning("R2_ACCESS_KEY not set — file uploads will fail (no mock URLs)")
     if settings.ZOO_API_KEY and not settings.ZOO_PROXY_URL:
-        _log.warning("ZOO_PROXY_URL not set — Zoo.dev calls go direct (may be blocked on Fly.io)")
+        _log.error("ZOO_PROXY_URL not set — Zoo.dev calls will FAIL on Fly.io (IPs blocked by Cloudflare). "
+                   "Set ZOO_PROXY_URL to your Vercel zoo-proxy endpoint.")
+    if settings.ZOO_PROXY_URL:
+        _log.info("Zoo.dev proxy configured: %s", settings.ZOO_PROXY_URL)
 
     # Create collaboration tables if they don't exist yet
     from app.api.routes.collaboration import ensure_collab_tables
