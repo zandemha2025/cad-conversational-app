@@ -34,8 +34,10 @@ celery[redis]==5.4.0
 redis==5.2.1
 
 # Geometry & math
-# numpy<2.0: cadquery-ocp wheels are built against numpy 1.x ABI; 2.x breaks binary compat
-numpy>=1.22.4,<2.0
+# numpy: allow 2.x — cadquery-ocp 7.7.2 verified working with numpy 2.4.x (build step confirmed).
+# nlopt (cadquery dep) 2.10.0 requires numpy>=2, so <2.0 caused a downgrade that breaks nlopt.
+# The numpy.bool8 shim in cadquery_service.py handles the bool8 removal (numpy >=1.24).
+numpy>=2.0
 scipy>=1.15.0
 trimesh==4.5.3
 
