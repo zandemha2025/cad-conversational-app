@@ -153,6 +153,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     },
     onFixtureGenerated: () => {
       dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
+      setIsGenerating(false);
       refetchGeometry();
     },
     onPresenceChange: (users) => setViewers(users),
@@ -347,7 +348,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
                 <ErrorBoundary label="Panel error">
-                  {leftPanel === 'chat'         && <ChatPanel projectId={projectId} projectName={projectName} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} fixtureLoaded={!!gltfUrl} />}
+                  {leftPanel === 'chat'         && <ChatPanel projectId={projectId} projectName={projectName} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} onGenerationComplete={() => { setIsGenerating(false); refetchGeometry(); }} fixtureLoaded={!!gltfUrl} />}
                   {leftPanel === 'tree'         && <FeatureTree />}
                   {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                   {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}

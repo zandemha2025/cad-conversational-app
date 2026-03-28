@@ -12,6 +12,7 @@ interface ChatPanelProps {
   projectId?: string;
   projectName?: string;
   onGenerationQueued?: () => void;
+  onGenerationComplete?: () => void;
   onComponentSuggestions?: (suggestions: import('../../lib/api').ComponentSuggestion[]) => void;
   fixtureLoaded?: boolean;
 }
@@ -21,12 +22,13 @@ interface ProactiveSuggestion {
   text: string;
 }
 
-export default function ChatPanel({ projectId, projectName, onGenerationQueued, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
+export default function ChatPanel({ projectId, projectName, onGenerationQueued, onGenerationComplete, onComponentSuggestions, fixtureLoaded }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const { messages, isThinking, isConnected, authFailed, activeGenJob, sendMessage, clearGenJob, componentSuggestions } = useChat({
     projectId,
     initialMessages: [],
     onGenerationQueued,
+    onGenerationComplete,
   });
 
   // Forward component suggestions to parent when they arrive
