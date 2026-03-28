@@ -36,10 +36,23 @@ async def generation_ws(websocket: WebSocket, project_id: str):
 
     await websocket.send_json({"type": "auth_ok"})
 
-    redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    pubsub = redis.pubsub()
-    channel = f"scalecad:gen:{project_id}"
-    await pubsub.subscribe(channel)
+    try:
+        redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        pubsub = redis.pubsub()
+        channel = f"scalecad:gen:{project_id}"
+        await pubsub.subscribe(channel)
+    except Exception as redis_exc:
+        log.warning("Redis unavailable for generation WS project=%s: %s", project_id, redis_exc)
+        try:
+            await websocket.send_json({
+                "status": "generating",
+                "message": "Generation started (real-time updates unavailable — check back in a moment).",
+                "progress": 0.05,
+            })
+        except Exception:
+            pass
+        await websocket.close(code=1000)
+        return
 
     try:
         async for message in pubsub.listen():
@@ -61,8 +74,11 @@ async def generation_ws(websocket: WebSocket, project_id: str):
         except Exception:
             pass
     finally:
-        await pubsub.unsubscribe(channel)
-        await redis.aclose()
+        try:
+            await pubsub.unsubscribe(channel)
+            await redis.aclose()
+        except Exception:
+            pass
 
 
 @router.get("/projects/{project_id}/generation/jobs/{job_id}")

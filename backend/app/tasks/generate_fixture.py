@@ -14,6 +14,7 @@ Flow:
 import asyncio
 import json
 import logging
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -499,14 +500,14 @@ def _generate_assembly(
 def regenerate_subgraph(self, project_id: str, node_id: str):
     """Re-run only the downstream sub-graph from a changed node."""
     log.info("regenerate_subgraph project=%s node=%s", project_id, node_id)
-    generate_fixture_task.apply_async(args=[project_id, f"Update node {node_id}"], queue="normal")
+    dispatch_generate_fixture(project_id, f"Update node {node_id}")
     return {"status": "queued"}
 
 
 @celery_app.task(name="app.tasks.generate_fixture.queue_initial_generation")
 def queue_initial_generation(project_id: str):
     """Triggered after project init if STEP already uploaded."""
-    generate_fixture_task.apply_async(args=[project_id, "Initial fixture generation"], queue="normal")
+    dispatch_generate_fixture(project_id, "Initial fixture generation")
 
 
 def _next_version(sb, project_id: str) -> int:
@@ -521,3 +522,38 @@ def _next_version(sb, project_id: str) -> int:
     if res.data:
         return res.data[0]["version"] + 1
     return 1
+
+
+# ── Synchronous fallback dispatcher ──────────────────────────────────────────
+
+def _run_sync_in_background(project_id: str, user_prompt: str | None) -> None:
+    """Run the full generation pipeline in a background thread (no Celery)."""
+    sb = get_supabase_client()
+    try:
+        _run_generation_pipeline(None, project_id, user_prompt, sb)
+    except Exception as exc:
+        log.exception("Sync fallback generation failed project=%s: %s", project_id, exc)
+
+
+def dispatch_generate_fixture(project_id: str, user_prompt: str | None) -> str | None:
+    """
+    Try to dispatch fixture generation via Celery; fall back to running it
+    synchronously in a daemon thread if Celery/Redis is unavailable.
+
+    Returns the Celery job ID string, or None when running synchronously.
+    """
+    try:
+        job = generate_fixture_task.apply_async(args=[project_id, user_prompt], queue="normal")
+        return job.id
+    except Exception as exc:
+        log.warning(
+            "Celery unavailable (%s) — running generate_fixture synchronously for project=%s",
+            exc, project_id,
+        )
+        t = threading.Thread(
+            target=_run_sync_in_background,
+            args=(project_id, user_prompt),
+            daemon=True,
+        )
+        t.start()
+        return None

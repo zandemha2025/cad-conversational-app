@@ -5,7 +5,9 @@ from app.core.config import settings
 celery_app = Celery(
     "scalecad",
     broker=settings.celery_broker,
-    backend=settings.celery_backend,
+    # No result backend — task results are not stored in Redis.
+    # This halves Redis usage; tasks are fire-and-forget via pub/sub.
+    backend=None,
     include=[
         "app.tasks.process_step",
         "app.tasks.generate_fixture",
@@ -28,6 +30,8 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Don't store task results — saves ~50% of Redis requests
+    task_ignore_result=True,
     task_routes={
         "app.tasks.process_step.*":       {"queue": "normal"},
         "app.tasks.generate_fixture.*":    {"queue": "normal"},
@@ -38,5 +42,5 @@ celery_app.conf.update(
         "app.tasks.generate_drawing.*":   {"queue": "low"},
     },
     task_default_queue="normal",
-    **(_ssl_opts and {"broker_use_ssl": _ssl_opts, "redis_backend_use_ssl": _ssl_opts} or {}),
+    **(_ssl_opts and {"broker_use_ssl": _ssl_opts} or {}),
 )

@@ -119,6 +119,6 @@ async def init_project(
     Called after the 4-step modal completes.
     Queues initial geometry jobs if a STEP file was already uploaded.
     """
-    from app.tasks.generate_fixture import queue_initial_generation
-    queue_initial_generation.delay(project_id)
+    from app.tasks.generate_fixture import dispatch_generate_fixture
+    dispatch_generate_fixture(project_id, "Initial fixture generation")
     return {"message": "Project initialisation queued", "project_id": project_id}

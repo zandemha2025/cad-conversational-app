@@ -84,8 +84,8 @@ async def create_study(
         "created_at": now,
     }).execute()
 
-    # Queue a Celery task for each variation
-    from app.tasks.generate_fixture import generate_fixture_task
+    # Queue a task for each variation (with sync fallback if Celery/Redis unavailable)
+    from app.tasks.generate_fixture import dispatch_generate_fixture
 
     strategies = VARIATION_STRATEGIES[: body.num_variations]
     variation_records = []
@@ -110,10 +110,7 @@ async def create_study(
             )
 
         variation_id = str(uuid.uuid4())
-        job = generate_fixture_task.apply_async(
-            args=[project_id, prompt],
-            queue="normal",
-        )
+        job_id = dispatch_generate_fixture(project_id, prompt)
 
         variation_records.append({
             "id": variation_id,
@@ -124,7 +121,7 @@ async def create_study(
             "prompt": prompt,
             "status": "pending",
             "fixture_id": None,
-            "job_id": job.id,
+            "job_id": job_id,
             "created_at": now,
         })
 

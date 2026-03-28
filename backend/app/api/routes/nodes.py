@@ -91,12 +91,15 @@ async def update_node(
     sb.table(TABLE).update({"nodes_json": nodes}).eq("id", graph_id).execute()
 
     # Queue sub-graph re-generation
-    from app.tasks.generate_fixture import regenerate_subgraph
-    job = regenerate_subgraph.apply_async(
-        args=[project_id, node_id],
-        queue="normal",
-    )
-    return {"job_id": job.id, "node_id": node_id, "status": "queued"}
+    import logging as _logging
+    from app.tasks.generate_fixture import regenerate_subgraph, dispatch_generate_fixture
+    try:
+        job = regenerate_subgraph.apply_async(args=[project_id, node_id], queue="normal")
+        return {"job_id": job.id, "node_id": node_id, "status": "queued"}
+    except Exception as exc:
+        _logging.getLogger(__name__).warning("Celery unavailable (%s), running sync", exc)
+        job_id = dispatch_generate_fixture(project_id, f"Update node {node_id}")
+        return {"job_id": job_id, "node_id": node_id, "status": "queued" if job_id else "running_sync"}
 
 
 @router.post("/{project_id}/nodes/regenerate")
@@ -105,6 +108,6 @@ async def regenerate_full_graph(
     user_id: str = Depends(get_current_user_id),
 ):
     """Re-generate the entire node graph from scratch via Gemini Pro."""
-    from app.tasks.generate_fixture import generate_fixture_task
-    job = generate_fixture_task.apply_async(args=[project_id, None], queue="normal")
-    return {"job_id": job.id, "status": "queued"}
+    from app.tasks.generate_fixture import dispatch_generate_fixture
+    job_id = dispatch_generate_fixture(project_id, None)
+    return {"job_id": job_id, "status": "queued" if job_id else "running_sync"}
