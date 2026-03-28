@@ -24,13 +24,39 @@ You are an expert CadQuery developer generating a COMPLETE manufacturing fixture
 
 ## RULES — follow these EXACTLY:
 
-1. `import cadquery as cq` at the top
+1. `import cadquery as cq` at the top — NO other imports
 2. Assign final shape to `result`
 3. Export: `cq.exporters.export(result, '/tmp/cq_output.step')`
 4. ALL dimensions in millimeters
 5. Return ONLY Python code — no markdown fences, no prose, no explanation outside comments
 6. Build ONE unified solid using CadQuery chaining and boolean operations (.cut(), .union())
 7. Include ALL features described below for the template type
+8. FEATURE ORDER MATTERS — build in this exact sequence:
+   a. Base plate (box)
+   b. ADDITIVE features first: datum pads, locating pin bosses, side clamp bosses
+   c. SUBTRACTIVE features last: holes, counterbores, slots, channels, chamfers
+   d. Edge chamfers go LAST (after all other operations)
+
+## CRITICAL CadQuery PATTERNS:
+
+### Selecting the right workplane after modifications:
+- After adding bosses/pads, `.faces('>Z')` selects the HIGHEST face (top of boss, not plate)
+- To always work on the original plate top face, use absolute workplane:
+  `cq.Workplane('XY').workplane(offset=plate_thick)` where plate_thick is the base plate thickness
+- For features on the base plate top face, ALWAYS use:
+  `result.faces('>Z').workplane(offset=-boss_height)` or explicit offset approach
+
+### Placing features at known XY positions:
+- `.pushPoints([(x,y), ...])` places features at absolute positions from workplane center
+- `.center(x, y)` shifts the workplane center — affects ALL subsequent operations
+- For multiple independent features, prefer `.pushPoints()` over chained `.center()` calls
+
+### Boolean operations for complex shapes:
+- Build separate solids and union/cut them:
+  `pad = cq.Workplane('XY').workplane(offset=plate_thick).pushPoints(pts).circle(r).extrude(h)`
+  `result = result.union(pad)`
+
+---
 
 ## FIXTURE DESIGN STANDARDS:
 
@@ -41,140 +67,227 @@ You are an expert CadQuery developer generating a COMPLETE manufacturing fixture
 - Material appearance: machined aluminum 6061-T6
 
 ### 3-2-1 Locating Principle (REQUIRED for all fixtures)
+These are RAISED features on the top face — they MUST be visually prominent:
+
 - Datum A (primary plane, 3 support pads):
-  - Three ⌀12mm cylindrical bosses, 3mm tall, on top face of base plate
-  - Placed in a triangle pattern: two along the long edge, one centered on the short edge
-  - Use .faces('>Z').workplane().pushPoints([(x1,y1),(x2,y2),(x3,y3)]).circle(6).extrude(3)
+  - Three ⌀16mm cylindrical bosses, 5mm tall, on top face of base plate
+  - Placed in a triangle pattern: two along the long edge (30mm from edges), one centered on opposite edge
+  - Build as a SEPARATE solid and union:
+    ```
+    pad_pts = [(x1,y1), (x2,y2), (x3,y3)]
+    pads = cq.Workplane('XY').workplane(offset=plate_thick).pushPoints(pad_pts).circle(8).extrude(5)
+    result = result.union(pads)
+    ```
+
 - Datum B (secondary, 2 locating pins):
-  - Two ⌀6mm cylindrical pins, 12mm tall, along the longest edge
-  - Use .faces('>Z').workplane().pushPoints([(x1,y1),(x2,y2)]).circle(3).extrude(12)
+  - Two pins along the longest edge: ⌀8mm cylindrical pins, 15mm tall
+  - One ROUND pin (tight location), one DIAMOND pin (allows thermal expansion)
+  - Build on TOP of the datum pads (offset = plate_thick + pad_height):
+    ```
+    pin_pts = [(x1,y1), (x2,y2)]
+    pins = cq.Workplane('XY').workplane(offset=plate_thick + 5).pushPoints(pin_pts).circle(4).extrude(15)
+    result = result.union(pins)
+    ```
+
 - Datum C (tertiary, 1 stop pin):
-  - One ⌀6mm pin, 12mm tall, on perpendicular edge
-  - Use .faces('>Z').workplane().center(x,y).circle(3).extrude(12)
+  - One ⌀8mm pin, 15mm tall, on perpendicular edge
+  - Same construction pattern as Datum B pins
 
 ### Template-Specific Features:
 
 #### drill_jig:
-- Drill bushing holes: counterbore seats on top face
-  - Through-hole: diameter from request (default ⌀8mm)
-  - Counterbore: 1.25× hole diameter, 8mm deep
-  - Use .faces('>Z').workplane().pushPoints([...]).cboreHole(holeDia, cboreDia, cboreDepth)
-  - Arrange in the grid pattern from the engineer's request
-- Toggle clamp slots: 2 slots, 12mm wide × 60mm long, on opposite long edges
-  - Use .faces('>Z').workplane().center(x,y).slot2D(60, 12).cutThruAll()
-- Mounting holes: 4× ⌀8mm through-holes at corners, on 28mm grid
-  - Use .faces('>Z').workplane().rect(spacingX, spacingY, forConstruction=True).vertices().hole(8)
+- Drill bushing holes: COUNTERBORED seats on top face — these are the most important visual feature
+  - Through-hole: diameter from request (default ⌀10mm)
+  - Counterbore: 2.0× hole diameter (e.g., ⌀20mm counterbore for ⌀10mm hole), 10mm deep
+  - MUST use .cboreHole() for each bushing position:
+    ```
+    result = (result.faces('>Z').workplane()
+        .pushPoints(bushing_pts)
+        .cboreHole(holeDia, cboreDia, cboreDepth, depth=plate_thick + 10))
+    ```
+  - Arrange in the pattern from the engineer's request (triangular, grid, linear, etc.)
+  - If triangular pattern at spacing S: [(0, S*0.577), (-S/2, -S*0.289), (S/2, -S*0.289)]
+
+- Toggle clamp slots: 2 slots on opposite edges, 14mm wide × 65mm long
+  - Cut through the full plate thickness
+  - Position 18mm from the long edges:
+    ```
+    result = (result.faces('>Z').workplane()
+        .center(0, plate_width/2 - 18)
+        .slot2D(65, 14).cutThruAll())
+    ```
+
+- Mounting holes: 4× ⌀9mm through-holes at corners, on 28mm Siegmund grid
+  - Position 28mm from each edge:
+    ```
+    mx = plate_length/2 - 28
+    my = plate_width/2 - 28
+    mount_pts = [(-mx,-my), (mx,-my), (-mx,my), (mx,my)]
+    result = (result.faces('>Z').workplane()
+        .pushPoints(mount_pts).hole(9))
+    ```
 
 #### weld_fixture:
 - Heavy base plate (20mm thick minimum)
-- V-block locators: two V-shaped channels cut into top face
-- Copper backing bar channel: 10mm wide × 5mm deep groove along weld line
-- Side clamp bosses: ⌀25mm, 20mm tall, on each side
+- V-block locators: two V-shaped channels cut into top face (90° included angle, 15mm deep)
+  - Use .pushPoints().rect(w,h,centered=True).cutBlind(-depth) then rotate wire
+- Copper backing bar channel: 12mm wide × 6mm deep groove along weld line
+  - Use .center(0, 0).rect(plate_length * 0.7, 12).cutBlind(-6)
+- Side clamp bosses: ⌀30mm, 25mm tall, on each long side
+  - Build as separate solid and union
+- 4× M10 mounting holes at corners
 
 #### vacuum_gripper:
-- Lightweight plate (8mm thick)
-- Vacuum cup mounting bosses: ⌀15mm, 5mm tall, with M5 central threaded hole
-- Air channel grooves: 3mm wide × 2mm deep connecting cups
-- Tool changer bolt pattern: 4× M6 on 50mm bolt circle
+- Lightweight plate (10mm thick)
+- Vacuum cup mounting bosses: ⌀20mm, 8mm tall, with ⌀5mm central through-hole
+  - Build bosses first, then cut holes through
+- Air channel grooves: 4mm wide × 3mm deep connecting all cups
+  - Use .rect(length, 4).cutBlind(-3) for straight channels
+- Tool changer bolt pattern: 4× ⌀7mm on 50mm bolt circle
+  - Use .polarArray(25, 0, 360, 4).hole(7)
 
 #### check_fixture:
-- Precision base plate (12mm thick, ground surface)
-- Nest pocket: contoured to part shape, 0.1mm clearance
-- Reference pins: ⌀4mm, 8mm tall, at datum locations
-- Clamping points: 2× quarter-turn clamps
+- Precision base plate (15mm thick, ground surface)
+- Nest pocket: contoured to part shape, 0.2mm clearance, 5mm deep
+  - Simplified as a rectangular pocket matching part bounding box
+- Reference pins: ⌀5mm, 10mm tall, at datum locations (build and union)
+- Clamping points: 2× slotted holes for quarter-turn clamps
+- Engraved datum labels (skip — too complex for CadQuery)
 
 #### gripper_jaw:
-- Jaw body (pair of matching halves)
-- Serrated grip surface (1mm pitch, 0.5mm deep)
-- Mounting bolt pattern for gripper body
-- Alignment dowel holes: 2× ⌀4mm
+- Jaw body from solid block
+- Serrated grip surface: series of parallel 1mm-pitch grooves, 0.5mm deep
+  - Use a loop: for i in range(n): result = result.faces('>Z').workplane().center(0, start + i*pitch).rect(jaw_width, 0.3).cutBlind(-0.5)
+- Mounting bolt pattern: 2× ⌀6mm through-holes
+- Alignment dowel holes: 2× ⌀4mm reamed holes (use .hole(4))
 
 #### assembly_fixture / locating_nest:
-- Nest pocket on top face matching part profile
+- Nest pocket on top face: rectangular pocket matching part profile + 0.15mm clearance
+  - Use .rect(part_w + 0.3, part_l + 0.3).cutBlind(-pocket_depth)
 - 3-2-1 pin layout sized to part datums
-- Spring-loaded ejector hole: ⌀10mm central bore
+- Spring-loaded ejector hole: ⌀12mm central bore, ⌀20mm counterbore 5mm deep on bottom face
+- Side clamp bosses for swing clamps
 
 ### Corner Treatment
-- Add 2mm chamfers on all vertical edges of the base plate if the template involves machined fixtures
-- Use: result = result.edges('|Z').chamfer(2)
+- Add 2mm chamfers on all vertical edges of the base plate
+- MUST be the LAST operation before export:
+  ```
+  result = result.edges('|Z').chamfer(2)
+  ```
+- If chamfer fails (common with complex geometry), wrap in try/except and skip:
+  ```
+  try:
+      result = result.edges('|Z').chamfer(2)
+  except:
+      pass  # skip chamfer if geometry is too complex
+  ```
 
 ---
 
-## EXAMPLE — Complete Drill Jig:
+## COMPLETE EXAMPLE — Drill Jig (follow this pattern closely):
 
 ```python
 import cadquery as cq
 
-# Parameters
-plate_length = 200  # mm
-plate_width = 150
-plate_thick = 15
-hole_dia = 8.0  # drill bushing bore
-cbore_dia = hole_dia * 1.25  # counterbore for bushing seat
-cbore_depth = 8.0
-grid_cols = 2
-grid_rows = 2
-grid_spacing_x = 50.0
-grid_spacing_y = 50.0
+# ── Parameters ──────────────────────────────────────────────
+plate_length = 240.0   # mm (200mm part + 2×20mm margin)
+plate_width  = 190.0   # mm (150mm part + 2×20mm margin)
+plate_thick  = 15.0    # mm
 
-# Bushing hole positions (centered on plate)
-bushing_pts = []
-for col in range(grid_cols):
-    for row in range(grid_rows):
-        x = (col - (grid_cols - 1) / 2) * grid_spacing_x
-        y = (row - (grid_rows - 1) / 2) * grid_spacing_y
-        bushing_pts.append((x, y))
+# Drill bushing parameters
+hole_dia    = 10.0     # through-hole for drill
+cbore_dia   = 20.0     # counterbore seat (2× hole dia)
+cbore_depth = 10.0     # counterbore depth
+spacing     = 60.0     # hole spacing from request
 
-# Base plate
+# Triangular pattern positions (centered on plate)
+bushing_pts = [
+    (0, spacing * 0.577),                    # top vertex
+    (-spacing / 2, -spacing * 0.289),        # bottom-left
+    ( spacing / 2, -spacing * 0.289),        # bottom-right
+]
+
+# 3-2-1 Datum pad positions
+pad_pts = [
+    (-plate_length/2 + 35, -plate_width/2 + 35),   # Datum A - pad 1
+    ( plate_length/2 - 35, -plate_width/2 + 35),   # Datum A - pad 2
+    (0, plate_width/2 - 35),                         # Datum A - pad 3
+]
+
+# Locating pin positions
+pin_b_pts = [
+    (-plate_length/4, -plate_width/2 + 25),   # Datum B - pin 1 (round)
+    ( plate_length/4, -plate_width/2 + 25),   # Datum B - pin 2 (diamond)
+]
+pin_c_pos = (-plate_length/2 + 25, 0)          # Datum C - stop pin
+
+# Mounting hole positions (28mm from edges, Siegmund grid)
+mx = plate_length/2 - 28
+my = plate_width/2 - 28
+mount_pts = [(-mx, -my), (mx, -my), (-mx, my), (mx, my)]
+
+# ── Step 1: Base plate ──────────────────────────────────────
 result = cq.Workplane('XY').box(plate_length, plate_width, plate_thick)
 
-# Drill bushing counterbore holes
+# ── Step 2: ADDITIVE — Datum A support pads (⌀16mm, 5mm tall) ──
+pads = (cq.Workplane('XY')
+    .workplane(offset=plate_thick / 2)
+    .pushPoints(pad_pts)
+    .circle(8).extrude(5))
+result = result.union(pads)
+
+# ── Step 3: ADDITIVE — Datum B locating pins (⌀8mm, 15mm tall) ──
+pins_b = (cq.Workplane('XY')
+    .workplane(offset=plate_thick / 2 + 5)
+    .pushPoints(pin_b_pts)
+    .circle(4).extrude(15))
+result = result.union(pins_b)
+
+# ── Step 4: ADDITIVE — Datum C stop pin (⌀8mm, 15mm tall) ──
+pin_c = (cq.Workplane('XY')
+    .workplane(offset=plate_thick / 2 + 5)
+    .center(pin_c_pos[0], pin_c_pos[1])
+    .circle(4).extrude(15))
+result = result.union(pin_c)
+
+# ── Step 5: SUBTRACTIVE — Drill bushing counterbore holes ──
 result = (result.faces('>Z').workplane()
     .pushPoints(bushing_pts)
     .cboreHole(hole_dia, cbore_dia, cbore_depth))
 
-# Corner mounting holes (28mm in from edges)
-mount_sx = plate_length - 56  # 28mm margin each side
-mount_sy = plate_width - 56
+# ── Step 6: SUBTRACTIVE — Toggle clamp slots ──
 result = (result.faces('>Z').workplane()
-    .rect(mount_sx, mount_sy, forConstruction=True)
-    .vertices().hole(8))
-
-# Datum A: 3 support pads (12mm dia, 3mm tall)
-pad_pts = [
-    (-plate_length/2 + 30, -plate_width/2 + 30),
-    (plate_length/2 - 30, -plate_width/2 + 30),
-    (0, plate_width/2 - 30),
-]
+    .center(0, plate_width/2 - 18)
+    .slot2D(65, 14).cutThruAll())
 result = (result.faces('>Z').workplane()
-    .pushPoints(pad_pts)
-    .circle(6).extrude(3))
+    .center(0, -(plate_width/2 - 18))
+    .slot2D(65, 14).cutThruAll())
 
-# Datum B: 2 locating pins along long edge (6mm dia, 12mm tall)
-pin_b_pts = [(-plate_length/4, -plate_width/2 + 20), (plate_length/4, -plate_width/2 + 20)]
-result = (result.faces('>Z').workplane(offset=3)
-    .pushPoints(pin_b_pts)
-    .circle(3).extrude(12))
-
-# Datum C: 1 stop pin on short edge
-result = (result.faces('>Z').workplane(offset=3)
-    .center(-plate_length/2 + 20, 0)
-    .circle(3).extrude(12))
-
-# Clamp slots (2 slots on opposite long edges)
+# ── Step 7: SUBTRACTIVE — Mounting holes (⌀9mm through) ──
 result = (result.faces('>Z').workplane()
-    .center(0, plate_width/2 - 15)
-    .slot2D(60, 12).cutThruAll())
-result = (result.faces('>Z').workplane()
-    .center(0, -plate_width/2 + 15)
-    .slot2D(60, 12).cutThruAll())
+    .pushPoints(mount_pts)
+    .hole(9))
 
-# Edge chamfers
-result = result.edges('|Z').chamfer(2)
+# ── Step 8: Edge chamfers (LAST) ──
+try:
+    result = result.edges('|Z').chamfer(2)
+except Exception:
+    pass  # skip if chamfer fails on complex geometry
 
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 
 ---
+
+## KEY REMINDERS:
+- The .box() method centers the box at origin. Top face is at Z = plate_thick/2, bottom at Z = -plate_thick/2
+- When using .workplane(offset=...) from XY, offset is from Z=0 (world origin), so top of plate = plate_thick/2
+- ADDITIVE features (union) BEFORE subtractive features (cut/hole)
+- Counterbores MUST be visually significant: cbore_dia = 2× hole_dia, cbore_depth ≥ 8mm
+- Datum pads MUST be tall enough to see: minimum 5mm tall, ⌀16mm
+- Locating pins MUST protrude clearly: minimum 15mm tall, ⌀8mm
+- If the engineer specifies dimensions, USE THOSE EXACT DIMENSIONS
+- If the engineer's request doesn't specify a feature, still include all standard fixture features for the template type
+- Wrap chamfer in try/except — it commonly fails on complex boolean geometry
 
 Generate the COMPLETE CadQuery Python script for the fixture described above. Include ALL features appropriate for the template type. Use the exact dimensions from the engineer's request. Output ONLY the Python code.
