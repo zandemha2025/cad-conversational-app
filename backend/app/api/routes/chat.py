@@ -124,35 +124,31 @@ async def _run_generation_inline(
         version = (ver_res.data[0]["version"] + 1) if ver_res.data else 1
         fixture_id = str(uuid.uuid4())
 
-        # Pre-insert fixture record
-        sb.table("fixture_geometries").insert({
-            "id": fixture_id,
-            "project_id": project_id,
-            "version": version,
-            "kcl": kcl,
-            "gltf_url": None,
-            "generation_prompt": user_prompt,
-            "generated_at": now_iso,
-        }).execute()
-
         generation_errors: list[str] = []
 
         from app.services.zoo_service import text_to_cad_gltf
+        log.info("Starting Zoo.dev text-to-CAD for project=%s version=%d", project_id, version)
         result = await text_to_cad_gltf(project_id, prompt_text, version)
         gltf_url = result.get("gltf_url")
         zoo_kcl = result.get("kcl")
         is_stub = bool(gltf_url and "_stub_" in str(gltf_url))
+        log.info("Zoo.dev result project=%s gltf_url=%s error=%s", project_id, bool(gltf_url), result.get("error"))
 
         if result.get("error"):
             generation_errors.append(result["error"])
 
         stored_kcl = zoo_kcl or kcl
 
-        # Update fixture with final URLs
-        sb.table("fixture_geometries").update({
-            "gltf_url": gltf_url,
+        # Insert fixture record AFTER generation (so we don't overwrite old model with null gltf_url)
+        sb.table("fixture_geometries").insert({
+            "id": fixture_id,
+            "project_id": project_id,
+            "version": version,
             "kcl": stored_kcl,
-        }).eq("id", fixture_id).execute()
+            "gltf_url": gltf_url,
+            "generation_prompt": user_prompt,
+            "generated_at": now_iso,
+        }).execute()
 
         # ── 5. Node graph ────────────────────────────────────────────────────
         await _ws_send_safe(ws, {

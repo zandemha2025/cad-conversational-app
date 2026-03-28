@@ -6,6 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 import logging
 
+# Ensure application-level logs are visible in Fly.io monitoring
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 _mig_log = logging.getLogger(__name__)
 
 # ── App ────────────────────────────────────────────────────────────────────────
