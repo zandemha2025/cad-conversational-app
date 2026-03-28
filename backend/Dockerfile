@@ -1,13 +1,9 @@
 FROM python:3.11-slim
 
-# Build deps for pythonocc-core
+# System deps for CadQuery/OCP (OpenGL, OpenMP) and other native extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
-    libgl1-mesa-dev \
-    libx11-dev \
-    libxt-dev \
-    libxrender1 \
-    libxext6 \
+    libgl1-mesa-glx \
     libgomp1 \
     libfontconfig1 \
     libfreetype6 \
@@ -15,26 +11,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install all deps except pythonocc-core first (faster layer caching)
 COPY requirements.txt .
-RUN grep -v -E '^(pythonocc-core|cadquery)==' requirements.txt | pip install --no-cache-dir -r /dev/stdin
 
-# pythonocc-core: pre-built wheel available on Linux x86_64 (Fly.io).
-# If the wheel is unavailable for this platform, occt_service falls back to stubs.
+# ── Step 1: pre-fetch cadquery-ocp (the large ~400 MB OCP wheel) ──────────────
+# cadquery 2.5.2 depends on cadquery-ocp (not the old "OCP" package).
+# Installing it separately first with a long timeout prevents the main install
+# from timing out on slow build-VM networks (Fly.io remote builders).
+RUN pip install --no-cache-dir --timeout=600 --prefer-binary \
+    "cadquery-ocp>=7.7.2,<7.8"
+
+# ── Step 2: install cadquery (cadquery-ocp already cached → fast) ─────────────
+RUN pip install --no-cache-dir --timeout=120 cadquery==2.5.2
+
+# ── Step 3: hard verification — FAIL the build if cadquery can't import ───────
+# This makes the failure visible at build time instead of silently producing
+# a container that falls back to Zoo.dev on every request.
+RUN python -c "import cadquery; print('CadQuery', cadquery.__version__, 'OK')"
+
+# ── Step 4: install remaining Python deps (cadquery already satisfied above) ──
+RUN grep -v -E '^(pythonocc-core|cadquery)==' requirements.txt \
+    | pip install --no-cache-dir --prefer-binary -r /dev/stdin
+
+# ── Step 5: pythonocc-core (OCCT export/drawing features — best-effort) ───────
 RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
     || echo "WARN: pythonocc-core wheel not found — OCCT features will use stub fallbacks"
 
-# CadQuery: local Python CAD kernel for precise parametric parts.
-# Requires Python ≤3.11 for official pre-built wheels; on 3.12 try cadquery-ocp.
-# cadquery_service falls back to Zoo.dev automatically if import fails.
-RUN pip install --no-cache-dir cadquery==2.4.0 \
-    || { pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0; } \
-    || echo "WARN: cadquery not available — CadQuery engine will fall back to Zoo.dev"
-
-# Copy source
 COPY . .
 
-# Expose port
 EXPOSE 8000
 
 # Start Celery worker in background, then FastAPI in foreground (Fly.io sets $PORT)

@@ -5,9 +5,9 @@ Best for: flat plates with holes, cylinders, L-brackets, simple extrusions.
 Falls back to Zoo.dev text-to-CAD if CadQuery is not installed or the script fails.
 
 CadQuery installation note:
-  pip install cadquery   (requires Python ≤3.11 for pre-built wheels)
-  On Python 3.12+ you may need: pip install cadquery-ocp cadquery
-  In Fly.io Docker: added to requirements.txt with || fallback in Dockerfile.
+  pip install cadquery==2.5.2   (requires Python ≤3.11 for pre-built cadquery-ocp wheels)
+  cadquery-ocp is the ~400 MB OCP wheel; install it first with --timeout=600.
+  In Fly.io Docker: cadquery-ocp is pre-fetched in Dockerfile before the main install.
 """
 import logging
 import os
@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 # Max seconds to let a CadQuery script run before killing it
 CADQUERY_TIMEOUT = 60
 
-# numpy.bool8 was removed in NumPy 1.24.0 but CadQuery 2.4.x still uses it.
+# numpy.bool8 was removed in NumPy 1.24.0; CadQuery 2.5.x still references it via OCP.
 # Restore the alias in the main process so CadQuery imports succeed.
 try:
     import numpy as _np
