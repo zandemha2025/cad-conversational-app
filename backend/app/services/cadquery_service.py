@@ -153,7 +153,8 @@ def _step_to_glb_local(step_bytes: bytes, component_name: str) -> bytes | None:
             step_path = f.name
 
         result = cq.importers.importStep(step_path)
-        vertices, triangles = result.tessellate(0.1)
+        shape = result.val()  # Workplane.val() returns the underlying Shape/Compound
+        vertices, triangles = shape.tessellate(0.1)
 
         verts = np.array([(v.x, v.y, v.z) for v in vertices], dtype=np.float32)
         faces = np.array(triangles, dtype=np.int32)
