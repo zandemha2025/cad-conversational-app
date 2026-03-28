@@ -30,7 +30,10 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    # Don't store task results — saves ~50% of Redis requests
+    # Don't store task results. Also explicitly set result_backend=None here so
+    # that the CELERY_RESULT_BACKEND env var (which may contain an invalid
+    # "file+filesystem://" URI) cannot override the backend=None constructor arg.
+    result_backend=None,
     task_ignore_result=True,
     task_routes={
         "app.tasks.process_step.*":       {"queue": "normal"},
