@@ -44,6 +44,12 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued, o
   const wsRef          = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
 
+  // Use refs for callbacks so the WebSocket doesn't reconnect on every render
+  const onGenerationQueuedRef = useRef(onGenerationQueued);
+  const onGenerationCompleteRef = useRef(onGenerationComplete);
+  useEffect(() => { onGenerationQueuedRef.current = onGenerationQueued; }, [onGenerationQueued]);
+  useEffect(() => { onGenerationCompleteRef.current = onGenerationComplete; }, [onGenerationComplete]);
+
   const connect = useCallback(() => {
     if (!projectId || !WS_URL) return;
 
@@ -91,7 +97,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued, o
 
       if (msg.type === 'generation_queued') {
         setActiveGenJob({ jobId: msg.job_id as string, message: msg.message as string });
-        onGenerationQueued?.();
+        onGenerationQueuedRef.current?.();
         return;
       }
 
@@ -106,7 +112,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued, o
       if (msg.type === 'generation_done') {
         setActiveGenJob(null);
         // Signal that generation finished — caller should refetch geometry and stop polling
-        onGenerationComplete?.();
+        onGenerationCompleteRef.current?.();
         return;
       }
 
@@ -149,7 +155,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued, o
     };
 
     ws.onerror = () => ws.close();
-  }, [projectId, onGenerationQueued, onGenerationComplete]);
+  }, [projectId]);
 
   useEffect(() => {
     connect();

@@ -108,15 +108,15 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
 
   // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
   useEffect(() => {
-    if (!isGenerating || gltfUrl || fixtureVersion !== null) return;
+    if (!isGenerating || gltfUrl) return;
     const id = setInterval(refetchGeometry, 5000);
     return () => clearInterval(id);
-  }, [isGenerating, gltfUrl, fixtureVersion, refetchGeometry]);
+  }, [isGenerating, gltfUrl, refetchGeometry]);
 
-  // Stop polling once generation completes (gltfUrl set) or fixture record exists (even without GLTF)
+  // Stop polling once generation completes (gltfUrl is a real URL)
   useEffect(() => {
-    if (gltfUrl || fixtureVersion !== null) setIsGenerating(false);
-  }, [gltfUrl, fixtureVersion]);
+    if (gltfUrl) setIsGenerating(false);
+  }, [gltfUrl]);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {
