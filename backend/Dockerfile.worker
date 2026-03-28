@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglu1-mesa libgl1-mesa-dev libx11-dev libxt-dev \
+    libglu1-mesa libgl1-mesa-dev libx11-dev libxt-dev libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
 
 # CadQuery: local CAD kernel for precise parametric parts (Celery worker).
 RUN pip install --no-cache-dir cadquery==2.4.0 \
-    || pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0 \
+    || { pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0; } \
     || echo "WARN: cadquery not available — CadQuery engine will fall back to Zoo.dev"
 
 COPY . .
