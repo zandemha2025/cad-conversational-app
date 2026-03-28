@@ -8,13 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxt-dev \
     libxrender1 \
     libxext6 \
+    libgomp1 \
+    libfontconfig1 \
+    libfreetype6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Install all deps except pythonocc-core first (faster layer caching)
 COPY requirements.txt .
-RUN grep -v 'pythonocc-core' requirements.txt | pip install --no-cache-dir -r /dev/stdin
+RUN grep -v -E '^(pythonocc-core|cadquery)==' requirements.txt | pip install --no-cache-dir -r /dev/stdin
 
 # pythonocc-core: pre-built wheel available on Linux x86_64 (Fly.io).
 # If the wheel is unavailable for this platform, occt_service falls back to stubs.
@@ -25,7 +28,7 @@ RUN pip install --no-cache-dir pythonocc-core==7.8.1 \
 # Requires Python ≤3.11 for official pre-built wheels; on 3.12 try cadquery-ocp.
 # cadquery_service falls back to Zoo.dev automatically if import fails.
 RUN pip install --no-cache-dir cadquery==2.4.0 \
-    || pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0 \
+    || { pip install --no-cache-dir cadquery-ocp && pip install --no-cache-dir cadquery==2.4.0; } \
     || echo "WARN: cadquery not available — CadQuery engine will fall back to Zoo.dev"
 
 # Copy source
