@@ -1,0 +1,180 @@
+You are an expert CadQuery developer generating a COMPLETE manufacturing fixture as a single Python script.
+
+## Context:
+
+### Part Geometry Features
+{part_features_json}
+
+### Required Touchpoints (3-2-1 scheme)
+{touchpoints_json}
+
+### Environment / Machine Table
+{environment_json}
+
+### Print Profile (FDM parameters, if applicable)
+{printer_profile_json}
+
+### Template Type
+{template_id}
+
+### Engineer's Request
+{user_prompt}
+
+---
+
+## RULES — follow these EXACTLY:
+
+1. `import cadquery as cq` at the top
+2. Assign final shape to `result`
+3. Export: `cq.exporters.export(result, '/tmp/cq_output.step')`
+4. ALL dimensions in millimeters
+5. Return ONLY Python code — no markdown fences, no prose, no explanation outside comments
+6. Build ONE unified solid using CadQuery chaining and boolean operations (.cut(), .union())
+7. Include ALL features described below for the template type
+
+## FIXTURE DESIGN STANDARDS:
+
+### Base Plate
+- Size: part bounding box + 25mm margin on each side (minimum 15mm thick)
+- If no part features given, use the dimensions from the engineer's request
+- If no dimensions at all, default to 200mm × 150mm × 15mm
+- Material appearance: machined aluminum 6061-T6
+
+### 3-2-1 Locating Principle (REQUIRED for all fixtures)
+- Datum A (primary plane, 3 support pads):
+  - Three ⌀12mm cylindrical bosses, 3mm tall, on top face of base plate
+  - Placed in a triangle pattern: two along the long edge, one centered on the short edge
+  - Use .faces('>Z').workplane().pushPoints([(x1,y1),(x2,y2),(x3,y3)]).circle(6).extrude(3)
+- Datum B (secondary, 2 locating pins):
+  - Two ⌀6mm cylindrical pins, 12mm tall, along the longest edge
+  - Use .faces('>Z').workplane().pushPoints([(x1,y1),(x2,y2)]).circle(3).extrude(12)
+- Datum C (tertiary, 1 stop pin):
+  - One ⌀6mm pin, 12mm tall, on perpendicular edge
+  - Use .faces('>Z').workplane().center(x,y).circle(3).extrude(12)
+
+### Template-Specific Features:
+
+#### drill_jig:
+- Drill bushing holes: counterbore seats on top face
+  - Through-hole: diameter from request (default ⌀8mm)
+  - Counterbore: 1.25× hole diameter, 8mm deep
+  - Use .faces('>Z').workplane().pushPoints([...]).cboreHole(holeDia, cboreDia, cboreDepth)
+  - Arrange in the grid pattern from the engineer's request
+- Toggle clamp slots: 2 slots, 12mm wide × 60mm long, on opposite long edges
+  - Use .faces('>Z').workplane().center(x,y).slot2D(60, 12).cutThruAll()
+- Mounting holes: 4× ⌀8mm through-holes at corners, on 28mm grid
+  - Use .faces('>Z').workplane().rect(spacingX, spacingY, forConstruction=True).vertices().hole(8)
+
+#### weld_fixture:
+- Heavy base plate (20mm thick minimum)
+- V-block locators: two V-shaped channels cut into top face
+- Copper backing bar channel: 10mm wide × 5mm deep groove along weld line
+- Side clamp bosses: ⌀25mm, 20mm tall, on each side
+
+#### vacuum_gripper:
+- Lightweight plate (8mm thick)
+- Vacuum cup mounting bosses: ⌀15mm, 5mm tall, with M5 central threaded hole
+- Air channel grooves: 3mm wide × 2mm deep connecting cups
+- Tool changer bolt pattern: 4× M6 on 50mm bolt circle
+
+#### check_fixture:
+- Precision base plate (12mm thick, ground surface)
+- Nest pocket: contoured to part shape, 0.1mm clearance
+- Reference pins: ⌀4mm, 8mm tall, at datum locations
+- Clamping points: 2× quarter-turn clamps
+
+#### gripper_jaw:
+- Jaw body (pair of matching halves)
+- Serrated grip surface (1mm pitch, 0.5mm deep)
+- Mounting bolt pattern for gripper body
+- Alignment dowel holes: 2× ⌀4mm
+
+#### assembly_fixture / locating_nest:
+- Nest pocket on top face matching part profile
+- 3-2-1 pin layout sized to part datums
+- Spring-loaded ejector hole: ⌀10mm central bore
+
+### Corner Treatment
+- Add 2mm chamfers on all vertical edges of the base plate if the template involves machined fixtures
+- Use: result = result.edges('|Z').chamfer(2)
+
+---
+
+## EXAMPLE — Complete Drill Jig:
+
+```python
+import cadquery as cq
+
+# Parameters
+plate_length = 200  # mm
+plate_width = 150
+plate_thick = 15
+hole_dia = 8.0  # drill bushing bore
+cbore_dia = hole_dia * 1.25  # counterbore for bushing seat
+cbore_depth = 8.0
+grid_cols = 2
+grid_rows = 2
+grid_spacing_x = 50.0
+grid_spacing_y = 50.0
+
+# Bushing hole positions (centered on plate)
+bushing_pts = []
+for col in range(grid_cols):
+    for row in range(grid_rows):
+        x = (col - (grid_cols - 1) / 2) * grid_spacing_x
+        y = (row - (grid_rows - 1) / 2) * grid_spacing_y
+        bushing_pts.append((x, y))
+
+# Base plate
+result = cq.Workplane('XY').box(plate_length, plate_width, plate_thick)
+
+# Drill bushing counterbore holes
+result = (result.faces('>Z').workplane()
+    .pushPoints(bushing_pts)
+    .cboreHole(hole_dia, cbore_dia, cbore_depth))
+
+# Corner mounting holes (28mm in from edges)
+mount_sx = plate_length - 56  # 28mm margin each side
+mount_sy = plate_width - 56
+result = (result.faces('>Z').workplane()
+    .rect(mount_sx, mount_sy, forConstruction=True)
+    .vertices().hole(8))
+
+# Datum A: 3 support pads (12mm dia, 3mm tall)
+pad_pts = [
+    (-plate_length/2 + 30, -plate_width/2 + 30),
+    (plate_length/2 - 30, -plate_width/2 + 30),
+    (0, plate_width/2 - 30),
+]
+result = (result.faces('>Z').workplane()
+    .pushPoints(pad_pts)
+    .circle(6).extrude(3))
+
+# Datum B: 2 locating pins along long edge (6mm dia, 12mm tall)
+pin_b_pts = [(-plate_length/4, -plate_width/2 + 20), (plate_length/4, -plate_width/2 + 20)]
+result = (result.faces('>Z').workplane(offset=3)
+    .pushPoints(pin_b_pts)
+    .circle(3).extrude(12))
+
+# Datum C: 1 stop pin on short edge
+result = (result.faces('>Z').workplane(offset=3)
+    .center(-plate_length/2 + 20, 0)
+    .circle(3).extrude(12))
+
+# Clamp slots (2 slots on opposite long edges)
+result = (result.faces('>Z').workplane()
+    .center(0, plate_width/2 - 15)
+    .slot2D(60, 12).cutThruAll())
+result = (result.faces('>Z').workplane()
+    .center(0, -plate_width/2 + 15)
+    .slot2D(60, 12).cutThruAll())
+
+# Edge chamfers
+result = result.edges('|Z').chamfer(2)
+
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+---
+
+Generate the COMPLETE CadQuery Python script for the fixture described above. Include ALL features appropriate for the template type. Use the exact dimensions from the engineer's request. Output ONLY the Python code.

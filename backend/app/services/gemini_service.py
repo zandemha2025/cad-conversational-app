@@ -189,6 +189,52 @@ class GeminiService:
             log.error("generate_kcl error: %s", e)
             return _stub_kcl(part_features)
 
+    # ── CadQuery fixture generation (Pro) ────────────────────────────────────
+    async def generate_cadquery_fixture(
+        self,
+        part_features: dict,
+        touchpoints: list[dict],
+        environment: dict,
+        printer_profile: dict,
+        template_id: str,
+        user_prompt: str,
+    ) -> str:
+        """
+        Generate a COMPLETE CadQuery Python script for a manufacturing fixture.
+        Uses the full project context (features, touchpoints, env, printer)
+        to produce a precise parametric fixture with all standard features.
+        """
+        template = _load_prompt("cadquery_fixture_generation.txt")
+        prompt = _fill_template(
+            template,
+            part_features_json=json.dumps(part_features, default=str),
+            touchpoints_json=json.dumps(touchpoints, default=str),
+            environment_json=json.dumps(environment, default=str),
+            printer_profile_json=json.dumps(printer_profile, default=str),
+            template_id=template_id,
+            user_prompt=user_prompt,
+        )
+
+        if not settings.GEMINI_API_KEY:
+            log.warning("GEMINI_API_KEY not set — returning stub CadQuery fixture")
+            return _stub_cadquery_code("fixture")
+
+        model = self._get_pro()
+        loop = asyncio.get_event_loop()
+        try:
+            resp = await loop.run_in_executor(
+                None,
+                lambda: model.generate_content(prompt)
+            )
+            raw = resp.text.strip()
+            # Strip accidental markdown fences
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            return raw
+        except Exception as e:
+            log.error("generate_cadquery_fixture error: %s", e)
+            return _stub_cadquery_code("fixture")
+
     # ── Node graph generation (Pro) ────────────────────────────────────────────
     async def generate_node_graph(
         self,

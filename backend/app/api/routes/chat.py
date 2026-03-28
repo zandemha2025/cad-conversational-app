@@ -107,9 +107,11 @@ async def _run_generation_inline(
         )
 
         # ── 4. Generate 3D geometry ──────────────────────────────────────────
+        # PRIMARY: CadQuery (Open CASCADE) for precise parametric fixtures
+        # FALLBACK: Zoo.dev text-to-cad AI
         await _ws_send_safe(ws, {
             "type": "generation_progress", "progress": 0.40,
-            "message": "Generating 3D geometry via Zoo.dev…", "job_id": job_id,
+            "message": "Generating precise fixture geometry via CadQuery…", "job_id": job_id,
         })
 
         # Determine next version
@@ -125,17 +127,67 @@ async def _run_generation_inline(
         fixture_id = str(uuid.uuid4())
 
         generation_errors: list[str] = []
+        gltf_url = None
+        zoo_kcl = None
+        is_stub = False
 
-        from app.services.zoo_service import text_to_cad_gltf
-        log.info("Starting Zoo.dev text-to-CAD for project=%s version=%d", project_id, version)
-        result = await text_to_cad_gltf(project_id, prompt_text, version)
-        gltf_url = result.get("gltf_url")
-        zoo_kcl = result.get("kcl")
-        is_stub = bool(gltf_url and "_stub_" in str(gltf_url))
-        log.info("Zoo.dev result project=%s gltf_url=%s error=%s", project_id, bool(gltf_url), result.get("error"))
+        # Step 1: Try CadQuery (Gemini Pro → CadQuery script → STEP → GLB)
+        try:
+            log.info("Generating CadQuery fixture via Gemini Pro project=%s", project_id)
+            cq_script = await gemini.generate_cadquery_fixture(
+                part_features=features,
+                touchpoints=touchpoints,
+                environment=env,
+                printer_profile=printer,
+                template_id=template_id,
+                user_prompt=prompt_text,
+            )
+            log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
-        if result.get("error"):
-            generation_errors.append(result["error"])
+            await _ws_send_safe(ws, {
+                "type": "generation_progress", "progress": 0.55,
+                "message": "Compiling CadQuery → 3D geometry…", "job_id": job_id,
+            })
+
+            from app.services.cadquery_service import execute_cadquery_script
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: execute_cadquery_script(cq_script, project_id, "fixture", version)
+            )
+            gltf_url = result.get("gltf_url")
+
+            if result.get("engine") == "zoo_fallback":
+                generation_errors.append("CadQuery execution failed; used Zoo.dev fallback")
+                log.warning("CadQuery failed, Zoo.dev fallback used project=%s", project_id)
+
+            if not gltf_url:
+                raise RuntimeError("CadQuery produced no geometry")
+
+            log.info("CadQuery fixture OK project=%s gltf_url=%s", project_id, bool(gltf_url))
+
+        except Exception as cq_exc:
+            # Step 2: Fallback to Zoo.dev text-to-cad
+            log.warning("CadQuery failed project=%s: %s — falling back to Zoo.dev", project_id, cq_exc)
+            generation_errors.append(f"CadQuery failed ({str(cq_exc)[:100]}); using Zoo.dev")
+
+            await _ws_send_safe(ws, {
+                "type": "generation_progress", "progress": 0.55,
+                "message": "CadQuery unavailable, generating via Zoo.dev AI…", "job_id": job_id,
+            })
+
+            try:
+                from app.services.zoo_service import text_to_cad_gltf
+                result = await text_to_cad_gltf(project_id, prompt_text, version)
+                gltf_url = result.get("gltf_url")
+                zoo_kcl = result.get("kcl")
+                is_stub = bool(gltf_url and "_stub_" in str(gltf_url))
+
+                if result.get("error"):
+                    generation_errors.append(result["error"])
+            except Exception as zoo_exc:
+                log.error("Zoo.dev fallback also failed project=%s: %s", project_id, zoo_exc)
+                generation_errors.append(f"Zoo.dev also failed: {str(zoo_exc)[:200]}")
 
         stored_kcl = zoo_kcl or kcl
 

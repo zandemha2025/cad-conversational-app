@@ -223,27 +223,54 @@ def _run_generation_pipeline(self, project_id: str, user_prompt: str | None, sb)
         stored_kcl = zoo_kcl or kcl
     else:
         # ── SINGLE-COMPONENT PATH ──────────────────────────────────────────────
-        _publish(project_id, {"status": "compiling", "message": "Generating 3D geometry…", "progress": 0.50})
+        # PRIMARY: Use CadQuery (Open CASCADE) for precise parametric fixtures.
+        # Gemini Pro generates a complete CadQuery script with all fixture features
+        # (3-2-1 locating, bushing seats, clamp slots, mounting holes, etc.)
+        # FALLBACK: Zoo.dev text-to-cad if CadQuery fails.
+        _publish(project_id, {"status": "compiling", "message": "Generating precise fixture geometry via CadQuery…", "progress": 0.40})
 
-        engine_hint = decomposition.get("engine", "zoo")
-        log.info("Simple geometry engine_hint=%s project=%s", engine_hint, project_id)
+        log.info("Generating CadQuery fixture script via Gemini Pro project=%s", project_id)
         try:
-            if engine_hint == "cadquery":
-                description = decomposition.get("prompt", prompt_text)
-                result = _generate_single_cadquery(project_id, "fixture", description, version)
-                gltf_url = result.get("gltf_url")
-                zoo_kcl = None
-                if result.get("engine") == "zoo_fallback":
-                    generation_errors.append("CadQuery generation failed; used Zoo.dev fallback")
-            else:
+            # Step 1: Gemini Pro → full CadQuery fixture script
+            cq_script = _run_async(gemini.generate_cadquery_fixture(
+                part_features=features,
+                touchpoints=touchpoints,
+                environment=env,
+                printer_profile=printer,
+                template_id=template_id,
+                user_prompt=prompt_text,
+            ))
+            log.info("CadQuery fixture script generated (%d chars) project=%s", len(cq_script), project_id)
+
+            # Step 2: Execute CadQuery script → STEP → GLB
+            _publish(project_id, {"status": "compiling", "message": "Compiling CadQuery → 3D geometry…", "progress": 0.55})
+            from app.services.cadquery_service import execute_cadquery_script
+            result = execute_cadquery_script(cq_script, project_id, "fixture", version)
+            gltf_url = result.get("gltf_url")
+            zoo_kcl = None
+
+            if result.get("engine") == "zoo_fallback":
+                generation_errors.append("CadQuery execution failed; used Zoo.dev fallback")
+                log.warning("CadQuery execution failed, fell back to Zoo.dev project=%s", project_id)
+
+            if not gltf_url:
+                raise RuntimeError("CadQuery produced no geometry")
+
+        except Exception as cq_exc:
+            # CadQuery failed entirely — fall back to Zoo.dev text-to-cad
+            log.warning("CadQuery fixture generation failed project=%s: %s — falling back to Zoo.dev", project_id, cq_exc)
+            _publish(project_id, {"status": "compiling", "message": "CadQuery unavailable, generating via Zoo.dev AI…", "progress": 0.55})
+            generation_errors.append(f"CadQuery failed ({str(cq_exc)[:100]}); using Zoo.dev fallback")
+
+            try:
                 result = _generate_single_zoo(project_id, prompt_text, version)
                 gltf_url = result.get("gltf_url")
                 zoo_kcl = result.get("kcl")
-        except Exception as gen_exc:
-            log.error("Geometry generation failed project=%s: %s", project_id, gen_exc)
-            gltf_url = None
-            zoo_kcl = None
-            generation_errors.append(f"Geometry generation error: {str(gen_exc)[:200]}")
+            except Exception as zoo_exc:
+                log.error("Zoo.dev fallback also failed project=%s: %s", project_id, zoo_exc)
+                gltf_url = None
+                zoo_kcl = None
+                generation_errors.append(f"Zoo.dev fallback also failed: {str(zoo_exc)[:200]}")
 
         stored_kcl = zoo_kcl or kcl
         assembly_records = []
