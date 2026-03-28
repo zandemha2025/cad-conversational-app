@@ -3,7 +3,7 @@ FROM python:3.11-slim
 # System deps for CadQuery/OCP (OpenGL, OpenMP) and other native extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
-    libgl1-mesa-glx \
+    libgl1 \
     libgomp1 \
     libfontconfig1 \
     libfreetype6 \
