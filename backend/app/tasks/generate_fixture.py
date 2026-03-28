@@ -286,10 +286,12 @@ def _run_generation_pipeline(self, project_id: str, user_prompt: str | None, sb)
         )
 
     # ── Update fixture geometry with final gltf_url and kcl ────────────────────
-    sb.table("fixture_geometries").update({
+    update_result = sb.table("fixture_geometries").update({
         "gltf_url": gltf_url,
         "kcl": stored_kcl,
     }).eq("id", fixture_id).execute()
+    if hasattr(update_result, 'error') and update_result.error:
+        log.error("Failed to update fixture_geometries gltf_url fixture=%s: %s", fixture_id, update_result.error)
 
     # ── Node graph ─────────────────────────────────────────────────────────────
     _publish(project_id, {"status": "generating", "message": "Building parametric node graph…", "progress": 0.80})

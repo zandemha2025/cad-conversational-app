@@ -88,7 +88,11 @@ async def _run_generation_inline(
             "message": "Analyzing design complexity…", "job_id": job_id,
         })
 
-        decomposition = await gemini.decompose_prompt(prompt_text)
+        try:
+            decomposition = await gemini.decompose_prompt(prompt_text)
+        except Exception as decomp_exc:
+            log.warning("decompose_prompt failed project=%s: %s — using prompt as-is", project_id, decomp_exc)
+            decomposition = {"type": "single", "prompt": prompt_text, "components": []}
         is_assembly = decomposition.get("type") == "assembly"
         components = decomposition.get("components", [])
 
@@ -214,10 +218,12 @@ async def _run_generation_inline(
         stored_kcl = zoo_kcl or kcl
 
         # Update the pre-inserted fixture record with final geometry
-        sb.table("fixture_geometries").update({
+        update_result = sb.table("fixture_geometries").update({
             "gltf_url": gltf_url,
             "kcl": stored_kcl,
         }).eq("id", fixture_id).execute()
+        if hasattr(update_result, 'error') and update_result.error:
+            log.error("Failed to update fixture_geometries gltf_url fixture=%s: %s", fixture_id, update_result.error)
 
         # ── 5. Node graph ────────────────────────────────────────────────────
         await _ws_send_safe(ws, {
