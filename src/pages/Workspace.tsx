@@ -137,10 +137,12 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     return () => clearInterval(id);
   }, [isGenerating, fixtureVersion, refetchGeometry]);
 
-  // Stop polling once we get a NEW version (higher than what we had before generation)
+  // Stop polling once we get a NEW version (higher than what we had before generation,
+  // or any version if generation started with no prior version)
   useEffect(() => {
-    if (isGenerating && fixtureVersion !== null && versionWhenGenerationStarted.current !== null
-        && fixtureVersion > versionWhenGenerationStarted.current) {
+    if (isGenerating && fixtureVersion !== null
+        && (versionWhenGenerationStarted.current === null
+            || fixtureVersion > versionWhenGenerationStarted.current)) {
       setIsGenerating(false);
     }
   }, [isGenerating, fixtureVersion]);

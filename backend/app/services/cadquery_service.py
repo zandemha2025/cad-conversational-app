@@ -120,7 +120,7 @@ def execute_cadquery_script(
             glb_bytes = convert_file_format_sync(step_bytes, "step", "glb", project_id)
 
         if glb_bytes:
-            glb_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.glb"
+            glb_key = f"{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.glb"
             gltf_url = upload_gltf(project_id, glb_key, glb_bytes)
             log.info("CadQuery→GLB OK for '%s' → %s", component_name, gltf_url)
             return {"gltf_url": gltf_url, "step_url": step_url, "engine": "cadquery"}
