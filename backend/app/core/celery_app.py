@@ -1,6 +1,14 @@
+import os
 import ssl
 from celery import Celery
 from app.core.config import settings
+
+# Filesystem broker dirs must exist before Celery initialises the transport.
+# CELERY_BROKER_URL=filesystem:// (set via Fly secret) uses kombu's filesystem
+# transport whose default data_folder_in/out is "data_in"/"data_out" relative
+# to cwd — which doesn't exist.  Create the canonical path up-front.
+_CELERY_FS_DIR = "/tmp/celery-broker"
+os.makedirs(_CELERY_FS_DIR, exist_ok=True)
 
 celery_app = Celery(
     "scalecad",
@@ -45,5 +53,12 @@ celery_app.conf.update(
         "app.tasks.generate_drawing.*":   {"queue": "low"},
     },
     task_default_queue="normal",
+    # When CELERY_BROKER_URL=filesystem:// the kombu filesystem transport
+    # defaults data_folder_in/out to "data_in"/"data_out" (relative cwd).
+    # Point both to /tmp/celery-broker which we create at module import time.
+    broker_transport_options={
+        "data_folder_in": _CELERY_FS_DIR,
+        "data_folder_out": _CELERY_FS_DIR,
+    },
     **(_ssl_opts and {"broker_use_ssl": _ssl_opts} or {}),
 )
