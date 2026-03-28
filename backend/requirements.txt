@@ -34,7 +34,8 @@ celery[redis]==5.4.0
 redis==5.2.1
 
 # Geometry & math
-numpy>=1.22.4
+# numpy<2.0: cadquery-ocp wheels are built against numpy 1.x ABI; 2.x breaks binary compat
+numpy>=1.22.4,<2.0
 scipy>=1.15.0
 trimesh==4.5.3
 
@@ -43,10 +44,9 @@ trimesh==4.5.3
 pythonocc-core==7.8.1
 
 # CadQuery — local Python CAD kernel for precise parametric parts.
-# Pre-built wheels available on Linux x86_64 for Python ≤3.11.
-# On Python 3.12+ it may require: pip install cadquery-ocp cadquery
-# Installed with || fallback in Dockerfile so startup doesn't fail if unavailable.
-cadquery==2.4.0
+# 2.5.2 uses cadquery-ocp (pre-built wheels on PyPI for Python 3.11 / Linux x86_64).
+# 2.4.0 required the old `OCP` package name which had install issues on Fly.io builds.
+cadquery==2.5.2
 
 # Utilities
 httpx==0.28.1
