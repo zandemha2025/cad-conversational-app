@@ -23,12 +23,34 @@ log = logging.getLogger(__name__)
 # Max seconds to let a CadQuery script run before killing it
 CADQUERY_TIMEOUT = 60
 
+# numpy.bool8 was removed in NumPy 1.24.0 but CadQuery 2.4.x still uses it.
+# Restore the alias in the main process so CadQuery imports succeed.
+try:
+    import numpy as _np
+    if not hasattr(_np, "bool8"):
+        _np.bool8 = _np.bool_
+    del _np
+except Exception:
+    pass
+
+# Same shim prepended to every subprocess CadQuery script so it takes effect
+# before `import cadquery` runs inside the worker process.
+_NUMPY_BOOL8_SHIM = (
+    "import numpy as _np\n"
+    "if not hasattr(_np, 'bool8'):\n"
+    "    _np.bool8 = _np.bool_\n"
+    "del _np\n"
+)
+
 
 def is_cadquery_available() -> bool:
     try:
+        import numpy as _np  # ensure shim is applied before cadquery import
+        if not hasattr(_np, "bool8"):
+            _np.bool8 = _np.bool_
         import cadquery  # noqa: F401
         return True
-    except ImportError:
+    except (ImportError, AttributeError):
         return False
 
 
@@ -54,8 +76,8 @@ def execute_cadquery_script(
         with tempfile.TemporaryDirectory() as tmpdir:
             step_path = os.path.join(tmpdir, "output.step")
 
-            # Patch the export path so scripts that hardcode /tmp/cq_output.step work
-            script = cq_script.replace("/tmp/cq_output.step", step_path)
+            # Prepend numpy.bool8 shim + patch the hardcoded export path
+            script = _NUMPY_BOOL8_SHIM + cq_script.replace("/tmp/cq_output.step", step_path)
             script_path = os.path.join(tmpdir, "script.py")
             with open(script_path, "w") as f:
                 f.write(script)
