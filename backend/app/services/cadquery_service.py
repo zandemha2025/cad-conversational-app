@@ -220,8 +220,11 @@ def _zoo_fallback(project_id: str, component_name: str, version: int) -> dict:
         result = loop.run_until_complete(
             text_to_cad_gltf(project_id, prompt, version)
         )
+        gltf_url = result.get("gltf_url")
+        if not gltf_url:
+            raise RuntimeError(f"Zoo.dev returned no URL for '{component_name}'")
         return {
-            "gltf_url": result.get("gltf_url"),
+            "gltf_url": gltf_url,
             "step_url": None,
             "engine": "zoo_fallback",
         }

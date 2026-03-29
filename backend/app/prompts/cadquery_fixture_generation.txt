@@ -20,6 +20,10 @@ CODE RULES (non-negotiable)
 4. ALL dimensions in millimeters
 5. Output ONLY valid Python code — no markdown fences, no prose
 6. Build ONE unified solid using boolean operations (.union(), .cut())
+7. Apply chamfers and fillets BEFORE cutting holes, never after
+8. Never use complex .edges() selectors like .edges("|Z") on multi-feature bodies
+9. Use .union() on Workplane objects, not raw Shape objects
+10. Avoid deep chains of .cutBlind() — use .pushPoints() with a single .cutThruAll() instead
 
 ### Build order:
   a. Base body (box, cylinder, or other primary shape)

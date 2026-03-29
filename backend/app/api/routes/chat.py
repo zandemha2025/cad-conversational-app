@@ -25,6 +25,10 @@ router = APIRouter(tags=["chat"])
 log = logging.getLogger(__name__)
 gemini = GeminiService()
 
+# Keeps strong references to background generation tasks so asyncio GC doesn't
+# cancel them while they're still running.
+_background_tasks: set = set()
+
 
 # ── Inline generation pipeline (replaces Celery task) ─────────────────────────
 
@@ -41,12 +45,13 @@ async def _run_generation_inline(
     project_id: str,
     user_prompt: str,
     sb,
+    job_id: str | None = None,
 ):
     """
     Run the full fixture generation pipeline inline, sending progress
     updates directly over the WebSocket. No Celery/Redis needed.
     """
-    job_id = str(uuid.uuid4())
+    job_id = job_id or str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
 
     try:
@@ -449,10 +454,13 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                     await websocket.send_json({"type": "chunk", "content": chunk})
                 await websocket.send_json({"type": "done", "intent": intent, "job_id": gen_job_id})
 
-                # Launch generation inline (runs in the same event loop)
-                asyncio.create_task(
-                    _run_generation_inline(websocket, project_id, task_prompt, sb)
+                # Launch generation inline (runs in the same event loop).
+                # Hold a strong reference in _background_tasks to prevent asyncio GC.
+                _gen_task = asyncio.create_task(
+                    _run_generation_inline(websocket, project_id, task_prompt, sb, gen_job_id)
                 )
+                _background_tasks.add(_gen_task)
+                _gen_task.add_done_callback(_background_tasks.discard)
 
                 # Suggest standard components
                 try:
