@@ -19,6 +19,36 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 # GENERATION_INTENTS that should be routed to Gemini Pro
 PRO_INTENTS = {"fixture_generation", "geometry_modification", "kcl_revision"}
 
+_VALID_INTENTS = frozenset({
+    "fixture_generation", "geometry_modification", "kcl_revision",
+    "dfm_question", "touchpoint_question", "standards_question",
+    "general_question", "out_of_scope",
+})
+
+# Keyword-based fallback for when the model response can't be parsed
+_GEOM_FEATURE_WORDS = frozenset({
+    "chamfer", "fillet", "radius", "diameter", "bore", "hole", "slot",
+    "pocket", "thickness", "width", "height", "length", "depth", "dimension",
+    "mm", "cm", "inch", "inches", "millimeter", "centimeter",
+    "edge", "corner", "wall", "base", "plate", "bracket",
+})
+_GEOM_ACTION_WORDS = frozenset({
+    "add", "increase", "decrease", "change", "modify", "update", "make",
+    "set", "resize", "scale", "reduce", "enlarge", "widen", "narrow",
+    "thicken", "extend", "shorten", "drill", "cut", "remove", "replace",
+    "bigger", "smaller", "larger", "thicker", "thinner", "wider",
+})
+
+
+def _keyword_intent_fallback(message: str) -> str:
+    """Last-resort keyword classifier for geometry modification requests."""
+    lower = message.lower()
+    has_feature = any(kw in lower for kw in _GEOM_FEATURE_WORDS)
+    has_action = any(kw in lower for kw in _GEOM_ACTION_WORDS)
+    if has_feature and has_action:
+        return "geometry_modification"
+    return "general_question"
+
 
 def _load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text()
@@ -52,7 +82,7 @@ class GeminiService:
     # ── Intent classification ──────────────────────────────────────────────────
     async def classify_intent(self, user_message: str, project_ctx: dict) -> str:
         if not settings.GEMINI_API_KEY:
-            return "general_question"
+            return _keyword_intent_fallback(user_message)
         try:
             system = _load_prompt("intent_classification.txt")
             prompt = f"{system}\n\nMessage: {user_message}"
@@ -62,10 +92,23 @@ class GeminiService:
                 None,
                 lambda: model.generate_content(prompt)
             )
-            return resp.text.strip().lower()
+            raw = resp.text.strip().lower()
+            # Exact match (happy path)
+            if raw in _VALID_INTENTS:
+                return raw
+            # Model sometimes adds punctuation, whitespace, or extra explanation —
+            # scan the response for any valid intent token.
+            for intent in _VALID_INTENTS:
+                if intent in raw:
+                    log.debug("classify_intent: extracted %r from %r", intent, raw[:80])
+                    return intent
+            # Last resort: keyword heuristic on the original message
+            fallback = _keyword_intent_fallback(user_message)
+            log.warning("classify_intent: unparseable response %r — keyword fallback → %s", raw[:80], fallback)
+            return fallback
         except Exception as e:
             log.error("classify_intent error: %s", e)
-            return "general_question"
+            return _keyword_intent_fallback(user_message)
 
     # ── Streaming chat (Flash) ─────────────────────────────────────────────────
     async def stream_chat(
