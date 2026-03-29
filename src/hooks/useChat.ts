@@ -21,6 +21,7 @@ interface UseChatOptions {
   projectId: string | undefined;
   initialMessages?: ChatMessage[];
   onGenerationQueued?: () => void;
+  onGenerationComplete?: () => void;
 }
 
 interface GenerationJob {
@@ -35,7 +36,7 @@ const CONNECTION_TIMEOUT = 15000;
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useChat({ projectId, initialMessages = [], onGenerationQueued }: UseChatOptions) {
+export function useChat({ projectId, initialMessages = [], onGenerationQueued, onGenerationComplete }: UseChatOptions) {
   const [messages, setMessages]         = useState<ChatMessage[]>(initialMessages);
   const [isThinking, setIsThinking]     = useState(false);
   const [isConnected, setIsConnected]   = useState(false);
@@ -49,6 +50,12 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
   const connectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const unmountedRef = useRef(false);
+
+  // Use refs for callbacks so the WebSocket doesn't reconnect on every render
+  const onGenerationQueuedRef = useRef(onGenerationQueued);
+  const onGenerationCompleteRef = useRef(onGenerationComplete);
+  useEffect(() => { onGenerationQueuedRef.current = onGenerationQueued; }, [onGenerationQueued]);
+  useEffect(() => { onGenerationCompleteRef.current = onGenerationComplete; }, [onGenerationComplete]);
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -140,7 +147,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
 
       if (msg.type === 'generation_queued') {
         setActiveGenJob({ jobId: msg.job_id as string, message: msg.message as string });
-        onGenerationQueued?.();
+        onGenerationQueuedRef.current?.();
         return;
       }
 
@@ -154,8 +161,8 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
 
       if (msg.type === 'generation_done') {
         setActiveGenJob(null);
-        // Trigger refetch by signaling generation complete
-        onGenerationQueued?.(); // This sets isGenerating which triggers polling
+        // Signal that generation finished — caller should refetch geometry and stop polling
+        onGenerationCompleteRef.current?.();
         return;
       }
 
@@ -222,7 +229,7 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued }:
     };
 
     ws.onerror = () => ws.close();
-  }, [projectId, cleanup, authFailed, onGenerationQueued]);
+  }, [projectId, cleanup, authFailed]);
 
   useEffect(() => {
     unmountedRef.current = false;

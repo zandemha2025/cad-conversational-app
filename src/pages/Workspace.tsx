@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import ErrorBoundary from '../components/ErrorBoundary';
 import FeatureTree from '../components/workspace/FeatureTree';
@@ -106,46 +106,17 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   // Load fixture geometry + part features
   const { gltfUrl, version: fixtureVersion, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
 
-  // Track the fixture VERSION when generation started (not blob URL — blob URLs change every refetch)
-  const versionWhenGenerationStarted = useRef<number | null>(null);
-  const generationStartTime = useRef<number>(0);
-  const GENERATION_TIMEOUT = 5 * 60 * 1000; // 5 minutes max wait
-
-  // Capture the current version when generation starts
-  useEffect(() => {
-    if (isGenerating) {
-      versionWhenGenerationStarted.current = fixtureVersion;
-      generationStartTime.current = Date.now();
-    }
-  }, [isGenerating]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
   useEffect(() => {
-    if (!isGenerating) return;
-    // If we already have a NEW version (higher than when we started), stop
-    if (fixtureVersion !== null && versionWhenGenerationStarted.current !== null
-        && fixtureVersion > versionWhenGenerationStarted.current) return;
-
-    const id = setInterval(() => {
-      // Timeout: stop polling after 5 minutes
-      if (Date.now() - generationStartTime.current > GENERATION_TIMEOUT) {
-        setIsGenerating(false);
-        return;
-      }
-      refetchGeometry();
-    }, 5000);
+    if (!isGenerating || gltfUrl) return;
+    const id = setInterval(refetchGeometry, 5000);
     return () => clearInterval(id);
-  }, [isGenerating, fixtureVersion, refetchGeometry]);
+  }, [isGenerating, gltfUrl, refetchGeometry]);
 
-  // Stop polling once we get a NEW version (higher than what we had before generation,
-  // or any version if generation started with no prior version)
+  // Stop polling once generation completes (gltfUrl is a real URL)
   useEffect(() => {
-    if (isGenerating && fixtureVersion !== null
-        && (versionWhenGenerationStarted.current === null
-            || fixtureVersion > versionWhenGenerationStarted.current)) {
-      setIsGenerating(false);
-    }
-  }, [isGenerating, fixtureVersion]);
+    if (gltfUrl) setIsGenerating(false);
+  }, [gltfUrl]);
 
   // Sync gltfUrl into workspace context
   useEffect(() => {
@@ -384,7 +355,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
             {showLeft && (
               <div className="w-full md:w-72 shrink-0 border-r border-cadsurface-700 overflow-hidden flex flex-col md:flex">
                 <ErrorBoundary label="Panel error">
-                  {leftPanel === 'chat'         && <ChatPanel projectId={projectId} projectName={projectName} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} fixtureLoaded={!!gltfUrl} />}
+                  {leftPanel === 'chat'         && <ChatPanel projectId={projectId} projectName={projectName} onComponentSuggestions={setComponentSuggestions} onGenerationQueued={() => setIsGenerating(true)} onGenerationComplete={() => { setIsGenerating(false); refetchGeometry(); }} fixtureLoaded={!!gltfUrl} />}
                   {leftPanel === 'tree'         && <FeatureTree />}
                   {leftPanel === 'hardware'     && <HardwarePanel projectId={projectId} />}
                   {leftPanel === 'touchpoints'  && <TouchpointPanel projectId={projectId} />}

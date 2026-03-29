@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchFixtureGeometry, fetchPartGeometry, fetchGlbBlobUrl } from '../lib/api';
 import type { PartFeatures } from '../types';
 
@@ -71,7 +71,7 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
     };
   }, [projectId, tick]);
 
-  const refetch = () => setTick((t) => t + 1);
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
 
   return { gltfUrl, version, partFeatures, loading, error, refetch };
 }
