@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+backend
+*.log
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.env.production
+.env.local
+.claude
+cad_outputs
