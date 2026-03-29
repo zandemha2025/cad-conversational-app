@@ -96,8 +96,8 @@ async def _run_generation_inline(
         is_assembly = decomposition.get("type") == "assembly"
         components = decomposition.get("components", [])
 
-        if not is_assembly:
-            prompt_text = decomposition.get("prompt", prompt_text)
+        # Keep prompt_text as the user's original input — do not replace with
+        # decomposition's "enhanced" version, which can add assumed features.
 
         # ── 3. Determine version and pre-insert fixture record ───────────────
         # Pre-insert with gltf_url=None so GET /geometry/fixture always finds
