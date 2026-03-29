@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAuditLog } from '../lib/api';
-import NewProjectModal from '../components/workspace/NewProjectModal';
 import {
   Plus,
   Search,
@@ -243,14 +242,14 @@ function ProjectListRow({ project, onClick }: { project: Project; onClick: () =>
 
 // Tooling-specific templates
 const TOOLING_TEMPLATES = [
-  { label: 'Drill Jig',       icon: <Wrench size={16} />,   color: 'text-cadblue-400', bg: 'group-hover:bg-cadblue-900/30' },
-  { label: 'Weld Fixture',    icon: <Zap size={16} />,      color: 'text-amber-400',   bg: 'group-hover:bg-amber-900/30' },
-  { label: 'Vacuum Gripper',  icon: <Cpu size={16} />,      color: 'text-purple-400',  bg: 'group-hover:bg-purple-900/30' },
-  { label: 'Gripper Jaw',     icon: <Package size={16} />,  color: 'text-emerald-400', bg: 'group-hover:bg-emerald-900/30' },
-  { label: 'Go/No-Go Gauge',  icon: <Target size={16} />,   color: 'text-teal-400',    bg: 'group-hover:bg-teal-900/30' },
-  { label: 'Locating Nest',   icon: <GitBranch size={16} />,color: 'text-pink-400',    bg: 'group-hover:bg-pink-900/30' },
-  { label: 'Check Fixture',   icon: <Target size={16} />,   color: 'text-cyan-400',    bg: 'group-hover:bg-cyan-900/30' },
-  { label: 'Assy Fixture',    icon: <Layers size={16} />,   color: 'text-orange-400',  bg: 'group-hover:bg-orange-900/30' },
+  { id: 'drill-jig',        label: 'Drill Jig',       icon: <Wrench size={16} />,   color: 'text-cadblue-400', bg: 'group-hover:bg-cadblue-900/30' },
+  { id: 'weld-fixture',     label: 'Weld Fixture',    icon: <Zap size={16} />,      color: 'text-amber-400',   bg: 'group-hover:bg-amber-900/30' },
+  { id: 'vacuum-eoat',      label: 'Vacuum Gripper',  icon: <Cpu size={16} />,      color: 'text-purple-400',  bg: 'group-hover:bg-purple-900/30' },
+  { id: 'gripper-jaw',      label: 'Gripper Jaw',     icon: <Package size={16} />,  color: 'text-emerald-400', bg: 'group-hover:bg-emerald-900/30' },
+  { id: 'inspection-gauge', label: 'Go/No-Go Gauge',  icon: <Target size={16} />,   color: 'text-teal-400',    bg: 'group-hover:bg-teal-900/30' },
+  { id: 'locating-nest',    label: 'Locating Nest',   icon: <GitBranch size={16} />,color: 'text-pink-400',    bg: 'group-hover:bg-pink-900/30' },
+  { id: 'check-fixture',    label: 'Check Fixture',   icon: <Target size={16} />,   color: 'text-cyan-400',    bg: 'group-hover:bg-cyan-900/30' },
+  { id: 'assembly-fixture', label: 'Assy Fixture',    icon: <Layers size={16} />,   color: 'text-orange-400',  bg: 'group-hover:bg-orange-900/30' },
 ];
 
 export default function Home() {
@@ -258,7 +257,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [filter, setFilter] = useState<'all' | 'active' | 'draft' | 'released'>('all');
   const [search, setSearch] = useState('');
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [recentActivity, setRecentActivity] = useState<Array<{ user_id: string; action: string; created_at: string }>>([]);
 
   const { user } = useAuth();
@@ -275,19 +274,24 @@ export default function Home() {
     return true;
   });
 
-  const handleProjectCreated = async (projectId: string) => {
-    navigate(`/workspace/${projectId}`);
+  const handleNewDesign = async () => {
+    if (creating) return;
+    setCreating(true);
+    const id = await addProject({ name: 'Untitled Design', revision: 'A' });
+    setCreating(false);
+    if (id) navigate(`/workspace/${id}`);
+  };
+
+  const handleTemplateClick = async (templateId: string, label: string) => {
+    if (creating) return;
+    setCreating(true);
+    const id = await addProject({ name: `${label} – New Design`, revision: 'A', templateId });
+    setCreating(false);
+    if (id) navigate(`/workspace/${id}`);
   };
 
   return (
     <div className="flex-1 overflow-y-auto bg-cadsurface-950">
-      {showNewProjectModal && (
-        <NewProjectModal
-          onClose={() => setShowNewProjectModal(false)}
-          onProjectCreated={handleProjectCreated}
-          addProject={addProject}
-        />
-      )}
       {/* Hero banner */}
       <div className="bg-gradient-to-r from-cadsurface-900 via-cadblue-950/20 to-cadsurface-900 border-b border-cadsurface-700 px-6 py-5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -303,11 +307,12 @@ export default function Home() {
             </p>
           </div>
           <button
-            onClick={() => setShowNewProjectModal(true)}
-            className="flex items-center gap-2 bg-cadblue-600 hover:bg-cadblue-700 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg shadow-cadblue-950/50 glow-blue"
+            onClick={handleNewDesign}
+            disabled={creating}
+            className="flex items-center gap-2 bg-cadblue-600 hover:bg-cadblue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg shadow-cadblue-950/50 glow-blue"
           >
             <Plus size={16} />
-            New Design
+            {creating ? 'Creating…' : 'New Design'}
           </button>
         </div>
       </div>
@@ -316,10 +321,10 @@ export default function Home() {
         {/* Quick actions */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { icon: <Cpu size={16} className="text-cadblue-400" />,    label: 'Start from prompt', desc: 'Describe your jig or fixture',   color: 'border-cadblue-700/40 hover:border-cadblue-500/60',   action: () => setShowNewProjectModal(true) },
-            { icon: <FolderOpen size={16} className="text-amber-400" />, label: 'Import STEP/IGES',  desc: 'Bring in existing CAD files',    color: 'border-amber-700/40 hover:border-amber-500/60',       action: () => setShowNewProjectModal(true) },
-            { icon: <Package size={16} className="text-emerald-400" />, label: 'Hardware Library',  desc: 'Bushings, clamps, pins…',         color: 'border-emerald-700/40 hover:border-emerald-500/60',   action: () => allProjects.length > 0 ? navigate(`/workspace/${allProjects[0].id}`) : setShowNewProjectModal(true) },
-            { icon: <Target size={16} className="text-purple-400" />,  label: 'GD&T Templates',    desc: 'Pre-configured callout sets',     color: 'border-purple-700/40 hover:border-purple-500/60',    action: () => setShowNewProjectModal(true) },
+            { icon: <Cpu size={16} className="text-cadblue-400" />,     label: 'Start from prompt', desc: 'Describe your jig or fixture',   color: 'border-cadblue-700/40 hover:border-cadblue-500/60',  action: handleNewDesign },
+            { icon: <FolderOpen size={16} className="text-amber-400" />, label: 'Import STEP/IGES',  desc: 'Bring in existing CAD files',    color: 'border-amber-700/40 hover:border-amber-500/60',      action: handleNewDesign },
+            { icon: <Package size={16} className="text-emerald-400" />,  label: 'Hardware Library',  desc: 'Bushings, clamps, pins…',        color: 'border-emerald-700/40 hover:border-emerald-500/60',  action: () => allProjects.length > 0 ? navigate(`/workspace/${allProjects[0].id}`) : handleNewDesign() },
+            { icon: <Target size={16} className="text-purple-400" />,    label: 'GD&T Templates',    desc: 'Pre-configured callout sets',    color: 'border-purple-700/40 hover:border-purple-500/60',    action: handleNewDesign },
           ].map((item) => (
             <button
               key={item.label}
@@ -385,8 +390,9 @@ export default function Home() {
 
           {viewMode === 'grid' && (
             <button
-              onClick={() => setShowNewProjectModal(true)}
-              className="border-2 border-dashed border-cadsurface-700 hover:border-cadblue-600/50 rounded-xl h-64 flex flex-col items-center justify-center gap-3 transition-all hover:bg-cadsurface-900/50 group"
+              onClick={handleNewDesign}
+              disabled={creating}
+              className="border-2 border-dashed border-cadsurface-700 hover:border-cadblue-600/50 rounded-xl h-64 flex flex-col items-center justify-center gap-3 transition-all hover:bg-cadsurface-900/50 group disabled:opacity-60"
             >
               <div className="w-12 h-12 rounded-xl bg-cadsurface-800 group-hover:bg-cadblue-900/40 flex items-center justify-center transition-colors">
                 <Plus size={20} className="text-slate-500 group-hover:text-cadblue-400 transition-colors" />
@@ -407,18 +413,19 @@ export default function Home() {
               Tooling Templates
             </h2>
             <button
-              onClick={() => setShowNewProjectModal(true)}
+              onClick={handleNewDesign}
               className="text-xs text-cadblue-400 hover:text-cadblue-300 flex items-center gap-1"
             >
-              Browse all <ChevronRight size={12} />
+              Start blank <ChevronRight size={12} />
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             {TOOLING_TEMPLATES.map((t) => (
               <button
                 key={t.label}
-                onClick={() => setShowNewProjectModal(true)}
-                className={`flex flex-col items-center gap-2 p-3 bg-cadsurface-900 border border-cadsurface-700 hover:border-cadblue-600/40 rounded-xl transition-all ${t.bg} group`}
+                onClick={() => handleTemplateClick(t.id, t.label)}
+                disabled={creating}
+                className={`flex flex-col items-center gap-2 p-3 bg-cadsurface-900 border border-cadsurface-700 hover:border-cadblue-600/40 rounded-xl transition-all ${t.bg} group disabled:opacity-60`}
               >
                 <div className="w-10 h-10 rounded-lg bg-cadsurface-800 group-hover:bg-cadsurface-700 flex items-center justify-center transition-colors">
                   <span className={t.color}>{t.icon}</span>
