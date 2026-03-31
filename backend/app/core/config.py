@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     GEMINI_FLASH_MODEL: str = "gemini-2.5-flash"
     GEMINI_PRO_MODEL: str = "gemini-2.5-pro"
 
+    # Rate limiting
+    GEMINI_MAX_CONCURRENT_REQUESTS: int = 3   # semaphore cap on parallel calls
+    GEMINI_RPM_LIMIT_FLASH: int = 60          # requests/min for Flash model
+    GEMINI_RPM_LIMIT_PRO: int = 30            # requests/min for Pro model
+    GEMINI_RETRY_MAX: int = 3                 # max 429 retries (backoff: 1→2→4→8 s)
+    GEMINI_PER_USER_RPM: int = 20             # per-user requests/min cap
+
     # ── Zoo.dev CAD Kernel ────────────────────────────────────────────────────
     ZOO_API_KEY: str = ""
     ZOO_API_URL: str = "https://api.zoo.dev"

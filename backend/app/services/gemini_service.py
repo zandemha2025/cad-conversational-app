@@ -11,16 +11,17 @@ from pathlib import Path
 from typing import AsyncIterator
 import google.generativeai as genai
 from app.core.config import settings
+from app.gemini_rate_limiter import limiter, _is_rate_limit_error
 
 log = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 # GENERATION_INTENTS that should be routed to Gemini Pro
-PRO_INTENTS = {"fixture_generation", "geometry_modification", "kcl_revision"}
+PRO_INTENTS = {"fixture_generation", "general_generation", "geometry_modification", "kcl_revision"}
 
 _VALID_INTENTS = frozenset({
-    "fixture_generation", "geometry_modification", "kcl_revision",
+    "fixture_generation", "general_generation", "geometry_modification", "kcl_revision",
     "dfm_question", "touchpoint_question", "standards_question",
     "general_question", "out_of_scope",
 })
@@ -87,10 +88,10 @@ class GeminiService:
             system = _load_prompt("intent_classification.txt")
             prompt = f"{system}\n\nMessage: {user_message}"
             model = self._get_flash()
-            loop = asyncio.get_event_loop()
-            resp = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(prompt)
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="classify_intent",
             )
             raw = resp.text.strip().lower()
             # Exact match (happy path)
@@ -116,6 +117,7 @@ class GeminiService:
         user_message: str,
         history: list[dict],
         project_ctx: dict,
+        user_id: str | None = None,
     ) -> AsyncIterator[str]:
         if not settings.GEMINI_API_KEY:
             yield "I'm running in demo mode — Gemini API key not configured."
@@ -169,31 +171,44 @@ class GeminiService:
             contents.append({"role": role, "parts": [{"text": text}]})
         contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-        try:
-            # system_instruction must be set on the model, not generate_content()
-            model = genai.GenerativeModel(
-                settings.GEMINI_FLASH_MODEL,
-                system_instruction=system_prompt,
-            )
-            loop = asyncio.get_event_loop()
+        # system_instruction must be set on the model, not generate_content()
+        model = genai.GenerativeModel(
+            settings.GEMINI_FLASH_MODEL,
+            system_instruction=system_prompt,
+        )
+        loop = asyncio.get_running_loop()
 
-            def _run_stream():
-                return model.generate_content(
-                    contents,
-                    stream=True,
-                )
+        def _run_stream():
+            return model.generate_content(contents, stream=True)
 
-            stream = await loop.run_in_executor(None, _run_stream)
-            for chunk in stream:
-                if chunk.text:
-                    yield chunk.text
-        except Exception as e:
-            log.error("stream_chat error: %s", e)
-            err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
-                yield "⚠️ AI rate limit reached — please wait a moment and try again."
-            else:
-                yield f"Sorry, I encountered an error processing your request."
+        # Acquire one rate-limit token for this chat interaction (before retry loop)
+        await limiter.wait_for_token(tier="flash", user_id=user_id)
+
+        for attempt in range(settings.GEMINI_RETRY_MAX + 1):
+            try:
+                stream = await loop.run_in_executor(None, _run_stream)
+                for chunk in stream:
+                    if chunk.text:
+                        yield chunk.text
+                return  # success
+            except Exception as e:
+                is_rl = _is_rate_limit_error(e)
+                if is_rl and attempt < settings.GEMINI_RETRY_MAX:
+                    wait = 2**attempt  # 1 s → 2 s → 4 s
+                    log.warning(
+                        "stream_chat 429 (attempt %d/%d) — retrying in %d s",
+                        attempt + 1,
+                        settings.GEMINI_RETRY_MAX,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    log.error("stream_chat error: %s", e)
+                    if is_rl:
+                        yield "⚠️ AI rate limit reached — please wait a moment and try again."
+                    else:
+                        yield "Sorry, I encountered an error processing your request."
+                    return
 
     # ── KCL code generation (Pro) ──────────────────────────────────────────────
     async def generate_kcl(
@@ -221,11 +236,11 @@ class GeminiService:
             return _stub_kcl(part_features)
 
         model = self._get_pro()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(prompt)
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="pro",
+                context="generate_kcl",
             )
             raw = resp.text.strip()
             # Strip accidental markdown fences
@@ -267,11 +282,11 @@ class GeminiService:
             return _stub_cadquery_code("fixture")
 
         model = self._get_pro()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(
-                None,
-                lambda: model.generate_content(prompt)
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="pro",
+                context="generate_cadquery_fixture",
             )
             raw = resp.text.strip()
             # Strip accidental markdown fences
@@ -306,9 +321,12 @@ class GeminiService:
             return _stub_node_graph()
 
         model = self._get_pro()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="pro",
+                context="generate_node_graph",
+            )
             raw = resp.text.strip()
             # Strip any accidental markdown fences
             if raw.startswith("```"):
@@ -343,9 +361,12 @@ class GeminiService:
             return _fallback_suggestions(part_features, touchpoints)
 
         model = self._get_flash()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="generate_proactive_suggestions",
+            )
             raw = resp.text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
@@ -390,9 +411,12 @@ class GeminiService:
             return _stub_variation_descriptions(prompt, num_variations)
 
         model = self._get_pro()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt_text),
+                tier="pro",
+                context="generate_variation_descriptions",
+            )
             raw = resp.text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -429,9 +453,12 @@ class GeminiService:
         )
 
         model = self._get_flash()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="suggest_components",
+            )
             raw = resp.text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -496,9 +523,12 @@ class GeminiService:
         )
 
         model = self._get_flash()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt_text),
+                tier="flash",
+                context="decompose_prompt",
+            )
             raw = resp.text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -530,9 +560,12 @@ class GeminiService:
         )
 
         model = self._get_pro()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt_text))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt_text),
+                tier="pro",
+                context="generate_cadquery_code",
+            )
             raw = resp.text.strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -564,9 +597,12 @@ class GeminiService:
         if not settings.GEMINI_API_KEY:
             return "Gemini API not configured."
         model = self._get_flash()
-        loop = asyncio.get_event_loop()
         try:
-            resp = await loop.run_in_executor(None, lambda: model.generate_content(prompt))
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="explain_dfm_issue",
+            )
             return resp.text.strip()
         except Exception as e:
             log.error("explain_dfm_issue error: %s", e)
