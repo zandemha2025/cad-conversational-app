@@ -69,24 +69,28 @@ async function tryRefreshToken(): Promise<boolean> {
 
 async function apiFetch<T>(
   path: string,
-  opts: RequestInit = {},
+  opts: RequestInit & { silent404?: boolean } = {},
   _retry = true,
 ): Promise<T | null> {
+  const { silent404, ...fetchOpts } = opts;
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(opts.headers as Record<string, string>),
+    ...(fetchOpts.headers as Record<string, string>),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   try {
-    const res = await fetch(`${API_URL}/api${path}`, { ...opts, headers });
+    const res = await fetch(`${API_URL}/api${path}`, { ...fetchOpts, headers });
     if (!res.ok) {
       if (res.status === 401 && _retry) {
         const refreshed = await tryRefreshToken();
         if (refreshed) return apiFetch<T>(path, opts, false);
       }
-      console.error(`[API] ${opts.method ?? 'GET'} ${path} → ${res.status}`);
+      // Suppress expected 404s (e.g. geometry endpoints before first generation)
+      if (!(res.status === 404 && silent404)) {
+        console.error(`[API] ${fetchOpts.method ?? 'GET'} ${path} → ${res.status}`);
+      }
       return null;
     }
     if (res.status === 204) return null;
@@ -218,12 +222,12 @@ export async function uploadStepFile(projectId: string, file: File) {
 // ── Geometry ──────────────────────────────────────────────────────────────────
 
 export async function fetchPartGeometry(projectId: string) {
-  return apiFetch(`/projects/${projectId}/geometry/part`);
+  return apiFetch(`/projects/${projectId}/geometry/part`, { silent404: true });
 }
 
 export async function fetchFixtureGeometry(projectId: string, version?: number) {
   const qs = version ? `?version=${version}` : '';
-  return apiFetch(`/projects/${projectId}/geometry/fixture${qs}`);
+  return apiFetch(`/projects/${projectId}/geometry/fixture${qs}`, { silent404: true });
 }
 
 export async function fetchAssemblyComponents(projectId: string) {
@@ -232,7 +236,7 @@ export async function fetchAssemblyComponents(projectId: string) {
     fixture_version: number | null;
     components: import('../store/workspaceStore').AssemblyComponent[];
     total: number;
-  }>(`/projects/${projectId}/assembly`);
+  }>(`/projects/${projectId}/assembly`, { silent404: true });
 }
 
 /**

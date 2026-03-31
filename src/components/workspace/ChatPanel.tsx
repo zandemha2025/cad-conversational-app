@@ -75,8 +75,16 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
 
   const visibleProactive = proactive.filter((p) => !dismissed.has(p.id));
 
+  const [sendBlocked, setSendBlocked] = useState(false);
+
   const handleSend = () => {
-    if (!input.trim() || isThinking) return;
+    if (!input.trim()) return;
+    if (isThinking) {
+      // Flash visual feedback so user knows why it didn't send
+      setSendBlocked(true);
+      setTimeout(() => setSendBlocked(false), 1200);
+      return;
+    }
     sendMessage(input.trim());
     setInput('');
   };
@@ -234,8 +242,13 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
             </button>
             <button
               onClick={handleSend}
-              disabled={!input.trim() || isThinking}
-              className="w-8 h-8 rounded-lg bg-cadblue-600 hover:bg-cadblue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-all"
+              disabled={!input.trim()}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                sendBlocked
+                  ? 'bg-amber-600 animate-pulse'
+                  : 'bg-cadblue-600 hover:bg-cadblue-700 disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+              title={isThinking ? 'Waiting for AI response…' : 'Send message'}
             >
               {isThinking
                 ? <Loader2 size={13} className="text-white animate-spin" />
@@ -244,7 +257,9 @@ export default function ChatPanel({ projectId, projectName, onGenerationQueued, 
           </div>
         </div>
         <p className="text-xs text-slate-600 mt-1.5 text-center">
-          ForgeAI · Enter to send · Shift+Enter for new line
+          {sendBlocked
+            ? <span className="text-amber-400">Waiting for AI to finish responding…</span>
+            : 'ForgeAI · Enter to send · Shift+Enter for new line'}
         </p>
       </div>
     </div>

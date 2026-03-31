@@ -40,6 +40,58 @@ async def _ws_send_safe(ws: WebSocket, data: dict):
         pass
 
 
+class _ProgressHeartbeat:
+    """Sends incremental progress updates on a timer during long-running steps.
+
+    Usage:
+        async with _ProgressHeartbeat(ws, job_id, start=0.25, end=0.40, message="Generating..."):
+            await some_long_task()
+    The progress bar will tick from `start` toward `end` every `interval` seconds
+    so users see movement instead of a frozen bar.
+    """
+
+    def __init__(self, ws: WebSocket, job_id: str, *, start: float, end: float,
+                 message: str, interval: float = 8.0):
+        self.ws = ws
+        self.job_id = job_id
+        self.start = start
+        self.end = end
+        self.message = message
+        self.interval = interval
+        self._task: asyncio.Task | None = None
+
+    async def _tick(self):
+        # Move roughly 40% of remaining distance each tick so it asymptotically
+        # approaches `end` but never reaches it (the real step sends the exact value).
+        progress = self.start
+        try:
+            while True:
+                await asyncio.sleep(self.interval)
+                remaining = self.end - progress
+                progress += remaining * 0.4
+                progress = min(progress, self.end - 0.01)  # never hit the target
+                await _ws_send_safe(self.ws, {
+                    "type": "generation_progress",
+                    "progress": round(progress, 2),
+                    "message": self.message,
+                    "job_id": self.job_id,
+                })
+        except asyncio.CancelledError:
+            pass
+
+    async def __aenter__(self):
+        self._task = asyncio.create_task(self._tick())
+        return self
+
+    async def __aexit__(self, *exc):
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+
 async def _run_generation_inline(
     ws: WebSocket,
     project_id: str,
@@ -124,14 +176,16 @@ async def _run_generation_inline(
         })
 
         try:
-            kcl = await gemini.generate_kcl(
-                part_features=features,
-                touchpoints=touchpoints,
-                environment=env,
-                printer_profile=printer,
-                template_id=template_id,
-                user_prompt=prompt_text,
-            )
+            async with _ProgressHeartbeat(ws, job_id, start=0.25, end=0.40,
+                                          message="Generating parametric model…"):
+                kcl = await gemini.generate_kcl(
+                    part_features=features,
+                    touchpoints=touchpoints,
+                    environment=env,
+                    printer_profile=printer,
+                    template_id=template_id,
+                    user_prompt=prompt_text,
+                )
         except Exception as kcl_exc:
             log.warning("generate_kcl failed project=%s: %s — using empty KCL", project_id, kcl_exc)
             kcl = ""
@@ -165,14 +219,16 @@ async def _run_generation_inline(
         # Step 1: Try CadQuery (Gemini Pro → CadQuery script → STEP → GLB)
         try:
             log.info("Generating CadQuery fixture via Gemini Pro project=%s", project_id)
-            cq_script = await gemini.generate_cadquery_fixture(
-                part_features=features,
-                touchpoints=touchpoints,
-                environment=env,
-                printer_profile=printer,
-                template_id=template_id,
-                user_prompt=prompt_text,
-            )
+            async with _ProgressHeartbeat(ws, job_id, start=0.40, end=0.55,
+                                          message="Generating precise fixture geometry via CadQuery…"):
+                cq_script = await gemini.generate_cadquery_fixture(
+                    part_features=features,
+                    touchpoints=touchpoints,
+                    environment=env,
+                    printer_profile=printer,
+                    template_id=template_id,
+                    user_prompt=prompt_text,
+                )
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
             await _ws_send_safe(ws, {
@@ -182,10 +238,12 @@ async def _run_generation_inline(
 
             from app.services.cadquery_service import execute_cadquery_script
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: execute_cadquery_script(cq_script, project_id, "fixture", version)
-            )
+            async with _ProgressHeartbeat(ws, job_id, start=0.55, end=0.80,
+                                          message="Compiling CadQuery → 3D geometry…"):
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: execute_cadquery_script(cq_script, project_id, "fixture", version)
+                )
             gltf_url = result.get("gltf_url")
 
             if result.get("engine") == "zoo_fallback":
@@ -410,7 +468,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
             await websocket.send_json({"type": "thinking", "intent": intent})
 
             # ── Generation intents → run inline (no Celery) ───────────────────
-            if intent in ("fixture_generation", "geometry_modification", "kcl_revision"):
+            if intent in ("fixture_generation", "general_generation", "geometry_modification", "kcl_revision"):
                 task_prompt = content
 
                 # For modifications, include previous KCL
