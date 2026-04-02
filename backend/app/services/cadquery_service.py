@@ -154,18 +154,42 @@ def _step_to_glb_local(step_bytes: bytes, component_name: str) -> bytes | None:
 
         result = cq.importers.importStep(step_path)
         shape = result.val()  # Workplane.val() returns the underlying Shape/Compound
-        vertices, triangles = shape.tessellate(0.1)
 
-        verts = np.array([(v.x, v.y, v.z) for v in vertices], dtype=np.float32)
-        faces = np.array(triangles, dtype=np.int32)
+        # Try tessellating individual solids first — Compound.tessellate() can
+        # return empty when the compound contains multiple solids.
+        meshes = []
+        solids = shape.Solids() if hasattr(shape, 'Solids') else []
+        if solids:
+            for solid in solids:
+                try:
+                    vertices, triangles = solid.tessellate(0.1)
+                    if vertices and triangles:
+                        verts = np.array([(v.x, v.y, v.z) for v in vertices], dtype=np.float32)
+                        faces = np.array(triangles, dtype=np.int32)
+                        m = trimesh.Trimesh(vertices=verts, faces=faces)
+                        if not m.is_empty:
+                            meshes.append(m)
+                except Exception as sol_e:
+                    log.debug("Tessellate solid failed: %s", sol_e)
 
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-        if mesh.is_empty:
+        # Fallback: tessellate the whole shape directly
+        if not meshes:
+            vertices, triangles = shape.tessellate(0.1)
+            if vertices and triangles:
+                verts = np.array([(v.x, v.y, v.z) for v in vertices], dtype=np.float32)
+                faces = np.array(triangles, dtype=np.int32)
+                m = trimesh.Trimesh(vertices=verts, faces=faces)
+                if not m.is_empty:
+                    meshes.append(m)
+
+        if not meshes:
             log.warning("Local STEP→GLB: empty mesh for '%s'", component_name)
             return None
 
-        glb_data = mesh.export(file_type="glb")
-        log.info("Local STEP→GLB OK for '%s' (%d bytes)", component_name, len(glb_data))
+        # Merge all solid meshes into one
+        combined = trimesh.util.concatenate(meshes) if len(meshes) > 1 else meshes[0]
+        glb_data = combined.export(file_type="glb")
+        log.info("Local STEP→GLB OK for '%s' (%d bytes, %d solids)", component_name, len(glb_data), len(meshes))
         return glb_data
     except Exception as e:
         log.warning("Local STEP→GLB failed for '%s': %s", component_name, e)

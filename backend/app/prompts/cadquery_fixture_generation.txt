@@ -67,9 +67,10 @@ except Exception:
 ```
 
 ═══════════════════════════════════════════════════════════════
-EXAMPLE — Rectangular plate with 4 corner holes
+EXAMPLES
 ═══════════════════════════════════════════════════════════════
 
+Example 1: Rectangular plate with 4 corner holes
 Request: "200mm × 150mm × 15mm plate with four 8mm holes, 20mm from each corner"
 
 ```python
@@ -90,6 +91,45 @@ hole_pts = [
     ( length/2 - margin,  width/2 - margin),
 ]
 result = result.faces('>Z').workplane().pushPoints(hole_pts).hole(hole_d)
+
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 2: Cylinder with polar bolt pattern on bottom
+Request: "80mm diameter × 70mm tall cylinder with 3 M6 holes on bottom, 120° apart on 60mm BCD"
+
+```python
+import cadquery as cq
+import math
+
+od = 80.0
+height = 70.0
+bolt_dia = 6.0
+bcd = 60.0
+n_bolts = 3
+
+result = cq.Workplane('XY').circle(od / 2).extrude(height)
+
+bolt_pts = [
+    (bcd/2 * math.cos(math.radians(a)), bcd/2 * math.sin(math.radians(a)))
+    for a in [0, 120, 240]
+]
+result = result.faces('<Z').workplane().pushPoints(bolt_pts).hole(bolt_dia)
+
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 3: Part with thin feature (planar fin / wedge)
+Request: "cylinder with a thin rectangular fin extending from the side"
+
+```python
+import cadquery as cq
+
+body = cq.Workplane('XY').circle(20).extrude(50)
+fin = (cq.Workplane('XZ')
+    .workplane(offset=20)
+    .rect(40, 50).extrude(2))
+result = body.union(fin)
 
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
