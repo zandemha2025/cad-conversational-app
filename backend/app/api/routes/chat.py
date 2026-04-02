@@ -559,7 +559,23 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                         )
 
                 # ── Clarification check: ask before generating if spec is uncertain
+                # Skip if this is a modification, or if the last assistant message was
+                # already a clarification (user is answering our questions).
                 skip_clarification = intent in ("geometry_modification", "kcl_revision")
+                if not skip_clarification and history:
+                    last_assistant = next(
+                        (h for h in reversed(history) if h.get("role") == "assistant"), None
+                    )
+                    if last_assistant and "clarif" in (last_assistant.get("content", "") or "").lower():
+                        skip_clarification = True
+                        # Merge original prompt + clarification answer
+                        last_user = next(
+                            (h for h in reversed(history) if h.get("role") == "user"
+                             and h["content"] != content), None
+                        )
+                        if last_user:
+                            task_prompt = f"{last_user['content']}\n\nUser clarified: {content}"
+                        log.info("Skipping re-clarification, using merged prompt project=%s", project_id)
                 if not skip_clarification:
                     try:
                         pre_spec = await gemini.generate_design_spec(content)
@@ -643,11 +659,18 @@ async def chat_ws(websocket: WebSocket, project_id: str):
 
                 # Stream brief spec summary so user knows what's being built
                 explanation_prompt = (
-                    f"The user asked: {task_prompt!r}. "
+                    f"The user asked: {content!r}. "
                     "Briefly confirm what 3D model you are generating. "
                     "Include the specific shape, key dimensions, and features. "
                     "Do NOT invent features the user did not ask for. 2 sentences max."
                 )
+                # If this is a clarification answer, adjust the explanation
+                if skip_clarification and task_prompt != content:
+                    explanation_prompt = (
+                        f"Based on the user's clarification: {content!r}, "
+                        "confirm what you are now generating. 1-2 sentences. "
+                        "Be specific about shape, dimensions, and features."
+                    )
                 full_response = ""
                 async for chunk in gemini.stream_chat(explanation_prompt, history, project_ctx):
                     full_response += chunk
