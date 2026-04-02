@@ -12,7 +12,7 @@ from sqlalchemy import text
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/validation-trends")

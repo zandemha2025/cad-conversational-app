@@ -11,7 +11,7 @@ import uuid
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/organizations", tags=["organizations"])
+router = APIRouter(prefix="/organizations", tags=["organizations"])
 
 
 @router.post("")

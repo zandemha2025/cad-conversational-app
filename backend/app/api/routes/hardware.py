@@ -12,7 +12,7 @@ from sqlalchemy import text
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/hardware", tags=["hardware"])
+router = APIRouter(prefix="/hardware", tags=["hardware"])
 
 
 @router.get("/catalog")

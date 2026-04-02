@@ -38,11 +38,13 @@ export function useRealtimeProject(
   useEffect(() => {
     if (!projectId || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
 
-    // Only connect Realtime if the user has a valid auth token stored.
-    // Without it, Supabase Realtime rejects the WebSocket and floods the
-    // browser console with 401 errors. Polling covers the same functionality.
+    // Only connect Realtime if a Supabase-compatible access token exists.
+    // The custom backend JWT (scalecad_token) is NOT recognized by Supabase
+    // Realtime and causes WebSocket auth failures. Only use sb-access-token
+    // which is set by Supabase Auth sign-in. Polling covers the same
+    // functionality when Realtime is not available.
     const token = typeof localStorage !== 'undefined'
-      ? (localStorage.getItem('scalecad_token') ?? localStorage.getItem('sb-access-token'))
+      ? localStorage.getItem('sb-access-token')
       : null;
     if (!token) return;
 

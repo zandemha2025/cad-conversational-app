@@ -9,7 +9,11 @@ interface FixtureGeometryResult {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  /** True when polling has been stopped after consecutive 404s */
+  pollingStopped: boolean;
 }
+
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 export function useFixtureGeometry(projectId: string | undefined): FixtureGeometryResult {
   const [gltfUrl, setGltfUrl] = useState<string | null>(null);
@@ -18,7 +22,9 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [pollingStopped, setPollingStopped] = useState(false);
   const blobUrlRef = useRef<string | null>(null);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     if (!projectId) return;
@@ -31,24 +37,22 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
       fetchPartGeometry(projectId),
     ])
       .then(async ([fixture, part]) => {
+        let gotData = false;
         if (fixture && typeof fixture === 'object') {
           const f = fixture as { gltf_url?: string; version?: number };
           setVersion(f.version ?? null);
 
           if (f.gltf_url) {
-            // Revoke previous blob URL to avoid memory leaks
+            gotData = true;
             if (blobUrlRef.current) {
               URL.revokeObjectURL(blobUrlRef.current);
               blobUrlRef.current = null;
             }
-            // Fetch GLB with auth headers and create a blob URL so Three.js
-            // can load it without needing auth (avoids 401 from useGLTF)
             const blobUrl = await fetchGlbBlobUrl(f.gltf_url);
             if (blobUrl) {
               blobUrlRef.current = blobUrl;
               setGltfUrl(blobUrl);
             } else {
-              // Fallback: try the URL directly (works if it's a public presigned URL)
               setGltfUrl(f.gltf_url);
             }
           } else {
@@ -57,10 +61,27 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
         }
         if (part && typeof part === 'object') {
           const p = part as { features_json?: PartFeatures };
+          if (p.features_json) gotData = true;
           setPartFeatures(p.features_json ?? null);
         }
+        // Reset or increment consecutive failure counter
+        if (gotData) {
+          failCountRef.current = 0;
+          setPollingStopped(false);
+        } else {
+          failCountRef.current += 1;
+          if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
+            setPollingStopped(true);
+          }
+        }
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        setError(String(e));
+        failCountRef.current += 1;
+        if (failCountRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          setPollingStopped(true);
+        }
+      })
       .finally(() => setLoading(false));
 
     return () => {
@@ -71,7 +92,12 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
     };
   }, [projectId, tick]);
 
-  const refetch = useCallback(() => setTick((t) => t + 1), []);
+  const refetch = useCallback(() => {
+    // Reset failure counter on explicit refetch (e.g. generation started)
+    failCountRef.current = 0;
+    setPollingStopped(false);
+    setTick((t) => t + 1);
+  }, []);
 
-  return { gltfUrl, version, partFeatures, loading, error, refetch };
+  return { gltfUrl, version, partFeatures, loading, error, refetch, pollingStopped };
 }

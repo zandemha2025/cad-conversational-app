@@ -10,7 +10,7 @@ from sqlalchemy import text
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/audit", tags=["audit"])
+router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("")

@@ -14,7 +14,7 @@ import json
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/revisions", tags=["revisions"])
+router = APIRouter(prefix="/revisions", tags=["revisions"])
 
 
 @router.get("/{project_id}")

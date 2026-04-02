@@ -11,7 +11,7 @@ from sqlalchemy import text
 import logging
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/drawings", tags=["drawings"])
+router = APIRouter(prefix="/drawings", tags=["drawings"])
 
 
 @router.get("/{project_id}/latest")

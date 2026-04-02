@@ -104,14 +104,15 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
   }, [projectId]);
 
   // Load fixture geometry + part features
-  const { gltfUrl, version: fixtureVersion, partFeatures, refetch: refetchGeometry } = useFixtureGeometry(projectId);
+  const { gltfUrl, version: _fixtureVersion, partFeatures, refetch: refetchGeometry, pollingStopped } = useFixtureGeometry(projectId);
 
   // Poll for geometry when a generation job is in progress (fallback for Supabase Realtime)
+  // Stops after 3 consecutive 404s to avoid console spam; resumes when generation starts
   useEffect(() => {
-    if (!isGenerating || gltfUrl) return;
+    if (!isGenerating || gltfUrl || pollingStopped) return;
     const id = setInterval(refetchGeometry, 5000);
     return () => clearInterval(id);
-  }, [isGenerating, gltfUrl, refetchGeometry]);
+  }, [isGenerating, gltfUrl, refetchGeometry, pollingStopped]);
 
   // Stop polling once generation completes (gltfUrl is a real URL)
   useEffect(() => {
