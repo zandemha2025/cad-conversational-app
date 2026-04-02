@@ -222,10 +222,14 @@ async def _run_generation_inline(
         is_stub = False
 
         # Step 1: Try CadQuery (Gemini Pro → CadQuery script → STEP → GLB)
+        # If it fails, retry once with error feedback before falling back to Zoo.dev
+        from app.services.cadquery_service import execute_cadquery_script
+        MAX_CQ_ATTEMPTS = 2
+
         try:
-            log.info("Generating CadQuery fixture via Gemini Pro project=%s", project_id)
+            log.info("Generating CadQuery geometry via Gemini Pro project=%s", project_id)
             async with _ProgressHeartbeat(ws, job_id, start=0.40, end=0.55,
-                                          message="Generating precise fixture geometry via CadQuery…"):
+                                          message="Generating 3D geometry…"):
                 cq_script = await gemini.generate_cadquery_fixture(
                     part_features=features,
                     touchpoints=touchpoints,
@@ -236,32 +240,59 @@ async def _run_generation_inline(
                 )
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
-            await _ws_send_safe(ws, {
-                "type": "generation_progress", "progress": 0.55,
-                "message": "Compiling CadQuery → 3D geometry…", "job_id": job_id,
-            })
-
-            from app.services.cadquery_service import execute_cadquery_script
             loop = asyncio.get_event_loop()
-            async with _ProgressHeartbeat(ws, job_id, start=0.55, end=0.80,
-                                          message="Compiling CadQuery → 3D geometry…"):
-                result = await loop.run_in_executor(
-                    None,
-                    lambda: execute_cadquery_script(cq_script, project_id, "fixture", version)
-                )
-            gltf_url = result.get("gltf_url")
+            last_error = None
+
+            for attempt in range(1, MAX_CQ_ATTEMPTS + 1):
+                attempt_label = f"attempt {attempt}/{MAX_CQ_ATTEMPTS}"
+                await _ws_send_safe(ws, {
+                    "type": "generation_progress", "progress": 0.55 if attempt == 1 else 0.65,
+                    "message": f"Compiling CadQuery → 3D geometry… ({attempt_label})",
+                    "job_id": job_id,
+                })
+
+                async with _ProgressHeartbeat(ws, job_id,
+                                              start=0.55 if attempt == 1 else 0.65,
+                                              end=0.75 if attempt == 1 else 0.80,
+                                              message=f"Compiling CadQuery → 3D geometry… ({attempt_label})"):
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda s=cq_script: execute_cadquery_script(s, project_id, "fixture", version)
+                    )
+
+                gltf_url = result.get("gltf_url")
+
+                if gltf_url and result.get("engine") != "zoo_fallback":
+                    log.info("CadQuery OK project=%s %s gltf_url=%s", project_id, attempt_label, bool(gltf_url))
+                    break
+
+                # Execution failed — get error details for retry
+                last_error = result.get("error") or "CadQuery produced no geometry or empty mesh"
+                log.warning("CadQuery %s failed project=%s: %s", attempt_label, project_id, last_error)
+
+                if attempt < MAX_CQ_ATTEMPTS:
+                    # Ask Gemini to fix the script
+                    await _ws_send_safe(ws, {
+                        "type": "generation_progress", "progress": 0.62,
+                        "message": "Fixing CadQuery script…", "job_id": job_id,
+                    })
+                    cq_script = await gemini.retry_cadquery_with_error(
+                        cq_script, str(last_error), prompt_text,
+                    )
+                    log.info("CadQuery retry script generated (%d chars) project=%s", len(cq_script), project_id)
+                    gltf_url = None  # reset for next attempt
 
             if result.get("engine") == "zoo_fallback":
                 generation_errors.append("CadQuery execution failed; used Zoo.dev fallback")
                 log.warning("CadQuery failed, Zoo.dev fallback used project=%s", project_id)
 
             if not gltf_url:
-                raise RuntimeError("CadQuery produced no geometry")
+                raise RuntimeError(f"CadQuery failed after {MAX_CQ_ATTEMPTS} attempts: {last_error}")
 
-            log.info("CadQuery fixture OK project=%s gltf_url=%s", project_id, bool(gltf_url))
+            log.info("CadQuery geometry OK project=%s gltf_url=%s", project_id, bool(gltf_url))
 
         except Exception as cq_exc:
-            # Step 2: Fallback to Zoo.dev text-to-cad
+            # Final fallback: Zoo.dev text-to-cad
             log.warning("CadQuery failed project=%s: %s — falling back to Zoo.dev", project_id, cq_exc)
             generation_errors.append(f"CadQuery failed ({str(cq_exc)[:100]}); using Zoo.dev")
 

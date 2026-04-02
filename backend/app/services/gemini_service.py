@@ -262,9 +262,8 @@ class GeminiService:
         user_prompt: str,
     ) -> str:
         """
-        Generate a COMPLETE CadQuery Python script for a manufacturing fixture.
-        Uses the full project context (features, touchpoints, env, printer)
-        to produce a precise parametric fixture with all standard features.
+        Generate a CadQuery Python script for any 3D geometry the user describes.
+        Uses the full project context (features, touchpoints, env, printer).
         """
         template = _load_prompt("cadquery_fixture_generation.txt")
         prompt = _fill_template(
@@ -289,13 +288,55 @@ class GeminiService:
                 context="generate_cadquery_fixture",
             )
             raw = resp.text.strip()
-            # Strip accidental markdown fences
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             return raw
         except Exception as e:
             log.error("generate_cadquery_fixture error: %s", e)
             return _stub_cadquery_code("fixture")
+
+    async def retry_cadquery_with_error(
+        self,
+        original_script: str,
+        error_message: str,
+        user_prompt: str,
+    ) -> str:
+        """
+        When a CadQuery script fails execution, send the script + error back
+        to Gemini to fix it. Returns corrected Python code.
+        """
+        retry_prompt = (
+            "The following CadQuery script was generated for this user request:\n"
+            f'"{user_prompt}"\n\n'
+            f"```python\n{original_script}\n```\n\n"
+            f"It failed with this error:\n```\n{error_message[:500]}\n```\n\n"
+            "Fix the script. Common issues:\n"
+            "- .edges() selector failing on complex geometry → remove or wrap in try/except\n"
+            "- .faces() returning wrong face after .union() → use explicit workplane offset\n"
+            "- .hole() on wrong workplane → select correct face first\n"
+            "- Shape mismatch → re-read user request and match the correct base shape\n\n"
+            "Output ONLY the corrected Python code. No markdown fences. No explanations.\n"
+            "The script must end with: cq.exporters.export(result, '/tmp/cq_output.step')"
+        )
+
+        if not settings.GEMINI_API_KEY:
+            return original_script
+
+        model = self._get_pro()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(retry_prompt),
+                tier="pro",
+                context="retry_cadquery",
+            )
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            log.info("CadQuery retry generated %d chars", len(raw))
+            return raw
+        except Exception as e:
+            log.error("retry_cadquery_with_error failed: %s", e)
+            return original_script
 
     # ── Node graph generation (Pro) ────────────────────────────────────────────
     async def generate_node_graph(

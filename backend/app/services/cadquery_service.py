@@ -90,17 +90,22 @@ def execute_cadquery_script(
             )
 
             if result.returncode != 0:
+                error_detail = (result.stderr or result.stdout or "unknown error")[:500]
                 log.error(
                     "CadQuery script failed for '%s':\n--- stdout ---\n%s\n--- stderr ---\n%s",
                     component_name,
                     result.stdout[:800],
                     result.stderr[:800],
                 )
-                return _zoo_fallback(project_id, safe_name, version)
+                fallback = _zoo_fallback(project_id, safe_name, version)
+                fallback["error"] = error_detail
+                return fallback
 
             if not os.path.exists(step_path) or os.path.getsize(step_path) == 0:
                 log.error("CadQuery produced no STEP file for '%s'", component_name)
-                return _zoo_fallback(project_id, safe_name, version)
+                fallback = _zoo_fallback(project_id, safe_name, version)
+                fallback["error"] = "CadQuery produced no STEP output file"
+                return fallback
 
             with open(step_path, "rb") as f:
                 step_bytes = f.read()
