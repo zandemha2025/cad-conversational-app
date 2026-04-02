@@ -75,15 +75,24 @@ DIMENSION DEFAULTS (when user doesn't specify):
 - M8 bolt: 8mm hole, BCD = 80mm for 4-bolt, 100mm for 6-bolt
 - M10 bolt: 10mm hole
 - Wall thickness for enclosures: 2-3mm
-- FOV surface: thin plane (1-2mm thick) extending 100-150mm from origin
+- FOV surface / sensor beam: wedge or fan shape, MINIMUM 5mm thick for 3D visibility, extending 80-120mm from origin
+
+VISIBILITY RULES (critical for 3D rendering):
+- ANY visual/display feature (FOV, beam, indicator) must be at least 5mm thick
+- Thin fins/ribs must be at least 3mm thick
+- Features smaller than 2mm will be invisible in the 3D viewer
 
 RULES:
 1. Every feature the user mentions MUST appear in the spec
 2. If the user says "cylinder" → base_shape MUST be "cylinder"
 3. Bolt patterns: calculate BCD from base shape (typically 70-80% of diameter)
 4. Polar bolt patterns: distribute evenly (3 bolts = 120° apart, 4 = 90°, 6 = 60°)
-5. "field of view" or "FOV" = thin planar wedge surface, angle as specified
+5. "field of view" or "FOV" = visible wedge/fan shape, minimum 5mm thick, angle as specified
 6. Use reasonable engineering dimensions — nothing smaller than 5mm or larger than 500mm unless specified
+7. For each dimension, mark whether the user EXPLICITLY stated it or it was INFERRED from defaults
+
+Add an "inferred_fields" array listing every field that was NOT explicitly stated by the user.
+Example: if user says "cylinder with M6 bolts" but no diameter → "dimensions.diameter" is inferred.
 
 USER REQUEST:
 {user_prompt}

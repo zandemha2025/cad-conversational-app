@@ -145,6 +145,12 @@ export function useChat({ projectId, initialMessages = [], onGenerationQueued, o
         return;
       }
 
+      // Clarification needed — AI is asking follow-up questions before generating
+      if (msg.type === 'clarification_needed') {
+        setIsThinking(false);
+        return;
+      }
+
       if (msg.type === 'generation_queued') {
         setActiveGenJob({ jobId: msg.job_id as string, message: msg.message as string });
         onGenerationQueuedRef.current?.();

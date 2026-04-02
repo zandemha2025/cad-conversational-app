@@ -392,6 +392,40 @@ class GeminiService:
             log.warning("design_spec generation failed: %s — proceeding without spec", e)
             return {}
 
+    # ── Spec confidence assessment (Flash — fast check) ────────────────────────
+    async def assess_spec_confidence(self, spec: dict, user_prompt: str) -> dict:
+        """
+        Check if the design spec is confident enough to generate, or if
+        clarification questions should be asked first.
+        Returns: {confidence, needs_clarification, questions: [{id, question, options}]}
+        """
+        if not spec or not spec.get("base_shape") or not settings.GEMINI_API_KEY:
+            return {"confidence": 1.0, "needs_clarification": False, "questions": []}
+
+        template = _load_prompt("spec_confidence.txt")
+        prompt = (template
+                  .replace("{user_prompt}", user_prompt)
+                  .replace("{design_spec_json}", json.dumps(spec, indent=2)))
+
+        model = self._get_flash()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="spec_confidence",
+            )
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
+            log.info("Spec confidence: %.2f needs_clarification=%s questions=%d",
+                     result.get("confidence", 0), result.get("needs_clarification"),
+                     len(result.get("questions", [])))
+            return result
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning("spec_confidence assessment failed: %s — proceeding without", e)
+            return {"confidence": 1.0, "needs_clarification": False, "questions": []}
+
     # ── CadQuery validation (Flash — fast check) ─────────────────────────────
     async def validate_cadquery_against_spec(
         self, cq_script: str, spec: dict, user_prompt: str,

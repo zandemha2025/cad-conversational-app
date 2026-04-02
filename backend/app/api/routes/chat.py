@@ -533,7 +533,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
 
             await websocket.send_json({"type": "thinking", "intent": intent})
 
-            # ── Generation intents → run inline (no Celery) ───────────────────
+            # ── Generation intents → clarify if needed, then generate ────────
             if intent in ("fixture_generation", "general_generation", "geometry_modification", "kcl_revision"):
                 task_prompt = content
 
@@ -558,6 +558,81 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                             f"Preserve all existing features not mentioned in the modification."
                         )
 
+                # ── Clarification check: ask before generating if spec is uncertain
+                skip_clarification = intent in ("geometry_modification", "kcl_revision")
+                if not skip_clarification:
+                    try:
+                        pre_spec = await gemini.generate_design_spec(content)
+                        confidence = await gemini.assess_spec_confidence(pre_spec, content)
+
+                        if confidence.get("needs_clarification") and confidence.get("questions"):
+                            questions = confidence["questions"][:3]
+                            # Build a readable clarification message
+                            clarif_text = "Before I generate, I need to clarify a few details:\n\n"
+                            for q in questions:
+                                clarif_text += f"**{q['question']}**\n"
+                                for opt in q.get("options", []):
+                                    clarif_text += f"  - {opt['label']}\n"
+                                clarif_text += "\n"
+
+                            # Send as clarification message
+                            await websocket.send_json({
+                                "type": "clarification_needed",
+                                "message": clarif_text,
+                                "questions": questions,
+                                "spec_preview": pre_spec,
+                            })
+
+                            # Also stream it as normal chat so it appears in the conversation
+                            for chunk_text in [clarif_text[i:i+80] for i in range(0, len(clarif_text), 80)]:
+                                await websocket.send_json({"type": "chunk", "content": chunk_text})
+                            await websocket.send_json({"type": "done", "intent": "clarification", "job_id": None})
+
+                            # Save assistant message
+                            sb.table("conversation_messages").insert({
+                                "id": str(uuid.uuid4()),
+                                "project_id": project_id,
+                                "role": "assistant",
+                                "content": clarif_text,
+                                "attachments": [],
+                                "linked_node_id": None,
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                            }).execute()
+
+                            # Wait for user's clarification response
+                            raw_clarif = await asyncio.wait_for(
+                                websocket.receive_text(), timeout=300,  # 5 min timeout
+                            )
+                            clarif_msg = json.loads(raw_clarif)
+                            clarif_content = ""
+
+                            if clarif_msg.get("type") == "message":
+                                clarif_content = clarif_msg.get("content", "").strip()
+                            elif clarif_msg.get("type") == "clarification_response":
+                                answers = clarif_msg.get("answers", [])
+                                clarif_content = "; ".join(
+                                    a.get("answer", a.get("value", "")) for a in answers
+                                )
+
+                            if clarif_content:
+                                # Save user's clarification
+                                sb.table("conversation_messages").insert({
+                                    "id": str(uuid.uuid4()),
+                                    "project_id": project_id,
+                                    "role": "user",
+                                    "content": clarif_content,
+                                    "attachments": [],
+                                    "linked_node_id": None,
+                                    "created_at": datetime.now(timezone.utc).isoformat(),
+                                }).execute()
+                                # Merge clarification into task prompt
+                                task_prompt = f"{content}\n\nUser clarified: {clarif_content}"
+                                log.info("Clarification received project=%s: %s", project_id, clarif_content[:100])
+                    except asyncio.TimeoutError:
+                        log.info("Clarification timed out project=%s — proceeding with defaults", project_id)
+                    except Exception as clarif_exc:
+                        log.warning("Clarification check failed project=%s: %s — proceeding", project_id, clarif_exc)
+
                 # Tell client generation is starting
                 gen_job_id = str(uuid.uuid4())
                 await websocket.send_json({
@@ -566,13 +641,12 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                     "message": "Generating your 3D model — this takes about 30 seconds.",
                 })
 
-                # Stream brief AI explanation while generation runs in background
+                # Stream brief spec summary so user knows what's being built
                 explanation_prompt = (
-                    f"The user asked: {content!r}. "
+                    f"The user asked: {task_prompt!r}. "
                     "Briefly confirm what 3D model you are generating. "
-                    "Describe ONLY the shapes and dimensions the user explicitly mentioned. "
-                    "Do NOT invent features, surfaces, or details the user did not ask for. "
-                    "Do NOT describe manufacturing processes. 2 sentences max."
+                    "Include the specific shape, key dimensions, and features. "
+                    "Do NOT invent features the user did not ask for. 2 sentences max."
                 )
                 full_response = ""
                 async for chunk in gemini.stream_chat(explanation_prompt, history, project_ctx):
@@ -580,8 +654,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                     await websocket.send_json({"type": "chunk", "content": chunk})
                 await websocket.send_json({"type": "done", "intent": intent, "job_id": gen_job_id})
 
-                # Launch generation inline (runs in the same event loop).
-                # Hold a strong reference in _background_tasks to prevent asyncio GC.
+                # Launch generation inline
                 _gen_task = asyncio.create_task(
                     _run_generation_inline(websocket, project_id, task_prompt, sb, gen_job_id)
                 )
