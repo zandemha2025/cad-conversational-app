@@ -487,6 +487,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
 
         # ── Message loop ───────────────────────────────────────────────────────
         sb = get_supabase_client()
+        _clarification_asked = False  # Track if we already asked clarification this session
 
         while True:
             raw = await websocket.receive_text()
@@ -559,23 +560,19 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                         )
 
                 # ── Clarification check: ask before generating if spec is uncertain
-                # Skip if this is a modification, or if the last assistant message was
-                # already a clarification (user is answering our questions).
+                # Skip if: modification intent, OR we already asked clarification this session
                 skip_clarification = intent in ("geometry_modification", "kcl_revision")
-                if not skip_clarification and history:
-                    last_assistant = next(
-                        (h for h in reversed(history) if h.get("role") == "assistant"), None
-                    )
-                    if last_assistant and "clarif" in (last_assistant.get("content", "") or "").lower():
-                        skip_clarification = True
-                        # Merge original prompt + clarification answer
-                        last_user = next(
-                            (h for h in reversed(history) if h.get("role") == "user"
-                             and h["content"] != content), None
-                        )
-                        if last_user:
-                            task_prompt = f"{last_user['content']}\n\nUser clarified: {content}"
-                        log.info("Skipping re-clarification, using merged prompt project=%s", project_id)
+                if not skip_clarification and _clarification_asked:
+                    skip_clarification = True
+                    # This is the user's answer to our questions — merge with original prompt
+                    # Find the original user prompt (the one before clarification)
+                    orig_prompts = [
+                        h["content"] for h in history
+                        if h.get("role") == "user" and h["content"] != content
+                    ]
+                    if orig_prompts:
+                        task_prompt = f"{orig_prompts[-1]}\n\nUser clarified: {content}"
+                    log.info("Skipping re-clarification (already asked), merged prompt project=%s", project_id)
                 if not skip_clarification:
                     try:
                         pre_spec = await gemini.generate_design_spec(content)
@@ -592,6 +589,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                                 clarif_text += "\n"
 
                             # Send as clarification message
+                            _clarification_asked = True
                             await websocket.send_json({
                                 "type": "clarification_needed",
                                 "message": clarif_text,
@@ -599,7 +597,7 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                                 "spec_preview": pre_spec,
                             })
 
-                            # Also stream it as normal chat so it appears in the conversation
+                            # Stream it as normal chat so it appears in the conversation
                             for chunk_text in [clarif_text[i:i+80] for i in range(0, len(clarif_text), 80)]:
                                 await websocket.send_json({"type": "chunk", "content": chunk_text})
                             await websocket.send_json({"type": "done", "intent": "clarification", "job_id": None})
@@ -615,37 +613,10 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                                 "created_at": datetime.now(timezone.utc).isoformat(),
                             }).execute()
 
-                            # Wait for user's clarification response
-                            raw_clarif = await asyncio.wait_for(
-                                websocket.receive_text(), timeout=300,  # 5 min timeout
-                            )
-                            clarif_msg = json.loads(raw_clarif)
-                            clarif_content = ""
-
-                            if clarif_msg.get("type") == "message":
-                                clarif_content = clarif_msg.get("content", "").strip()
-                            elif clarif_msg.get("type") == "clarification_response":
-                                answers = clarif_msg.get("answers", [])
-                                clarif_content = "; ".join(
-                                    a.get("answer", a.get("value", "")) for a in answers
-                                )
-
-                            if clarif_content:
-                                # Save user's clarification
-                                sb.table("conversation_messages").insert({
-                                    "id": str(uuid.uuid4()),
-                                    "project_id": project_id,
-                                    "role": "user",
-                                    "content": clarif_content,
-                                    "attachments": [],
-                                    "linked_node_id": None,
-                                    "created_at": datetime.now(timezone.utc).isoformat(),
-                                }).execute()
-                                # Merge clarification into task prompt
-                                task_prompt = f"{content}\n\nUser clarified: {clarif_content}"
-                                log.info("Clarification received project=%s: %s", project_id, clarif_content[:100])
-                    except asyncio.TimeoutError:
-                        log.info("Clarification timed out project=%s — proceeding with defaults", project_id)
+                            # Return to message loop — user's answer will come as a
+                            # regular message and _clarification_asked flag will skip
+                            # re-asking and merge the prompts.
+                            continue
                     except Exception as clarif_exc:
                         log.warning("Clarification check failed project=%s: %s — proceeding", project_id, clarif_exc)
 
