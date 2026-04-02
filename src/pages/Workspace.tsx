@@ -154,6 +154,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
     },
     onFixtureGenerated: () => {
       dispatch({ type: 'SET_GEN_PROGRESS', payload: { status: 'done', message: 'New fixture ready', progress: 100 } });
+      setIsGenerating(false);
       refetchGeometry();
       // Fetch assembly components so Viewport3D can render all sub-parts
       if (projectId) {
