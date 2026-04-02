@@ -38,8 +38,12 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
     ])
       .then(async ([fixture, part]) => {
         let gotData = false;
+        // A record existing (even without gltf_url) means generation is in
+        // progress — don't count that as a failure for polling purposes.
+        let recordExists = false;
         if (fixture && typeof fixture === 'object') {
           const f = fixture as { gltf_url?: string; version?: number };
+          recordExists = true;
           setVersion(f.version ?? null);
 
           if (f.gltf_url) {
@@ -62,10 +66,12 @@ export function useFixtureGeometry(projectId: string | undefined): FixtureGeomet
         if (part && typeof part === 'object') {
           const p = part as { features_json?: PartFeatures };
           if (p.features_json) gotData = true;
+          recordExists = true;
           setPartFeatures(p.features_json ?? null);
         }
-        // Reset or increment consecutive failure counter
-        if (gotData) {
+        // Reset or increment consecutive failure counter.
+        // A record with no gltf_url means generation is in progress — keep polling.
+        if (gotData || recordExists) {
           failCountRef.current = 0;
           setPollingStopped(false);
         } else {
