@@ -199,8 +199,9 @@ def _run_generation_pipeline(self, project_id: str, user_prompt: str | None, sb)
     fixture_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    # Pre-insert fixture_geometries so assembly_components FK is valid during generation
-    sb.table("fixture_geometries").insert({
+    # Pre-insert fixture_geometries so assembly_components FK is valid during generation.
+    # Use upsert to handle race conditions where a previous failed attempt left a row.
+    _pre_result = sb.table("fixture_geometries").upsert({
         "id": fixture_id,
         "project_id": project_id,
         "version": version,
@@ -208,7 +209,9 @@ def _run_generation_pipeline(self, project_id: str, user_prompt: str | None, sb)
         "gltf_url": None,
         "generation_prompt": user_prompt,
         "generated_at": now_iso,
-    }).execute()
+    }, on_conflict="project_id,version").execute()
+    if _pre_result.data and len(_pre_result.data) > 0:
+        fixture_id = _pre_result.data[0].get("id", fixture_id)
 
     generation_errors: list[str] = []
 

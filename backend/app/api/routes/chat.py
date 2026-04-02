@@ -190,7 +190,9 @@ async def _run_generation_inline(
             log.warning("generate_kcl failed project=%s: %s — using empty KCL", project_id, kcl_exc)
             kcl = ""
 
-        result = sb.table("fixture_geometries").insert({
+        # Use upsert to handle race conditions where a previous failed attempt
+        # left a row with the same (project_id, version).
+        result = sb.table("fixture_geometries").upsert({
             "id": fixture_id,
             "project_id": project_id,
             "version": version,
@@ -198,10 +200,13 @@ async def _run_generation_inline(
             "gltf_url": None,
             "generation_prompt": user_prompt,
             "generated_at": now_iso,
-        }).execute()
+        }, on_conflict="project_id,version").execute()
         if hasattr(result, 'error') and result.error:
-            log.error("Failed to insert fixture_geometries: %s", result.error)
-            raise Exception(f"DB insert failed: {result.error}")
+            log.error("Failed to upsert fixture_geometries: %s", result.error)
+            raise Exception(f"DB upsert failed: {result.error}")
+        # Use the actual ID from the upsert result (may be existing row's ID)
+        if result.data and len(result.data) > 0:
+            fixture_id = result.data[0].get("id", fixture_id)
 
         # ── 4. Generate 3D geometry ──────────────────────────────────────────
         # PRIMARY: CadQuery (Open CASCADE) for precise parametric fixtures
