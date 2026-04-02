@@ -21,7 +21,19 @@ from app.core.storage import upload_gltf
 log = logging.getLogger(__name__)
 
 # Max seconds to let a CadQuery script run before killing it
-CADQUERY_TIMEOUT = 60
+CADQUERY_TIMEOUT_DEFAULT = 60
+CADQUERY_TIMEOUT_COMPLEX = 90
+
+
+def _compute_timeout(script: str) -> int:
+    """Estimate timeout based on script complexity."""
+    slow_ops = sum(1 for op in ['.loft(', '.sweep(', '.revolve(', '.shell(', '.union(', '.cut(']
+                   if op in script)
+    if slow_ops >= 3:
+        return CADQUERY_TIMEOUT_COMPLEX
+    if slow_ops >= 1:
+        return 75
+    return CADQUERY_TIMEOUT_DEFAULT
 
 # numpy.bool8 was removed in NumPy 1.24.0; CadQuery 2.5.x still references it via OCP.
 # Restore the alias in the main process so CadQuery imports succeed.
@@ -82,9 +94,10 @@ def execute_cadquery_script(
             with open(script_path, "w") as f:
                 f.write(script)
 
+            timeout = _compute_timeout(script)
             result = subprocess.run(
                 [sys.executable, script_path],
-                timeout=CADQUERY_TIMEOUT,
+                timeout=timeout,
                 capture_output=True,
                 text=True,
             )
@@ -134,7 +147,7 @@ def execute_cadquery_script(
             return {"gltf_url": None, "step_url": step_url, "engine": "cadquery"}
 
     except subprocess.TimeoutExpired:
-        log.error("CadQuery timed out after %ds for '%s'", CADQUERY_TIMEOUT, component_name)
+        log.error("CadQuery timed out for '%s'", component_name)
         return _zoo_fallback(project_id, safe_name, version)
     except Exception as exc:
         log.error("CadQuery error for '%s': %s", component_name, exc)

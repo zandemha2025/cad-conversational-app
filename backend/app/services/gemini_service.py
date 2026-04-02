@@ -251,7 +251,7 @@ class GeminiService:
             log.error("generate_kcl error: %s", e)
             return _stub_kcl(part_features)
 
-    # ── CadQuery fixture generation (Pro) ────────────────────────────────────
+    # ── CadQuery generation (Pro) ────────────────────────────────────────────
     async def generate_cadquery_fixture(
         self,
         part_features: dict,
@@ -260,10 +260,11 @@ class GeminiService:
         printer_profile: dict,
         template_id: str,
         user_prompt: str,
+        design_spec: dict | None = None,
     ) -> str:
         """
         Generate a CadQuery Python script for any 3D geometry the user describes.
-        Uses the full project context (features, touchpoints, env, printer).
+        When design_spec is provided, it acts as a checklist the code must implement.
         """
         template = _load_prompt("cadquery_fixture_generation.txt")
         prompt = _fill_template(
@@ -276,8 +277,31 @@ class GeminiService:
             user_prompt=user_prompt,
         )
 
+        # Inject design spec as a mandatory checklist
+        if design_spec and design_spec.get("base_shape"):
+            spec_block = (
+                "\n═══════════════════════════════════════════════════════════════\n"
+                "DESIGN SPEC — YOUR CODE MUST IMPLEMENT ALL OF THIS\n"
+                "═══════════════════════════════════════════════════════════════\n\n"
+                f"{json.dumps(design_spec, indent=2)}\n\n"
+                "CHECKLIST before outputting code:\n"
+                f"- Base shape MUST be: {design_spec['base_shape']}\n"
+            )
+            dims = design_spec.get("dimensions", {})
+            if "diameter" in dims:
+                spec_block += f"- Diameter MUST be: {dims['diameter']}mm\n"
+            if "height" in dims:
+                spec_block += f"- Height MUST be: {dims['height']}mm\n"
+            if "length" in dims:
+                spec_block += f"- Length MUST be: {dims['length']}mm\n"
+            features = design_spec.get("features", [])
+            for i, feat in enumerate(features):
+                spec_block += f"- Feature {i+1}: {feat.get('type')} — {json.dumps(feat)}\n"
+            spec_block += "\nDo NOT skip any feature. Do NOT change the base shape.\n"
+            prompt += spec_block
+
         if not settings.GEMINI_API_KEY:
-            log.warning("GEMINI_API_KEY not set — returning stub CadQuery fixture")
+            log.warning("GEMINI_API_KEY not set — returning stub CadQuery code")
             return _stub_cadquery_code("fixture")
 
         model = self._get_pro()
@@ -337,6 +361,71 @@ class GeminiService:
         except Exception as e:
             log.error("retry_cadquery_with_error failed: %s", e)
             return original_script
+
+    # ── Design spec generation (Flash — fast structured output) ─────────────────
+    async def generate_design_spec(self, user_prompt: str) -> dict:
+        """
+        Generate a structured design specification from the user's prompt.
+        This spec is used to guide CadQuery code generation and validate output.
+        """
+        template = _load_prompt("design_spec.txt")
+        prompt = template.replace("{user_prompt}", user_prompt)
+
+        if not settings.GEMINI_API_KEY:
+            return {"base_shape": "box", "dimensions": {"length": 100, "width": 100, "height": 20}, "features": []}
+
+        model = self._get_flash()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="design_spec",
+            )
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            spec = json.loads(raw)
+            log.info("Design spec generated: base_shape=%s features=%d",
+                     spec.get("base_shape"), len(spec.get("features", [])))
+            return spec
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning("design_spec generation failed: %s — proceeding without spec", e)
+            return {}
+
+    # ── CadQuery validation (Flash — fast check) ─────────────────────────────
+    async def validate_cadquery_against_spec(
+        self, cq_script: str, spec: dict, user_prompt: str,
+    ) -> dict:
+        """
+        Quick validation: does the CadQuery code match the design spec?
+        Returns {"pass": bool, "issues": [...], ...}
+        """
+        if not spec or not settings.GEMINI_API_KEY:
+            return {"pass": True, "issues": []}
+
+        template = _load_prompt("cadquery_validation.txt")
+        prompt = (template
+                  .replace("{design_spec_json}", json.dumps(spec, indent=2))
+                  .replace("{user_prompt}", user_prompt)
+                  .replace("{cq_script}", cq_script))
+
+        model = self._get_flash()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="cadquery_validation",
+            )
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
+            log.info("CadQuery validation: pass=%s issues=%s",
+                     result.get("pass"), result.get("issues", []))
+            return result
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning("cadquery_validation failed: %s — skipping validation", e)
+            return {"pass": True, "issues": []}
 
     # ── Node graph generation (Pro) ────────────────────────────────────────────
     async def generate_node_graph(

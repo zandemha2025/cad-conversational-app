@@ -221,14 +221,24 @@ async def _run_generation_inline(
         zoo_kcl = None
         is_stub = False
 
-        # Step 1: Try CadQuery (Gemini Pro → CadQuery script → STEP → GLB)
-        # If it fails, retry once with error feedback before falling back to Zoo.dev
+        # ── Two-stage generation: design spec → validated CadQuery code → execute
         from app.services.cadquery_service import execute_cadquery_script
         MAX_CQ_ATTEMPTS = 2
 
         try:
+            # Stage 1: Generate design spec (structured checklist from user's prompt)
+            await _ws_send_safe(ws, {
+                "type": "generation_progress", "progress": 0.30,
+                "message": "Analyzing design requirements…", "job_id": job_id,
+            })
+            design_spec = await gemini.generate_design_spec(prompt_text)
+            if design_spec.get("base_shape"):
+                log.info("Design spec: base=%s features=%d project=%s",
+                         design_spec["base_shape"], len(design_spec.get("features", [])), project_id)
+
+            # Stage 2: Generate CadQuery code guided by the spec
             log.info("Generating CadQuery geometry via Gemini Pro project=%s", project_id)
-            async with _ProgressHeartbeat(ws, job_id, start=0.40, end=0.55,
+            async with _ProgressHeartbeat(ws, job_id, start=0.35, end=0.50,
                                           message="Generating 3D geometry…"):
                 cq_script = await gemini.generate_cadquery_fixture(
                     part_features=features,
@@ -237,24 +247,46 @@ async def _run_generation_inline(
                     printer_profile=printer,
                     template_id=template_id,
                     user_prompt=prompt_text,
+                    design_spec=design_spec,
                 )
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
+            # Stage 3: Validate code against spec before executing
+            validation = await gemini.validate_cadquery_against_spec(
+                cq_script, design_spec, prompt_text,
+            )
+            if not validation.get("pass", True):
+                issues = validation.get("issues", [])
+                log.warning("CadQuery validation failed project=%s: %s", project_id, issues)
+                # Regenerate with specific feedback from validation
+                await _ws_send_safe(ws, {
+                    "type": "generation_progress", "progress": 0.52,
+                    "message": "Refining geometry…", "job_id": job_id,
+                })
+                issue_text = "; ".join(issues[:3])
+                cq_script = await gemini.retry_cadquery_with_error(
+                    cq_script,
+                    f"VALIDATION FAILED: {issue_text}. Fix the code to match the design spec.",
+                    prompt_text,
+                )
+                log.info("CadQuery regenerated after validation (%d chars) project=%s", len(cq_script), project_id)
+
+            # Stage 4: Execute CadQuery with retry on execution errors
             loop = asyncio.get_event_loop()
             last_error = None
 
             for attempt in range(1, MAX_CQ_ATTEMPTS + 1):
                 attempt_label = f"attempt {attempt}/{MAX_CQ_ATTEMPTS}"
                 await _ws_send_safe(ws, {
-                    "type": "generation_progress", "progress": 0.55 if attempt == 1 else 0.65,
-                    "message": f"Compiling CadQuery → 3D geometry… ({attempt_label})",
+                    "type": "generation_progress", "progress": 0.55 if attempt == 1 else 0.68,
+                    "message": f"Compiling 3D geometry… ({attempt_label})",
                     "job_id": job_id,
                 })
 
                 async with _ProgressHeartbeat(ws, job_id,
-                                              start=0.55 if attempt == 1 else 0.65,
+                                              start=0.55 if attempt == 1 else 0.68,
                                               end=0.75 if attempt == 1 else 0.80,
-                                              message=f"Compiling CadQuery → 3D geometry… ({attempt_label})"):
+                                              message=f"Compiling 3D geometry… ({attempt_label})"):
                     result = await loop.run_in_executor(
                         None,
                         lambda s=cq_script: execute_cadquery_script(s, project_id, "fixture", version)
@@ -266,21 +298,19 @@ async def _run_generation_inline(
                     log.info("CadQuery OK project=%s %s gltf_url=%s", project_id, attempt_label, bool(gltf_url))
                     break
 
-                # Execution failed — get error details for retry
                 last_error = result.get("error") or "CadQuery produced no geometry or empty mesh"
                 log.warning("CadQuery %s failed project=%s: %s", attempt_label, project_id, last_error)
 
                 if attempt < MAX_CQ_ATTEMPTS:
-                    # Ask Gemini to fix the script
                     await _ws_send_safe(ws, {
-                        "type": "generation_progress", "progress": 0.62,
+                        "type": "generation_progress", "progress": 0.65,
                         "message": "Fixing CadQuery script…", "job_id": job_id,
                     })
                     cq_script = await gemini.retry_cadquery_with_error(
                         cq_script, str(last_error), prompt_text,
                     )
-                    log.info("CadQuery retry script generated (%d chars) project=%s", len(cq_script), project_id)
-                    gltf_url = None  # reset for next attempt
+                    log.info("CadQuery retry script (%d chars) project=%s", len(cq_script), project_id)
+                    gltf_url = None
 
             if result.get("engine") == "zoo_fallback":
                 generation_errors.append("CadQuery execution failed; used Zoo.dev fallback")
@@ -533,14 +563,16 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                 await websocket.send_json({
                     "type": "generation_queued",
                     "job_id": gen_job_id,
-                    "message": "Generating your fixture — this takes about 15 seconds.",
+                    "message": "Generating your 3D model — this takes about 30 seconds.",
                 })
 
                 # Stream brief AI explanation while generation runs in background
                 explanation_prompt = (
-                    f"The engineer requested: {content!r}. "
-                    "Briefly confirm what you're generating. "
-                    "Keep it concise — 2-3 sentences max."
+                    f"The user asked: {content!r}. "
+                    "Briefly confirm what 3D model you are generating. "
+                    "Describe ONLY the shapes and dimensions the user explicitly mentioned. "
+                    "Do NOT invent features, surfaces, or details the user did not ask for. "
+                    "Do NOT describe manufacturing processes. 2 sentences max."
                 )
                 full_response = ""
                 async for chunk in gemini.stream_chat(explanation_prompt, history, project_ctx):
