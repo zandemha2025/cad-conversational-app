@@ -277,6 +277,13 @@ class GeminiService:
             user_prompt=user_prompt,
         )
 
+        # Inject real-world dimension context if the prompt references known objects
+        from app.data.dimension_reference import find_matching_dimensions, format_dimension_context
+        dim_matches = find_matching_dimensions(user_prompt)
+        if dim_matches:
+            prompt += format_dimension_context(dim_matches)
+            log.info("Injected dimension context for: %s", [m["name"] for m in dim_matches])
+
         # Inject design spec as a mandatory checklist
         if design_spec and design_spec.get("base_shape"):
             spec_block = (
@@ -370,6 +377,12 @@ class GeminiService:
         """
         template = _load_prompt("design_spec.txt")
         prompt = template.replace("{user_prompt}", user_prompt)
+
+        # Inject real-world dimensions so the spec uses accurate sizes
+        from app.data.dimension_reference import find_matching_dimensions, format_dimension_context
+        dim_matches = find_matching_dimensions(user_prompt)
+        if dim_matches:
+            prompt += format_dimension_context(dim_matches)
 
         if not settings.GEMINI_API_KEY:
             return {"base_shape": "box", "dimensions": {"length": 100, "width": 100, "height": 20}, "features": []}
@@ -665,7 +678,9 @@ class GeminiService:
             "stepped shafts, or any combination of basic shapes with holes/cuts\n"
             "   - 'zoo': use ONLY for organic/freeform shapes, complex curved surfaces, "
             "or vague descriptions without specific dimensions\n"
-            "4. component_type: one of 'base', 'clamp', 'pin', 'spacer', 'bracket', 'bushing', 'custom'\n"
+            "4. component_type: one of 'base', 'clamp', 'pin', 'spacer', 'bracket', 'bushing', "
+            "'seat', 'leg', 'arm', 'wheel', 'axle', 'housing', 'lid', 'mount', 'hinge', "
+            "'frame', 'handle', 'connector', 'custom'\n"
             "5. Each sub-component prompt must be self-contained and describe ONE simple geometry "
             "with exact metric dimensions\n"
             "6. For CadQuery prompts: preserve the user's EXACT wording. Do NOT rephrase, enhance, or add "
@@ -681,7 +696,7 @@ class GeminiService:
             "  {\"name\": \"base_plate\", \"description\": \"Base plate\", "
             "\"prompt\": \"<complete self-contained geometric prompt>\", "
             "\"engine\": \"cadquery\"|\"zoo\", "
-            "\"component_type\": \"base\"|\"clamp\"|\"pin\"|\"spacer\"|\"bracket\"|\"bushing\"|\"custom\"}"
+            "\"component_type\": \"base\"|\"clamp\"|\"pin\"|\"spacer\"|\"bracket\"|\"bushing\"|\"seat\"|\"housing\"|\"mount\"|\"custom\"}"
             "]}\n\n"
             f"Design request: {user_prompt!r}"
         )

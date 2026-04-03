@@ -93,7 +93,21 @@ CadQuery API REFERENCE
   .fillet(r)  / .chamfer(d)              — edge treatment (use in try/except)
 
 ═══════════════════════════════════════════════════════════════
-EXAMPLES
+CHOOSE THE RIGHT OPERATION (critical for complex shapes)
+═══════════════════════════════════════════════════════════════
+
+- Rotational symmetry (bottles, knobs, domes, vases) → .revolve()
+- Varying cross-section (tapered housing, organic transitions) → .loft()
+- Hollow body (enclosures, cases, cups, boxes) → .shell()
+- Profile along a path (tubing, rails, channels) → .sweep()
+- Repeating radial features (gears, spokes, fan blades) → math + .polarArray()
+- Simple prismatic parts (plates, blocks, cylinders) → .box() / .circle().extrude()
+
+DO NOT use .box() + .cut() to approximate curved/organic shapes.
+Use the correct operation for the geometry.
+
+═══════════════════════════════════════════════════════════════
+EXAMPLES (study ALL before generating)
 ═══════════════════════════════════════════════════════════════
 
 Example 1 — Cylinder with bolt pattern:
@@ -141,6 +155,75 @@ Example 4 — Enclosure with shell:
 import cadquery as cq
 result = cq.Workplane('XY').box(100, 60, 40)
 result = result.faces('>Z').shell(-2)
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 5 — Revolved shape (bottle/vase/dome):
+"Water bottle 70mm dia × 200mm tall with neck"
+```python
+import cadquery as cq
+# Profile points: (radius, height) from bottom to top
+profile = [
+    (35, 0), (35, 140), (30, 155), (15, 170),
+    (15, 190), (13, 195), (13, 200), (0, 200)
+]
+result = cq.Workplane('XZ').polyline(profile).close().revolve(360, (0,0,0), (0,1,0))
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 6 — Lofted shape (tapered housing/adapter):
+"Square-to-round adapter: 60mm square bottom to 40mm circle top, 50mm tall"
+```python
+import cadquery as cq
+bottom = cq.Workplane('XY').rect(60, 60)
+top = cq.Workplane('XY').workplane(offset=50).circle(20)
+result = bottom.loft(top)
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 7 — Spur gear (math + polar pattern):
+"Spur gear, 20 teeth, module 2, 10mm thick"
+```python
+import cadquery as cq
+import math
+m = 2.0
+z = 20
+pitch_r = m * z / 2
+outer_r = pitch_r + m
+root_r = pitch_r - 1.25 * m
+thick = 10.0
+tooth_angle = 360.0 / z
+pts = []
+for i in range(z):
+    a1 = math.radians(i * tooth_angle)
+    a2 = math.radians(i * tooth_angle + tooth_angle * 0.35)
+    a3 = math.radians(i * tooth_angle + tooth_angle * 0.5)
+    a4 = math.radians((i + 1) * tooth_angle)
+    pts.extend([
+        (root_r * math.cos(a1), root_r * math.sin(a1)),
+        (outer_r * math.cos(a2), outer_r * math.sin(a2)),
+        (outer_r * math.cos(a3), outer_r * math.sin(a3)),
+        (root_r * math.cos(a4), root_r * math.sin(a4)),
+    ])
+result = cq.Workplane('XY').polyline(pts).close().extrude(thick)
+bore = cq.Workplane('XY').circle(8).extrude(thick)
+result = result.cut(bore)
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+Example 8 — Phone case (shell + cutouts):
+"Phone case 150×72×10mm, 1.5mm walls, open front, camera cutout 35×35mm"
+```python
+import cadquery as cq
+L, W, H, wall = 150.0, 72.0, 10.0, 1.5
+result = cq.Workplane('XY').box(L, W, H)
+try:
+    result = result.edges('|Z').fillet(5)
+except Exception:
+    pass
+result = result.faces('>Z').shell(-wall)
+cam_cutout = cq.Workplane('XY').workplane(offset=-H/2).center(L/2-25, 0).rect(35, 35).extrude(wall*2)
+result = result.cut(cam_cutout)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 

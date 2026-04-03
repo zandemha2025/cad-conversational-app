@@ -13,6 +13,11 @@ import asyncio
 import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+
+class _SkipSinglePart(Exception):
+    """Sentinel exception to skip single-part generation when assembly already produced geometry."""
+    pass
 from app.core.security import verify_supabase_jwt, verify_token
 from app.core.database import get_supabase_client
 from app.services.gemini_service import GeminiService
@@ -221,12 +226,115 @@ async def _run_generation_inline(
         zoo_kcl = None
         is_stub = False
 
-        # ── Two-stage generation: design spec → validated CadQuery code → execute
         from app.services.cadquery_service import execute_cadquery_script
+
+        # ── Assembly path: generate components in parallel ────────────────────
+        if is_assembly and len(components) >= 2:
+            log.info("Assembly detected: %d components project=%s", len(components), project_id)
+            await _ws_send_safe(ws, {
+                "type": "generation_progress", "progress": 0.30,
+                "message": f"Generating {len(components)}-part assembly…", "job_id": job_id,
+            })
+
+            loop = asyncio.get_event_loop()
+            sem = asyncio.Semaphore(2)  # Limit concurrent CadQuery subprocesses (2GB RAM)
+            assembly_records = []
+            primary_gltf = None
+
+            async def _gen_one_component(comp: dict, idx: int) -> dict:
+                async with sem:
+                    comp_name = comp.get("name", f"component_{idx}")
+                    comp_prompt = comp.get("prompt", comp.get("description", ""))
+                    comp_engine = comp.get("engine", "cadquery")
+
+                    await _ws_send_safe(ws, {
+                        "type": "generation_progress",
+                        "progress": 0.30 + 0.50 * idx / len(components),
+                        "message": f"Generating {comp_name} ({idx+1}/{len(components)})…",
+                        "job_id": job_id,
+                    })
+
+                    if comp_engine == "cadquery":
+                        try:
+                            cq_code = await gemini.generate_cadquery_fixture(
+                                part_features={}, touchpoints=[], environment={},
+                                printer_profile={}, template_id="generic",
+                                user_prompt=comp_prompt,
+                            )
+                            result = await loop.run_in_executor(
+                                None,
+                                lambda s=cq_code: execute_cadquery_script(s, project_id, comp_name, version)
+                            )
+                            return {"name": comp_name, "gltf_url": result.get("gltf_url"),
+                                    "component_type": comp.get("component_type", "custom"),
+                                    "description": comp.get("description", "")}
+                        except Exception as e:
+                            log.warning("Assembly component %s failed: %s", comp_name, e)
+                            return {"name": comp_name, "gltf_url": None,
+                                    "component_type": comp.get("component_type", "custom"),
+                                    "description": comp.get("description", "")}
+                    else:
+                        try:
+                            from app.services.zoo_service import text_to_cad_gltf
+                            result = await text_to_cad_gltf(project_id, comp_prompt, version)
+                            return {"name": comp_name, "gltf_url": result.get("gltf_url"),
+                                    "component_type": comp.get("component_type", "custom"),
+                                    "description": comp.get("description", "")}
+                        except Exception as e:
+                            log.warning("Assembly component %s (zoo) failed: %s", comp_name, e)
+                            return {"name": comp_name, "gltf_url": None,
+                                    "component_type": comp.get("component_type", "custom"),
+                                    "description": comp.get("description", "")}
+
+            # Generate all components in parallel
+            tasks = [_gen_one_component(c, i) for i, c in enumerate(components)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for r in results:
+                if isinstance(r, Exception):
+                    generation_errors.append(str(r)[:200])
+                    continue
+                assembly_records.append(r)
+                if r.get("gltf_url") and not primary_gltf:
+                    primary_gltf = r["gltf_url"]
+
+            # Store assembly components in DB
+            for rec in assembly_records:
+                try:
+                    sb.table("assembly_components").insert({
+                        "id": str(uuid.uuid4()),
+                        "fixture_id": fixture_id,
+                        "project_id": project_id,
+                        "name": rec["name"],
+                        "component_type": rec.get("component_type", "custom"),
+                        "description": rec.get("description", ""),
+                        "gltf_url": rec.get("gltf_url"),
+                        "position_json": None,
+                        "rotation_json": None,
+                        "material": "6061-T6 aluminum",
+                        "created_at": now_iso,
+                    }).execute()
+                except Exception as db_exc:
+                    log.warning("Failed to insert assembly_component %s: %s", rec["name"], db_exc)
+
+            gltf_url = primary_gltf
+            log.info("Assembly generation done: %d components, %d with geometry project=%s",
+                     len(assembly_records), sum(1 for r in assembly_records if r.get("gltf_url")), project_id)
+
+        # ── Single-part path (skip if assembly already produced geometry) ─────
         MAX_CQ_ATTEMPTS = 2
 
+        if gltf_url:
+            # Assembly already produced geometry — skip single-part generation
+            log.info("Skipping single-part path (assembly produced gltf) project=%s", project_id)
+        if not gltf_url:
+            pass
         try:
-            # Stage 1: Generate design spec (structured checklist from user's prompt)
+            if gltf_url:
+                # Assembly already produced geometry — skip single-part generation
+                raise _SkipSinglePart()
+
+            # Stage 1: Generate design spec
             await _ws_send_safe(ws, {
                 "type": "generation_progress", "progress": 0.30,
                 "message": "Analyzing design requirements…", "job_id": job_id,
@@ -321,6 +429,8 @@ async def _run_generation_inline(
 
             log.info("CadQuery geometry OK project=%s gltf_url=%s", project_id, bool(gltf_url))
 
+        except _SkipSinglePart:
+            pass  # Assembly already generated geometry — skip to completion steps
         except Exception as cq_exc:
             # Final fallback: Zoo.dev text-to-cad
             log.warning("CadQuery failed project=%s: %s — falling back to Zoo.dev", project_id, cq_exc)

@@ -106,3 +106,21 @@ result = (cq.Workplane('XY')
     .faces('>Z').workplane()
     .slot2D(60, 12).cutThruAll())
 cq.exporters.export(result, '/tmp/cq_output.step')
+
+# Revolved shape (bottle, vase, dome)
+import cadquery as cq
+profile = [(35,0),(35,140),(15,170),(15,200),(0,200)]
+result = cq.Workplane('XZ').polyline(profile).close().revolve(360,(0,0,0),(0,1,0))
+cq.exporters.export(result, '/tmp/cq_output.step')
+
+# Shell enclosure (electronics box, open top)
+import cadquery as cq
+result = cq.Workplane('XY').box(100, 60, 40).faces('>Z').shell(-2)
+cq.exporters.export(result, '/tmp/cq_output.step')
+
+# Lofted shape (square to circle adapter)
+import cadquery as cq
+bottom = cq.Workplane('XY').rect(60, 60)
+top = cq.Workplane('XY').workplane(offset=50).circle(20)
+result = bottom.loft(top)
+cq.exporters.export(result, '/tmp/cq_output.step')
