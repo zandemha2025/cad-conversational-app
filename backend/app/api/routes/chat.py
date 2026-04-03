@@ -336,17 +336,27 @@ async def _run_generation_inline(
                 # Assembly already produced geometry — skip single-part generation
                 raise _SkipSinglePart()
 
-            # Stage 1: Generate design spec
+            # Stage 0: Research layer — research real-world object dimensions
+            await _ws_send_safe(ws, {
+                "type": "generation_progress", "progress": 0.25,
+                "message": "Researching specifications…", "job_id": job_id,
+            })
+            research_data = await gemini.research_object_dimensions(prompt_text)
+            if research_data.get("has_real_world_objects"):
+                obj_names = [o.get("name", "?") for o in research_data.get("objects", [])]
+                log.info("Research layer found: %s project=%s", obj_names, project_id)
+
+            # Stage 1: Generate design spec (informed by research)
             await _ws_send_safe(ws, {
                 "type": "generation_progress", "progress": 0.30,
                 "message": "Analyzing design requirements…", "job_id": job_id,
             })
-            design_spec = await gemini.generate_design_spec(prompt_text)
+            design_spec = await gemini.generate_design_spec(prompt_text, research_data=research_data)
             if design_spec.get("base_shape"):
                 log.info("Design spec: base=%s features=%d project=%s",
                          design_spec["base_shape"], len(design_spec.get("features", [])), project_id)
 
-            # Stage 2: Generate CadQuery code guided by the spec
+            # Stage 2: Generate CadQuery code (informed by research + spec)
             log.info("Generating CadQuery geometry via Gemini Pro project=%s", project_id)
             async with _ProgressHeartbeat(ws, job_id, start=0.35, end=0.50,
                                           message="Generating 3D geometry…"):
@@ -358,6 +368,7 @@ async def _run_generation_inline(
                     template_id=template_id,
                     user_prompt=prompt_text,
                     design_spec=design_spec,
+                    research_data=research_data,
                 )
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 

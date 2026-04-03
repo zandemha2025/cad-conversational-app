@@ -261,6 +261,7 @@ class GeminiService:
         template_id: str,
         user_prompt: str,
         design_spec: dict | None = None,
+        research_data: dict | None = None,
     ) -> str:
         """
         Generate a CadQuery Python script for any 3D geometry the user describes.
@@ -277,12 +278,10 @@ class GeminiService:
             user_prompt=user_prompt,
         )
 
-        # Inject real-world dimension context if the prompt references known objects
-        from app.data.dimension_reference import find_matching_dimensions, format_dimension_context
-        dim_matches = find_matching_dimensions(user_prompt)
-        if dim_matches:
-            prompt += format_dimension_context(dim_matches)
-            log.info("Injected dimension context for: %s", [m["name"] for m in dim_matches])
+        # Inject researched real-world dimensions (AI research layer)
+        if research_data and research_data.get("has_real_world_objects"):
+            prompt += self._format_research_context(research_data)
+            log.info("Injected AI-researched dimensions for CadQuery generation")
 
         # Inject design spec as a mandatory checklist
         if design_spec and design_spec.get("base_shape"):
@@ -369,8 +368,77 @@ class GeminiService:
             log.error("retry_cadquery_with_error failed: %s", e)
             return original_script
 
+    # ── Research layer (Pro — deep knowledge for real-world objects) ────────────
+    async def research_object_dimensions(self, user_prompt: str) -> dict:
+        """
+        Research real-world object dimensions using Gemini Pro's training knowledge.
+        Like Perplexity's research layer but for engineering specifications.
+        Returns structured JSON with objects, standards, and manufacturing context.
+        """
+        template = _load_prompt("research_dimensions.txt")
+        prompt = template.replace("{user_prompt}", user_prompt)
+
+        if not settings.GEMINI_API_KEY:
+            return {"has_real_world_objects": False, "objects": [], "standards": []}
+
+        model = self._get_pro()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="pro",
+                context="research_dimensions",
+            )
+            raw = resp.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            research = json.loads(raw)
+            obj_count = len(research.get("objects", []))
+            std_count = len(research.get("standards", []))
+            if obj_count > 0 or std_count > 0:
+                log.info("Research layer: %d objects, %d standards found",
+                         obj_count, std_count)
+                for obj in research.get("objects", []):
+                    log.info("  Researched: %s (confidence=%.2f) dims=%s",
+                             obj.get("name"), obj.get("confidence", 0),
+                             json.dumps(obj.get("dimensions", {})))
+            return research
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning("research_dimensions failed: %s — proceeding without", e)
+            return {"has_real_world_objects": False, "objects": [], "standards": []}
+
+    def _format_research_context(self, research: dict) -> str:
+        """Format research results as text to inject into prompts."""
+        if not research or not research.get("has_real_world_objects"):
+            return ""
+
+        lines = ["\n══ RESEARCHED REAL-WORLD DIMENSIONS (use these exact values) ══"]
+        for obj in research.get("objects", []):
+            dims = obj.get("dimensions", {})
+            dim_str = ", ".join(f"{k}: {v}" for k, v in dims.items())
+            conf = obj.get("confidence", 0)
+            lines.append(f"\n{obj.get('name', '?')} (confidence: {conf:.0%}):")
+            lines.append(f"  Dimensions: {dim_str}")
+            for feat in obj.get("features", []):
+                lines.append(f"  Feature: {feat.get('name')} at {feat.get('position')} "
+                             f"({feat.get('width_mm', '?')}×{feat.get('height_mm', '?')}mm)")
+            if obj.get("notes"):
+                lines.append(f"  Source: {obj['notes']}")
+
+        for std in research.get("standards", []):
+            dims = std.get("dimensions", {})
+            dim_str = ", ".join(f"{k}: {v}" for k, v in dims.items())
+            lines.append(f"\n{std.get('name', '?')} ({std.get('standard_ref', '?')}): {dim_str}")
+
+        mfg = research.get("manufacturing_context", {})
+        if mfg:
+            lines.append(f"\nSuggested: {mfg.get('suggested_material', '?')}, "
+                         f"{mfg.get('suggested_process', '?')}, "
+                         f"min wall {mfg.get('min_wall_thickness_mm', '?')}mm")
+
+        return "\n".join(lines) + "\n"
+
     # ── Design spec generation (Flash — fast structured output) ─────────────────
-    async def generate_design_spec(self, user_prompt: str) -> dict:
+    async def generate_design_spec(self, user_prompt: str, research_data: dict | None = None) -> dict:
         """
         Generate a structured design specification from the user's prompt.
         This spec is used to guide CadQuery code generation and validate output.
@@ -378,11 +446,15 @@ class GeminiService:
         template = _load_prompt("design_spec.txt")
         prompt = template.replace("{user_prompt}", user_prompt)
 
-        # Inject real-world dimensions so the spec uses accurate sizes
-        from app.data.dimension_reference import find_matching_dimensions, format_dimension_context
-        dim_matches = find_matching_dimensions(user_prompt)
-        if dim_matches:
-            prompt += format_dimension_context(dim_matches)
+        # Inject researched dimensions (AI research layer) if available
+        if research_data and research_data.get("has_real_world_objects"):
+            prompt += self._format_research_context(research_data)
+        else:
+            # Fallback to static lookup if no research data provided
+            from app.data.dimension_reference import find_matching_dimensions, format_dimension_context
+            dim_matches = find_matching_dimensions(user_prompt)
+            if dim_matches:
+                prompt += format_dimension_context(dim_matches)
 
         if not settings.GEMINI_API_KEY:
             return {"base_shape": "box", "dimensions": {"length": 100, "width": 100, "height": 20}, "features": []}
