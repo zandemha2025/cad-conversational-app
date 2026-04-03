@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Printer, Download,
   Plus, Layers, Tag, Grid3x3, Loader2, RefreshCw,
 } from 'lucide-react';
-import { fetchLatestDrawing, generateProjectDrawings, fetchProjectDrawings, directExport } from '../../lib/api';
+import { fetchLatestDrawing, generateProjectDrawings, directExport } from '../../lib/api';
 import { useJobPoll } from '../../hooks/useJobPoll';
 
 
@@ -26,25 +26,21 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
     }
   }, [pdfDownloadUrl]);
 
-  // Try to load existing server drawing (try v2 endpoint first, fall back to v1)
+  // Try to load existing drawing from v1 endpoint (has svg_json with views)
   useEffect(() => {
     if (!projectId || projectId === 'demo') return;
-    fetchProjectDrawings(projectId)
+    fetchLatestDrawing(projectId)
       .then((data: unknown) => {
-        const arr = data as Array<{ svg_json?: { svg?: string } | null }> | null;
-        if (arr && arr.length > 0 && arr[0]?.svg_json?.svg) {
-          setServerSvg(arr[0].svg_json.svg);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = data as any;
+        const svgJson = d?.svg_json;
+        if (svgJson) {
+          const views = [svgJson.front_view, svgJson.top_view, svgJson.side_view].filter(Boolean);
+          if (views.length > 0) setServerSvg(views.join('\n'));
+          else if (svgJson.svg) setServerSvg(svgJson.svg);
         }
       })
-      .catch(() => {
-        // Fallback to v1 endpoint
-        fetchLatestDrawing(projectId)
-          .then((data: unknown) => {
-            const d = data as { svg_json?: { svg?: string } | null } | null;
-            if (d?.svg_json?.svg) setServerSvg(d.svg_json.svg);
-          })
-          .catch(() => {});
-      });
+      .catch(() => {});
   }, [projectId]);
 
   const handleGenerateDrawing = async () => {
@@ -52,19 +48,32 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
     setGenerating(true);
     try {
       const res = await generateProjectDrawings(projectId) as unknown;
-      // Backend returns { id, status, drawing: { svg_json: { svg: "..." } } }
-      const d = res as { drawing?: { svg_json?: { svg?: string }; svg?: string } } | null;
-      const svg = d?.drawing?.svg_json?.svg ?? d?.drawing?.svg ?? null;
-      if (svg) {
-        setServerSvg(svg);
+      // Backend returns { drawing: { front_view: "<svg...>", top_view: "<svg...>", side_view: "<svg...>" } }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = res as any;
+      const drawing = d?.drawing;
+      // Combine all views into a single SVG display
+      const views = [drawing?.front_view, drawing?.top_view, drawing?.side_view].filter(Boolean);
+      if (views.length > 0) {
+        // Wrap multiple SVG views in a container
+        const combinedSvg = views.join('\n');
+        setServerSvg(combinedSvg);
       } else {
-        // Refetch from DB after a short delay (generation may be async)
+        // Try svg_json.svg fallback
+        const svg = drawing?.svg_json?.svg ?? drawing?.svg ?? null;
+        if (svg) setServerSvg(svg);
+      }
+      // Also try refetch from v1 after delay as backup
+      if (!views.length) {
         setTimeout(async () => {
           try {
-            const arr = await fetchProjectDrawings(projectId) as unknown as Array<{ svg_json?: { svg?: string } }> | null;
-            if (arr && arr.length > 0 && arr[0]?.svg_json?.svg) setServerSvg(arr[0].svg_json.svg);
+            const v1 = await fetchLatestDrawing(projectId) as any; // eslint-disable-line
+            const svgJson = v1?.svg_json;
+            const svgs = [svgJson?.front_view, svgJson?.top_view, svgJson?.side_view].filter(Boolean);
+            if (svgs.length > 0) setServerSvg(svgs.join('\n'));
+            else if (svgJson?.svg) setServerSvg(svgJson.svg);
           } catch {}
-        }, 3000);
+        }, 2000);
       }
     } catch {}
     finally { setGenerating(false); }
