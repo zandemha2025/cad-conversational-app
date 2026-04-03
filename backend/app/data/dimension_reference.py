@@ -219,8 +219,10 @@ DIMENSION_REFERENCE = [
         "id": "arduino_uno",
         "name": "Arduino Uno R3",
         "keywords": ["arduino uno", "arduino", "uno r3"],
-        "dimensions": {"width_mm": 53.4, "height_mm": 68.6, "depth_mm": 14.0},
-        "notes": "4 mounting holes: 2.54mm spacing grid. USB-B on short edge. Power barrel jack adjacent.",
+        "dimensions": {"width_mm": 53.4, "height_mm": 68.6, "depth_mm": 14.0,
+                        "mounting_holes_mm": [[14.0, 2.54], [15.24, 50.8], [66.04, 7.62], [66.04, 35.56]],
+                        "hole_diameter_mm": 3.2},
+        "notes": "4 M3 mounting holes at asymmetric positions (from bottom-left corner): (14.0, 2.54), (15.24, 50.8), (66.04, 7.62), (66.04, 35.56). USB-B on short edge. Power barrel jack adjacent.",
     },
     {
         "id": "raspberry_pi_4",

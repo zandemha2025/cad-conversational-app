@@ -191,49 +191,74 @@ result = bottom.loft(top)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 
-Example 7 — Spur gear (math + polar pattern):
-"Spur gear, 20 teeth, module 2, 10mm thick"
+Example 7 — Spur gear with involute tooth profile:
+"Spur gear, 20 teeth, module 2, 10mm thick, 8mm bore"
 ```python
 import cadquery as cq
 import math
-m = 2.0
+mod = 2.0
 z = 20
-pitch_r = m * z / 2
-outer_r = pitch_r + m
-root_r = pitch_r - 1.25 * m
+pa = math.radians(20)  # pressure angle
+pitch_r = mod * z / 2
+base_r = pitch_r * math.cos(pa)
+outer_r = pitch_r + mod
+root_r = pitch_r - 1.25 * mod
 thick = 10.0
-tooth_angle = 360.0 / z
+tooth_angle = 2 * math.pi / z
+
+def involute_point(base_r, t):
+    x = base_r * (math.cos(t) + t * math.sin(t))
+    y = base_r * (math.sin(t) - t * math.cos(t))
+    return (x, y)
+
+def involute_intersect_r(base_r, r):
+    return math.sqrt((r/base_r)**2 - 1)
+
 pts = []
 for i in range(z):
-    a1 = math.radians(i * tooth_angle)
-    a2 = math.radians(i * tooth_angle + tooth_angle * 0.35)
-    a3 = math.radians(i * tooth_angle + tooth_angle * 0.5)
-    a4 = math.radians((i + 1) * tooth_angle)
-    pts.extend([
-        (root_r * math.cos(a1), root_r * math.sin(a1)),
-        (outer_r * math.cos(a2), outer_r * math.sin(a2)),
-        (outer_r * math.cos(a3), outer_r * math.sin(a3)),
-        (root_r * math.cos(a4), root_r * math.sin(a4)),
-    ])
+    rot = i * tooth_angle
+    # Involute curve points from base to tip (4 points per side)
+    t_tip = involute_intersect_r(base_r, outer_r)
+    t_pitch = involute_intersect_r(base_r, pitch_r)
+    # Tooth thickness at pitch circle
+    tooth_thick_angle = math.pi / (2 * z)
+    offset = tooth_thick_angle + t_pitch * math.tan(pa) * 0  # simplified
+    for t in [0, t_tip * 0.33, t_tip * 0.67, t_tip]:
+        ix, iy = involute_point(base_r, t)
+        ca, sa = math.cos(rot + tooth_thick_angle), math.sin(rot + tooth_thick_angle)
+        pts.append((ix*ca - iy*sa, ix*sa + iy*ca))
+    for t in [t_tip, t_tip * 0.67, t_tip * 0.33, 0]:
+        ix, iy = involute_point(base_r, t)
+        iy = -iy  # mirror
+        ca, sa = math.cos(rot - tooth_thick_angle), math.sin(rot - tooth_thick_angle)
+        pts.append((ix*ca - iy*sa, ix*sa + iy*ca))
+    # Root arc point
+    next_rot = (i + 1) * tooth_angle
+    pts.append((root_r * math.cos(next_rot), root_r * math.sin(next_rot)))
 result = cq.Workplane('XY').polyline(pts).close().extrude(thick)
+result = result.faces('>Z').workplane().hole(8)
 bore = cq.Workplane('XY').circle(8).extrude(thick)
 result = result.cut(bore)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 
-Example 8 — Phone case (shell + cutouts):
-"Phone case 150×72×10mm, 1.5mm walls, open front, camera cutout 35×35mm"
+Example 8 — Phone case (shell + corner radii + cutouts):
+"Phone case 146.7×71.5×10mm, 1.5mm walls, open front, camera cutout 35×35mm"
 ```python
 import cadquery as cq
-L, W, H, wall = 150.0, 72.0, 10.0, 1.5
+L, W, H, wall = 146.7, 71.5, 10.0, 1.5
+corner_r = 8.0
 result = cq.Workplane('XY').box(L, W, H)
 try:
-    result = result.edges('|Z').fillet(5)
+    result = result.edges('|Z').fillet(corner_r)
 except Exception:
     pass
-result = result.faces('>Z').shell(-wall)
-cam_cutout = cq.Workplane('XY').workplane(offset=-H/2).center(L/2-25, 0).rect(35, 35).extrude(wall*2)
-result = result.cut(cam_cutout)
+# Shell with open front face (this is the correct way to make a case)
+result = result.faces('<Z').shell(-wall)
+# Camera cutout on back face
+result = result.faces('>Z').workplane().center(L/2 - 25, W/2 - 15).rect(35, 35).cutBlind(-wall)
+# Port cutout on bottom edge
+result = result.faces('<Y').workplane().center(0, 0).rect(12, 5).cutBlind(-wall)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 

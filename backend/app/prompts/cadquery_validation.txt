@@ -31,11 +31,14 @@ CHECK each requirement:
    - "top" holes → .faces('>Z')
 
 5. CORRECT OPERATIONS for complex geometry:
-   - If spec describes a hollow/enclosure/case → code MUST use .shell()
+   - If spec describes a hollow/enclosure/case → code SHOULD use .shell() — this is CORRECT
+   - .shell() removes a face to create an opening — this is the STANDARD way to model cases/enclosures
+   - Do NOT reject .shell() for an "open front/top" — that's exactly what shell does
    - If spec describes a rotational shape (bottle/vase/dome) → code SHOULD use .revolve()
    - If spec describes tapered/morphing cross-section → code SHOULD use .loft()
-   - If spec describes a gear → code MUST use math + polar pattern, NOT .box()
+   - If spec describes a gear → code MUST use math + polar/radial pattern, NOT .box()
    - If spec describes thin visual features (FOV, beam) → thickness MUST be >= 5mm
+   - For phone cases: must include corner fillets/radii for ergonomics
 
 Output ONLY valid JSON:
 {{
