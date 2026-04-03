@@ -262,6 +262,42 @@ result = result.faces('<Y').workplane().center(0, 0).rect(12, 5).cutBlind(-wall)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 
+Example 9 — Concentric bores / counterbored holes at specific positions:
+"35×20×8mm plate, two sets of concentric holes at [8.5,10] and [26.5,10]: Ø14mm bore, Ø8mm countersunk hole, Ø3.5mm pilot"
+```python
+import cadquery as cq
+import math
+plate_length = 35.0
+plate_width = 20.0
+plate_thickness = 8.0
+# Hole positions (from corner coordinates to center-based)
+hole_positions = [
+    (8.5 - plate_length/2, 10.0 - plate_width/2),
+    (26.5 - plate_length/2, 10.0 - plate_width/2),
+]
+result = cq.Workplane('XY').box(plate_length, plate_width, plate_thickness)
+# Apply fillets to top edges
+try:
+    result = result.edges('>Z').fillet(4.0)
+except Exception:
+    pass
+# Create concentric holes at each position — LARGEST FIRST, then smaller
+# 1. Main bore Ø14mm (through)
+result = result.faces('>Z').workplane().pushPoints(hole_positions).hole(14.0)
+# 2. Countersunk mounting hole Ø8mm with 45° countersink
+result = result.faces('>Z').workplane().pushPoints(hole_positions).cskHole(8.0, 14.0, 45.0)
+# 3. Pilot hole Ø3.5mm (through)
+result = result.faces('>Z').workplane().pushPoints(hole_positions).hole(3.5)
+cq.exporters.export(result, '/tmp/cq_output.step')
+```
+
+KEY RULES FOR CONCENTRIC HOLES:
+- Create holes LARGEST diameter first, then smaller ones at same position
+- Use .pushPoints() to position holes at specific coordinates
+- Use .cskHole(holeDia, cskDia, cskAngle) for countersunk holes
+- Use .cboreHole(holeDia, cboreDia, cboreDepth) for counterbored holes
+- Convert corner-based coordinates to CadQuery center-based: x_cq = x_corner - length/2
+
 ═══════════════════════════════════════════════════════════════
 CONTEXT (use ONLY if directly relevant)
 ═══════════════════════════════════════════════════════════════
