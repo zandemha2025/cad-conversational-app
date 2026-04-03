@@ -336,27 +336,47 @@ async def _run_generation_inline(
                 # Assembly already produced geometry — skip single-part generation
                 raise _SkipSinglePart()
 
-            # Stage 0: Research layer — research real-world object dimensions
-            await _ws_send_safe(ws, {
-                "type": "generation_progress", "progress": 0.25,
-                "message": "Researching specifications…", "job_id": job_id,
-            })
-            research_data = await gemini.research_object_dimensions(prompt_text)
-            if research_data.get("has_real_world_objects"):
-                obj_names = [o.get("name", "?") for o in research_data.get("objects", [])]
-                log.info("Research layer found: %s project=%s", obj_names, project_id)
+            # ── Detect high-detail prompts ────────────────────────────────
+            # If the prompt contains specific dimensions (Ø, mm, diameter, radius),
+            # multiple numeric values, and engineering terms — it's already precise.
+            # Skip research/spec/clarification layers that LOSE detail, go straight
+            # to CadQuery generation with the FULL user prompt as primary context.
+            import re
+            _numeric_dims = len(re.findall(r'\d+(?:\.\d+)?\s*mm|\bØ\d|\bdia(?:meter)?\b|\bradius\b', prompt_text.lower()))
+            _is_high_detail = _numeric_dims >= 4  # 4+ specific dimensions = precise prompt
 
-            # Stage 1: Generate design spec (informed by research)
-            await _ws_send_safe(ws, {
-                "type": "generation_progress", "progress": 0.30,
-                "message": "Analyzing design requirements…", "job_id": job_id,
-            })
-            design_spec = await gemini.generate_design_spec(prompt_text, research_data=research_data)
-            if design_spec.get("base_shape"):
-                log.info("Design spec: base=%s features=%d project=%s",
-                         design_spec["base_shape"], len(design_spec.get("features", [])), project_id)
+            design_spec = {}
+            research_data = {}
 
-            # Stage 2: Generate CadQuery code (informed by research + spec)
+            if _is_high_detail:
+                log.info("HIGH-DETAIL prompt detected (%d dimensions) — skipping research/spec layers project=%s",
+                         _numeric_dims, project_id)
+                await _ws_send_safe(ws, {
+                    "type": "generation_progress", "progress": 0.30,
+                    "message": "Detailed spec detected — generating directly…", "job_id": job_id,
+                })
+            else:
+                # Standard path: Research → Spec for vague/moderate prompts
+                await _ws_send_safe(ws, {
+                    "type": "generation_progress", "progress": 0.25,
+                    "message": "Researching specifications…", "job_id": job_id,
+                })
+                research_data = await gemini.research_object_dimensions(prompt_text)
+                if research_data.get("has_real_world_objects"):
+                    obj_names = [o.get("name", "?") for o in research_data.get("objects", [])]
+                    log.info("Research layer found: %s project=%s", obj_names, project_id)
+
+                await _ws_send_safe(ws, {
+                    "type": "generation_progress", "progress": 0.30,
+                    "message": "Analyzing design requirements…", "job_id": job_id,
+                })
+                design_spec = await gemini.generate_design_spec(prompt_text, research_data=research_data)
+                if design_spec.get("base_shape"):
+                    log.info("Design spec: base=%s features=%d project=%s",
+                             design_spec["base_shape"], len(design_spec.get("features", [])), project_id)
+
+            # Generate CadQuery code — for high-detail prompts, the FULL user prompt
+            # is the primary context with NO simplification layers in between
             log.info("Generating CadQuery geometry via Gemini Pro project=%s", project_id)
             async with _ProgressHeartbeat(ws, job_id, start=0.35, end=0.50,
                                           message="Generating 3D geometry…"):
@@ -367,8 +387,8 @@ async def _run_generation_inline(
                     printer_profile=printer,
                     template_id=template_id,
                     user_prompt=prompt_text,
-                    design_spec=design_spec,
-                    research_data=research_data,
+                    design_spec=design_spec if design_spec else None,
+                    research_data=research_data if research_data else None,
                 )
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
@@ -693,8 +713,9 @@ async def chat_ws(websocket: WebSocket, project_id: str):
                         )
 
                 # ── Clarification check: ask before generating if spec is uncertain
-                # Skip if: modification intent, OR we already asked clarification this session
-                skip_clarification = intent in ("geometry_modification", "kcl_revision")
+                # Skip if: modification, already asked, OR high-detail prompt (user knows what they want)
+                _prompt_dims = len(re.findall(r'\d+(?:\.\d+)?\s*mm|\bØ\d|\bdia(?:meter)?\b', content.lower()))
+                skip_clarification = intent in ("geometry_modification", "kcl_revision") or _prompt_dims >= 4
                 if not skip_clarification and _clarification_asked:
                     skip_clarification = True
                     # This is the user's answer to our questions — merge with original prompt
