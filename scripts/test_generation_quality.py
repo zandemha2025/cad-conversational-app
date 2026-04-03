@@ -274,10 +274,10 @@ class TestRunner:
         if gen["errors"]:
             print(f"  Gen errors: {gen['errors']}")
 
-        # Wait for async completion
+        # Wait for async completion — backend may still be running
         if not gen["done"]:
-            print(f"  Waiting 30s for async completion...")
-            time.sleep(30)
+            print(f"  Waiting 60s for async completion...")
+            time.sleep(60)
 
         # Fetch and evaluate
         fixture = self.get_fixture_data(project_id)
