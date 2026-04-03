@@ -12,6 +12,7 @@ Server: streams back { "type": "chunk", "content": "..." }
 import asyncio
 import json
 import logging
+import re
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 
@@ -341,7 +342,6 @@ async def _run_generation_inline(
             # multiple numeric values, and engineering terms — it's already precise.
             # Skip research/spec/clarification layers that LOSE detail, go straight
             # to CadQuery generation with the FULL user prompt as primary context.
-            import re
             _numeric_dims = len(re.findall(r'\d+(?:\.\d+)?\s*mm|\bØ\d|\bdia(?:meter)?\b|\bradius\b', prompt_text.lower()))
             _is_high_detail = _numeric_dims >= 4  # 4+ specific dimensions = precise prompt
 
