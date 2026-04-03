@@ -456,11 +456,15 @@ async def _run_generation_inline(
 
         stored_kcl = zoo_kcl or kcl
 
-        # Update the pre-inserted fixture record with final geometry
-        update_result = sb.table("fixture_geometries").update({
+        # Update the pre-inserted fixture record with final geometry + dimensions
+        update_data = {
             "gltf_url": gltf_url,
             "kcl": stored_kcl,
-        }).eq("id", fixture_id).execute()
+        }
+        # Include bounding box dimensions if CadQuery extracted them
+        if isinstance(result, dict) and result.get("dimensions_json"):
+            update_data["dimensions_json"] = result["dimensions_json"]
+        update_result = sb.table("fixture_geometries").update(update_data).eq("id", fixture_id).execute()
         if hasattr(update_result, 'error') and update_result.error:
             log.error("Failed to update fixture_geometries gltf_url fixture=%s: %s", fixture_id, update_result.error)
 

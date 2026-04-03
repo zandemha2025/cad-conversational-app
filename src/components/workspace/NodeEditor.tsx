@@ -194,11 +194,11 @@ function buildConnectionPath(nodes: ApiNodeDef[], conn: ApiConnection): string {
 
 // ── Main NodeEditor ───────────────────────────────────────────────────────────
 
-export default function NodeEditor({ projectId = 'demo' }: { projectId?: string }) {
+export default function NodeEditor({ projectId = 'demo', gltfUrl }: { projectId?: string; gltfUrl?: string | null }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [regenerating, setRegenerating] = useState(false);
-  const { graph, loading, refetch } = useNodeGraph(projectId);
+  const { graph, loading, refetch } = useNodeGraph(projectId, gltfUrl);
 
   const [localNodes, setLocalNodes] = useState<ApiNodeDef[]>([]);
   const [localConns, setLocalConns] = useState<ApiConnection[]>([]);

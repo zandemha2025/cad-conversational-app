@@ -9,7 +9,7 @@ interface NodeGraphResult {
   refetch: () => void;
 }
 
-export function useNodeGraph(projectId: string | undefined): NodeGraphResult {
+export function useNodeGraph(projectId: string | undefined, refreshTrigger?: string | null): NodeGraphResult {
   const [graph, setGraph] = useState<ApiNodeGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function useNodeGraph(projectId: string | undefined): NodeGraphResult {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [projectId, tick]);
+  }, [projectId, tick, refreshTrigger]);
 
   const refetch = useCallback(() => setTick((t) => t + 1), []);
 

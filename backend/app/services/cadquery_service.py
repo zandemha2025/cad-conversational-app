@@ -125,6 +125,9 @@ def execute_cadquery_script(
 
             log.info("CadQuery OK for '%s' — %d bytes STEP", component_name, len(step_bytes))
 
+        # Extract bounding box dimensions for the Dims overlay
+        dimensions_json = _extract_dimensions(step_bytes, component_name)
+
         # Upload STEP to R2 (reuse upload_gltf infra with STEP key path)
         step_key = f"{project_id}/{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.step"
         step_url = _upload_step(project_id, step_key, step_bytes)
@@ -141,7 +144,7 @@ def execute_cadquery_script(
             glb_key = f"{safe_name}_v{version}_{uuid.uuid4().hex[:8]}.glb"
             gltf_url = upload_gltf(project_id, glb_key, glb_bytes)
             log.info("CadQuery→GLB OK for '%s' → %s", component_name, gltf_url)
-            return {"gltf_url": gltf_url, "step_url": step_url, "engine": "cadquery"}
+            return {"gltf_url": gltf_url, "step_url": step_url, "engine": "cadquery", "dimensions_json": dimensions_json}
         else:
             log.warning("STEP→GLB conversion failed for '%s'; returning STEP only", component_name)
             return {"gltf_url": None, "step_url": step_url, "engine": "cadquery"}
@@ -152,6 +155,40 @@ def execute_cadquery_script(
     except Exception as exc:
         log.error("CadQuery error for '%s': %s", component_name, exc)
         return _zoo_fallback(project_id, safe_name, version)
+
+
+def _extract_dimensions(step_bytes: bytes, component_name: str) -> list[dict] | None:
+    """Extract bounding box dimensions from STEP bytes for the Dims overlay."""
+    try:
+        import cadquery as cq
+        with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
+            f.write(step_bytes)
+            step_path = f.name
+        try:
+            result = cq.importers.importStep(step_path)
+            bb = result.val().BoundingBox()
+            dims = [
+                {"label": "Length (X)", "value_mm": round(bb.xlen, 2), "axis": "X",
+                 "start": [bb.xmin, (bb.ymin+bb.ymax)/2, (bb.zmin+bb.zmax)/2],
+                 "end": [bb.xmax, (bb.ymin+bb.ymax)/2, (bb.zmin+bb.zmax)/2]},
+                {"label": "Width (Y)", "value_mm": round(bb.ylen, 2), "axis": "Y",
+                 "start": [(bb.xmin+bb.xmax)/2, bb.ymin, (bb.zmin+bb.zmax)/2],
+                 "end": [(bb.xmin+bb.xmax)/2, bb.ymax, (bb.zmin+bb.zmax)/2]},
+                {"label": "Height (Z)", "value_mm": round(bb.zlen, 2), "axis": "Z",
+                 "start": [(bb.xmin+bb.xmax)/2, (bb.ymin+bb.ymax)/2, bb.zmin],
+                 "end": [(bb.xmin+bb.xmax)/2, (bb.ymin+bb.ymax)/2, bb.zmax]},
+            ]
+            log.info("Extracted dimensions for '%s': %.1f × %.1f × %.1f mm",
+                     component_name, bb.xlen, bb.ylen, bb.zlen)
+            return dims
+        finally:
+            try:
+                os.unlink(step_path)
+            except OSError:
+                pass
+    except Exception as e:
+        log.warning("Dimension extraction failed for '%s': %s", component_name, e)
+        return None
 
 
 def _step_to_glb_local(step_bytes: bytes, component_name: str) -> bytes | None:

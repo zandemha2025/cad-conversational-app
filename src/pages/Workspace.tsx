@@ -342,7 +342,7 @@ function WorkspaceInner({ projectId }: { projectId: string | undefined }) {
         {/* Content area */}
         {mode === 'nodes' ? (
           <div className="flex-1 overflow-hidden">
-            <ErrorBoundary label="Node editor error"><NodeEditor projectId={projectId} /></ErrorBoundary>
+            <ErrorBoundary label="Node editor error"><NodeEditor projectId={projectId} gltfUrl={gltfUrl} /></ErrorBoundary>
           </div>
         ) : mode === 'studies' ? (
           <div className="flex-1 overflow-hidden">

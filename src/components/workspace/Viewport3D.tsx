@@ -224,21 +224,56 @@ function TouchpointMarker({ tp, index }: { tp: ApiTouchpoint; index: number }) {
 
 // ── Scene content ─────────────────────────────────────────────────────────────
 
-function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensions, dimensions, onFaceClick, cameraAction, onCameraActionDone }: {
+// ── Section cut plane ──────────────────────────────────────────────────────
+function SectionCutPlane() {
+  const { gl, scene } = useThree();
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 0, -1), 0), []);
+
+  useEffect(() => {
+    gl.clippingPlanes = [plane];
+    gl.localClippingEnabled = true;
+    // Also enable clipping on all materials in the scene
+    scene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach(m => { if (m) m.clipShadows = true; });
+      }
+    });
+    return () => {
+      gl.clippingPlanes = [];
+      gl.localClippingEnabled = false;
+    };
+  }, [gl, scene, plane]);
+
+  return null;
+}
+
+const LIGHTING_PRESETS = {
+  studio:   { ambient: 0.35, key: 1.1, fill: 0.45, keyColor: '#ffffff', fillColor: '#aaccff', env: 'warehouse' as const },
+  outdoor:  { ambient: 0.5,  key: 1.5, fill: 0.3,  keyColor: '#fff5e0', fillColor: '#87ceeb', env: 'sunset' as const },
+  dramatic: { ambient: 0.15, key: 1.8, fill: 0.1,  keyColor: '#ff9944', fillColor: '#334455', env: 'night' as const },
+  flat:     { ambient: 0.8,  key: 0.3, fill: 0.3,  keyColor: '#ffffff', fillColor: '#ffffff', env: 'warehouse' as const },
+};
+
+function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensions, dimensions, lightingPreset, showSection, onFaceClick, cameraAction, onCameraActionDone }: {
   gltfUrl?: string | null; touchpointMode: boolean; viewMode: string;
   showGrid: boolean; showDimensions: boolean; dimensions: DimensionEntry[];
+  lightingPreset: 'studio' | 'outdoor' | 'dramatic' | 'flat';
+  showSection: boolean;
   onFaceClick?: (worldPos: THREE.Vector3) => void;
   cameraAction?: 'fit' | 'reset' | null;
   onCameraActionDone?: () => void;
 }) {
   const { state } = useWorkspace();
+  const lp = LIGHTING_PRESETS[lightingPreset];
   return (
     <>
       <color attach="background" args={['#080e1a']} />
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[10, 15, 8]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} />
-      <directionalLight position={[-8, 8, -5]} intensity={0.45} color="#aaccff" />
-      <Environment preset="warehouse" />
+      <ambientLight intensity={lp.ambient} />
+      <directionalLight position={[10, 15, 8]} intensity={lp.key} castShadow shadow-mapSize={[2048, 2048]} color={lp.keyColor} />
+      <directionalLight position={[-8, 8, -5]} intensity={lp.fill} color={lp.fillColor} />
+      <Environment preset={lp.env} />
 
       {gltfUrl && (
         <GltfModel url={gltfUrl} touchpointMode={touchpointMode} viewMode={viewMode} onFaceClick={onFaceClick}
@@ -258,6 +293,8 @@ function SceneContent({ gltfUrl, touchpointMode, viewMode, showGrid, showDimensi
           cellColor="#1e293b" sectionSize={5} sectionThickness={0.8} sectionColor="#334155"
           fadeDistance={35} infiniteGrid />
       )}
+
+      {showSection && <SectionCutPlane />}
 
       <OrbitControls makeDefault enableDamping dampingFactor={0.07} minDistance={0.001} maxDistance={100000}
         enabled={!touchpointMode} />
@@ -288,6 +325,8 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
   const [showGrid, setShowGrid] = useState(true);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
+  const [lightingPreset, setLightingPreset] = useState<'studio' | 'outdoor' | 'dramatic' | 'flat'>('studio');
+  const [showSection, setShowSection] = useState(false);
   const [dimensions, setDimensions] = useState<DimensionEntry[]>([]);
   const [cameraAction, setCameraAction] = useState<'fit' | 'reset' | null>(null);
   const { state, dispatch } = useWorkspace();
@@ -327,6 +366,7 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
           <SceneContent gltfUrl={resolvedGltfUrl} touchpointMode={touchpointMode}
             viewMode={viewMode} showGrid={showGrid}
             showDimensions={showDimensions} dimensions={dimensions}
+            lightingPreset={lightingPreset} showSection={showSection}
             onFaceClick={handleFaceClick}
             cameraAction={cameraAction}
             onCameraActionDone={() => setCameraAction(null)} />
@@ -407,8 +447,12 @@ export default function Viewport3D({ touchpointMode = false, gltfUrl, projectId 
         <ViewButton active={showGrid} icon={<Grid3x3 size={13} />} label="Grid" onClick={() => setShowGrid(p => !p)} />
         <ViewButton active={showAnnotations} icon={<Target size={13} />} label="GD&T" onClick={() => setShowAnnotations(p => !p)} />
         <ViewButton active={showDimensions} icon={<Ruler size={13} />} label="Dims" onClick={() => setShowDimensions(p => !p)} />
-        <ViewButton active={false} icon={<Sun size={13} />} label="Lighting" onClick={() => {}} />
-        <ViewButton active={false} icon={<Eye size={13} />} label="Section" onClick={() => {}} />
+        <ViewButton active={lightingPreset !== 'studio'} icon={<Sun size={13} />} label="Lighting" onClick={() => {
+          const presets: Array<'studio' | 'outdoor' | 'dramatic' | 'flat'> = ['studio', 'outdoor', 'dramatic', 'flat'];
+          const idx = presets.indexOf(lightingPreset);
+          setLightingPreset(presets[(idx + 1) % presets.length]);
+        }} />
+        <ViewButton active={showSection} icon={<Eye size={13} />} label="Section" onClick={() => setShowSection(s => !s)} />
         <ViewButton active={false} icon={<RefreshCw size={13} />} label="Reset View" onClick={() => setCameraAction('reset')} />
       </div>
 
