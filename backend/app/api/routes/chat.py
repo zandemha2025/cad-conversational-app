@@ -324,6 +324,7 @@ async def _run_generation_inline(
         # ── Single-part path (skip if assembly already produced geometry) ─────
         MAX_CQ_ATTEMPTS = 2
         _cq_dimensions = None
+        _cq_script_final = None  # Store the final CadQuery script for DB
 
         if gltf_url:
             # Assembly already produced geometry — skip single-part generation
@@ -405,7 +406,7 @@ async def _run_generation_inline(
 
                 if gltf_url and result.get("engine") != "zoo_fallback":
                     log.info("CadQuery OK project=%s %s gltf_url=%s", project_id, attempt_label, bool(gltf_url))
-                    # Capture dimensions for DB storage
+                    _cq_script_final = cq_script  # Save for DB storage
                     if result.get("dimensions_json"):
                         _cq_dimensions = result["dimensions_json"]
                     break
@@ -458,7 +459,8 @@ async def _run_generation_inline(
                 log.error("Zoo.dev fallback also failed project=%s: %s", project_id, zoo_exc)
                 generation_errors.append(f"Zoo.dev also failed: {str(zoo_exc)[:200]}")
 
-        stored_kcl = zoo_kcl or kcl
+        # Store CadQuery Python script if available (for node parametric editing), else KCL
+        stored_kcl = _cq_script_final or zoo_kcl or kcl
 
         # Update the pre-inserted fixture record with final geometry + dimensions
         update_data = {

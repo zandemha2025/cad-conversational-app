@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """
-Generation Quality Test Suite for ScaleCAD/ForgeAI.
+Generation Quality Test Suite — Simple through Extreme complexity.
+Tests correctness, not just existence.
 
-Tests the full pipeline: prompt → design spec → CadQuery → STEP → GLB → viewport
-Also checks: nodes auto-populate, dimensions stored, validation runs.
-
-Usage:
-  python scripts/test_generation_quality.py [--api-url URL] [--email EMAIL] [--password PASS]
+Checks:
+- Geometry exists (gltf_url)
+- Bounding box is reasonable for the requested shape
+- Node count > 0 and node params match requested features
+- CadQuery script contains expected operations
+- Dimensions stored
 """
-import os
-import sys
-import json
-import time
-import asyncio
+import os, sys, json, time, asyncio, re
 import httpx
 import websockets
 
@@ -20,72 +18,98 @@ API_URL = os.environ.get("SCALECAD_API_URL", "https://scalecad-api.fly.dev")
 EMAIL = os.environ.get("SCALECAD_EMAIL", "test@scalecad.io")
 PASSWORD = os.environ.get("SCALECAD_PASSWORD", "TestPass123!")
 
-# ── Test Cases ────────────────────────────────────────────────────────────────
-# Each test: {prompt, expected_shape, expected_features, max_time_s}
+# Flush output immediately
+sys.stdout.reconfigure(line_buffering=True)
 
 TEST_CASES = [
-    # ── Simple (should always pass) ──────────────────────────────────────────
+    # ── SIMPLE ───────────────────────────────────────────────────────────────
     {
-        "name": "Simple plate",
+        "name": "S1: Rectangular plate",
+        "difficulty": "simple",
         "prompt": "200mm x 150mm x 20mm aluminum plate with 4 M10 corner holes",
-        "expected": {
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 500,
+            "kcl_contains": [".box(", ".hole("],
+            "kcl_not_contains": [".circle("],  # should NOT be a cylinder
+            "bbox_approx": {"x": (180, 220), "y": (130, 170), "z": (15, 25)},
         },
-        "max_time_s": 180,
     },
     {
-        "name": "Simple cylinder",
+        "name": "S2: Simple cylinder",
+        "difficulty": "simple",
         "prompt": "80mm diameter x 70mm tall cylinder with a 20mm center bore",
-        "expected": {
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 500,
+            "kcl_contains": [".circle(", ".extrude("],
+            "kcl_not_contains": [".box("],  # should NOT be a box
+            "bbox_approx": {"x": (70, 90), "y": (70, 90), "z": (60, 80)},
         },
-        "max_time_s": 180,
     },
-    # ── Medium ───────────────────────────────────────────────────────────────
+    # ── MODERATE ─────────────────────────────────────────────────────────────
     {
-        "name": "Lidar cylinder",
+        "name": "M1: Lidar with FOV",
+        "difficulty": "moderate",
         "prompt": "80mm diameter x 70mm tall circular cylinder with 3 M6 through-holes on the bottom at 60mm BCD and a solid 5mm thick wedge extending 100mm from center at mid-height representing a 90 degree vertical FOV",
-        "expected": {
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 1000,
+            "kcl_contains": [".circle(", ".extrude(", ".hole("],
+            "kcl_not_contains": [".box("],
         },
-        "max_time_s": 180,
     },
     {
-        "name": "L-bracket",
-        "prompt": "L-bracket: 100mm tall, 80mm base, 10mm thick, 50mm deep, with two M8 holes in the base",
-        "expected": {
+        "name": "M2: L-bracket with holes",
+        "difficulty": "moderate",
+        "prompt": "L-bracket: 100mm tall, 80mm base, 10mm thick, 50mm deep, with two M8 holes in the base 20mm from each end",
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 500,
+            "kcl_contains": [".extrude(", ".hole("],
         },
-        "max_time_s": 180,
     },
-    # ── Complex ──────────────────────────────────────────────────────────────
+    # ── HARD ─────────────────────────────────────────────────────────────────
     {
-        "name": "Electronics enclosure",
-        "prompt": "Arduino Uno enclosure: 75mm x 60mm x 25mm box with 2mm walls, open top, 4 M2.5 mounting posts inside matching Arduino hole pattern",
-        "expected": {
+        "name": "H1: Electronics enclosure",
+        "difficulty": "hard",
+        "prompt": "Arduino Uno enclosure: 75mm x 60mm x 25mm box with 2mm walls, open top, 4 M2.5 mounting posts inside",
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 1000,
+            "kcl_contains": [".shell("],  # MUST use shell for enclosure
         },
-        "max_time_s": 180,
     },
     {
-        "name": "Phone case",
+        "name": "H2: Phone case",
+        "difficulty": "hard",
         "prompt": "iPhone 15 Pro case: 150mm x 73mm x 10mm shell with 1.5mm walls, camera cutout 40x40mm on back, open front",
-        "expected": {
+        "checks": {
             "has_geometry": True,
             "has_nodes": True,
-            "min_step_bytes": 1000,
+            "kcl_contains": [".shell(", ".cut("],
+            "bbox_approx": {"x": (140, 160), "y": (65, 80), "z": (8, 15)},
         },
-        "max_time_s": 180,
+    },
+    # ── EXTREME ──────────────────────────────────────────────────────────────
+    {
+        "name": "E1: Spur gear",
+        "difficulty": "extreme",
+        "prompt": "Spur gear: 20 teeth, module 2, 10mm face width, 8mm bore. No chamfers.",
+        "checks": {
+            "has_geometry": True,
+            "kcl_contains": ["math.", ".extrude("],  # must use math for tooth profile
+            "bbox_approx": {"z": (8, 12)},  # face width check
+        },
+    },
+    {
+        "name": "E2: Water bottle",
+        "difficulty": "extreme",
+        "prompt": "Water bottle: 70mm diameter body, 200mm tall, tapered neck to 30mm at top, 2mm wall thickness, open top",
+        "checks": {
+            "has_geometry": True,
+            "kcl_contains_any": [".revolve(", ".loft("],  # must use revolve or loft
+        },
     },
 ]
 
@@ -97,250 +121,245 @@ class TestRunner:
         self.results = []
 
     def login(self):
-        """Authenticate and get JWT token."""
         resp = self.client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
         if resp.status_code != 200:
-            print(f"FATAL: Login failed: {resp.status_code} {resp.text[:200]}")
+            print(f"FATAL: Login failed: {resp.status_code}")
             sys.exit(1)
-        data = resp.json()
-        self.token = data.get("access_token")
+        self.token = resp.json().get("access_token")
         self.client.headers["Authorization"] = f"Bearer {self.token}"
         print(f"✓ Logged in as {EMAIL}")
 
     def create_project(self):
-        """Create a new blank project."""
-        resp = self.client.post("/api/projects/", json={
-            "name": f"QA Test {int(time.time())}",
-            "category": "fixture",
-        })
+        resp = self.client.post("/api/projects/", json={"name": f"QA-{int(time.time())}", "category": "fixture"})
         if resp.status_code not in (200, 201):
-            print(f"  FAIL: Create project: {resp.status_code} {resp.text[:200]}")
             return None
         return resp.json().get("id")
 
-    def run_generation(self, project_id: str, prompt: str, max_time_s: int = 120) -> dict:
-        """Send prompt via WebSocket chat and wait for generation_done."""
+    async def _ws_generate(self, project_id: str, prompt: str, max_time: int = 180) -> dict:
+        result = {"done": False, "gltf_url": None, "fixture_id": None, "errors": [], "time_s": 0}
+        start = time.time()
         ws_url = API_URL.replace("https://", "wss://").replace("http://", "ws://")
         ws_url = f"{ws_url}/api/projects/{project_id}/chat"
 
-        result = {
-            "generation_done": False,
-            "gltf_url": None,
-            "fixture_id": None,
-            "errors": [],
-            "time_s": 0,
-        }
-
         try:
-            loop = asyncio.new_event_loop()
-            result = loop.run_until_complete(
-                self._ws_generate(ws_url, prompt, max_time_s)
-            )
-            loop.close()
+            async with websockets.connect(ws_url, close_timeout=5, ping_interval=20, ping_timeout=60) as ws:
+                await ws.send(json.dumps({"type": "auth", "token": self.token}))
+                auth = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                if auth.get("type") != "auth_ok":
+                    result["errors"].append("Auth failed")
+                    return result
+
+                await ws.send(json.dumps({"type": "message", "content": prompt}))
+
+                deadline = time.time() + max_time
+                while time.time() < deadline:
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                        msg = json.loads(raw)
+                        mt = msg.get("type", "")
+
+                        if mt == "generation_done":
+                            result["done"] = True
+                            result["gltf_url"] = msg.get("gltf_url")
+                            result["fixture_id"] = msg.get("fixture_id")
+                            break
+                        elif mt == "generation_error":
+                            result["errors"].append(msg.get("message", "")[:200])
+                            break
+                        elif mt == "clarification_needed":
+                            await ws.send(json.dumps({
+                                "type": "message",
+                                "content": "Use the default dimensions as proposed. Proceed with generation.",
+                            }))
+                    except asyncio.TimeoutError:
+                        continue
         except Exception as e:
             result["errors"].append(str(e)[:200])
-
-        return result
-
-    async def _ws_generate(self, ws_url: str, prompt: str, max_time_s: int) -> dict:
-        result = {
-            "generation_done": False,
-            "gltf_url": None,
-            "fixture_id": None,
-            "errors": [],
-            "time_s": 0,
-            "messages": [],
-        }
-        start = time.time()
-
-        async with websockets.connect(ws_url, close_timeout=5) as ws:
-            # Auth
-            await ws.send(json.dumps({"type": "auth", "token": self.token}))
-            auth_resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
-            if auth_resp.get("type") != "auth_ok":
-                result["errors"].append(f"Auth failed: {auth_resp}")
-                return result
-
-            # Send prompt
-            await ws.send(json.dumps({"type": "message", "content": prompt}))
-
-            # Listen for messages until generation_done or timeout
-            deadline = time.time() + max_time_s
-            while time.time() < deadline:
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=5)
-                    msg = json.loads(raw)
-                    msg_type = msg.get("type", "")
-                    result["messages"].append(msg_type)
-
-                    if msg_type == "generation_done":
-                        result["generation_done"] = True
-                        result["gltf_url"] = msg.get("gltf_url")
-                        result["fixture_id"] = msg.get("fixture_id")
-                        break
-
-                    if msg_type == "generation_error":
-                        result["errors"].append(msg.get("message", "Unknown error")[:200])
-                        break
-
-                    # If clarification is asked, provide a generic answer
-                    if msg_type == "clarification_needed":
-                        await ws.send(json.dumps({
-                            "type": "message",
-                            "content": "Use the default dimensions as proposed. Proceed with generation.",
-                        }))
-
-                except asyncio.TimeoutError:
-                    continue
 
         result["time_s"] = round(time.time() - start, 1)
         return result
 
-    def check_geometry(self, project_id: str) -> dict:
-        """Check if geometry was generated and has valid data."""
-        checks = {
-            "has_geometry": False,
-            "gltf_url": None,
-            "step_bytes": 0,
-            "has_dimensions": False,
-        }
+    def get_fixture_data(self, project_id: str) -> dict:
+        """Get geometry, KCL script, dimensions, and nodes."""
+        data = {"has_geometry": False, "gltf_url": None, "kcl": None, "dims": None,
+                "bbox": None, "nodes": [], "node_count": 0, "has_validation": False}
 
-        # Check fixture geometry
-        resp = self.client.get(f"/api/projects/{project_id}/geometry/fixture")
-        if resp.status_code == 200:
-            data = resp.json()
-            checks["has_geometry"] = bool(data.get("gltf_url"))
-            checks["gltf_url"] = data.get("gltf_url")
-            checks["has_dimensions"] = bool(data.get("dimensions_json"))
+        # Fixture geometry + KCL
+        r = self.client.get(f"/api/projects/{project_id}/geometry/fixture")
+        if r.status_code == 200:
+            d = r.json()
+            data["has_geometry"] = bool(d.get("gltf_url"))
+            data["gltf_url"] = d.get("gltf_url")
+            data["kcl"] = d.get("kcl", "")
+            data["dims"] = d.get("dimensions_json")
+            if data["dims"] and isinstance(data["dims"], list):
+                bbox = {}
+                for dim in data["dims"]:
+                    axis = dim.get("axis", "").upper()
+                    if axis in ("X", "Y", "Z"):
+                        bbox[axis.lower()] = dim.get("value_mm", 0)
+                data["bbox"] = bbox
 
-        return checks
+        # Nodes
+        r2 = self.client.get(f"/api/projects/{project_id}/nodes")
+        if r2.status_code == 200:
+            nodes = r2.json().get("nodes", [])
+            data["nodes"] = nodes
+            data["node_count"] = len(nodes)
 
-    def check_nodes(self, project_id: str) -> bool:
-        """Check if node graph was auto-generated."""
-        resp = self.client.get(f"/api/projects/{project_id}/nodes")
-        if resp.status_code == 200:
-            data = resp.json()
-            nodes = data.get("nodes", [])
-            return len(nodes) > 0
-        return False
+        # Validation
+        r3 = self.client.get(f"/api/projects/{project_id}/validation")
+        data["has_validation"] = r3.status_code == 200
 
-    def check_validation(self, project_id: str) -> bool:
-        """Check if validation results exist."""
-        resp = self.client.get(f"/api/projects/{project_id}/validation")
-        return resp.status_code == 200
+        return data
+
+    def evaluate(self, test_case: dict, fixture_data: dict) -> tuple[bool, list[str]]:
+        """Evaluate fixture data against test case checks. Returns (passed, reasons)."""
+        checks = test_case["checks"]
+        issues = []
+
+        # Geometry exists
+        if checks.get("has_geometry") and not fixture_data["has_geometry"]:
+            issues.append("NO GEOMETRY generated")
+
+        # Nodes exist
+        if checks.get("has_nodes") and fixture_data["node_count"] == 0:
+            issues.append(f"NO NODES (expected >0, got {fixture_data['node_count']})")
+
+        # KCL script checks
+        kcl = fixture_data.get("kcl") or ""
+
+        for pattern in checks.get("kcl_contains", []):
+            if pattern not in kcl:
+                issues.append(f"KCL missing '{pattern}' — wrong operation used")
+
+        for pattern in checks.get("kcl_not_contains", []):
+            if pattern in kcl:
+                issues.append(f"KCL contains '{pattern}' — WRONG shape generated")
+
+        if checks.get("kcl_contains_any"):
+            if not any(p in kcl for p in checks["kcl_contains_any"]):
+                issues.append(f"KCL missing any of {checks['kcl_contains_any']}")
+
+        # Bounding box checks
+        if checks.get("bbox_approx") and fixture_data.get("bbox"):
+            bbox = fixture_data["bbox"]
+            for axis, (lo, hi) in checks["bbox_approx"].items():
+                val = bbox.get(axis, 0)
+                if val < lo or val > hi:
+                    issues.append(f"Bbox {axis.upper()}={val:.1f}mm outside [{lo},{hi}]")
+
+        return (len(issues) == 0, issues)
 
     def run_test(self, test_case: dict) -> dict:
-        """Run a single test case end-to-end."""
         name = test_case["name"]
+        diff = test_case["difficulty"]
         prompt = test_case["prompt"]
-        expected = test_case["expected"]
-        max_time = test_case.get("max_time_s", 120)
 
-        print(f"\n{'='*60}")
-        print(f"TEST: {name}")
-        print(f"PROMPT: {prompt[:80]}...")
-        print(f"{'='*60}")
+        print(f"\n{'─'*60}")
+        print(f"[{diff.upper()}] {name}")
+        print(f"  Prompt: {prompt[:70]}...")
 
-        # Create project
         project_id = self.create_project()
         if not project_id:
-            return {"name": name, "passed": False, "reason": "Failed to create project"}
+            return {"name": name, "passed": False, "issues": ["Project creation failed"]}
 
-        print(f"  Project: {project_id}")
+        # Generate
+        print(f"  Generating...", end="", flush=True)
+        gen = asyncio.new_event_loop().run_until_complete(
+            self._ws_generate(project_id, prompt, max_time=180)
+        )
+        print(f" {'done' if gen['done'] else 'timeout'} ({gen['time_s']}s)")
 
-        # Run generation
-        print(f"  Generating (max {max_time}s)...")
-        gen_result = self.run_generation(project_id, prompt, max_time)
-        print(f"  Generation done: {gen_result['generation_done']} ({gen_result['time_s']}s)")
-        if gen_result["errors"]:
-            print(f"  Errors: {gen_result['errors']}")
+        if gen["errors"]:
+            print(f"  Gen errors: {gen['errors']}")
 
-        # Wait a moment for async operations to complete
-        time.sleep(3)
+        # Wait for async completion
+        if not gen["done"]:
+            print(f"  Waiting 30s for async completion...")
+            time.sleep(30)
 
-        # Check geometry
-        geom = self.check_geometry(project_id)
-        print(f"  Geometry: {geom['has_geometry']}, dims: {geom['has_dimensions']}")
+        # Fetch and evaluate
+        fixture = self.get_fixture_data(project_id)
+        print(f"  Geometry: {fixture['has_geometry']}, Nodes: {fixture['node_count']}, "
+              f"KCL: {len(fixture.get('kcl') or '')} chars, Dims: {bool(fixture.get('dims'))}")
 
-        # Check nodes
-        has_nodes = self.check_nodes(project_id)
-        print(f"  Nodes: {has_nodes}")
+        passed, issues = self.evaluate(test_case, fixture)
 
-        # Check validation
-        has_validation = self.check_validation(project_id)
-        print(f"  Validation: {has_validation}")
-
-        # Evaluate
-        passed = True
-        reasons = []
-
-        if expected.get("has_geometry") and not geom["has_geometry"]:
-            passed = False
-            reasons.append("No geometry generated")
-
-        if expected.get("has_nodes") and not has_nodes:
-            passed = False
-            reasons.append("No node graph generated")
-
-        if gen_result["errors"]:
-            passed = False
-            reasons.append(f"Generation errors: {gen_result['errors'][0][:100]}")
+        # Show KCL snippet for debugging failures
+        if not passed and fixture.get("kcl"):
+            kcl = fixture["kcl"]
+            # Show first 3 lines of CadQuery code
+            lines = [l for l in kcl.split("\n") if l.strip() and not l.strip().startswith("#")][:5]
+            print(f"  KCL preview: {' | '.join(l.strip() for l in lines)}")
 
         status = "PASS ✓" if passed else "FAIL ✗"
-        print(f"\n  RESULT: {status}")
-        if reasons:
-            print(f"  REASONS: {'; '.join(reasons)}")
+        print(f"  {status}")
+        for issue in issues:
+            print(f"    → {issue}")
 
         return {
-            "name": name,
-            "passed": passed,
-            "reasons": reasons,
-            "time_s": gen_result["time_s"],
-            "has_geometry": geom["has_geometry"],
-            "has_nodes": has_nodes,
-            "has_dims": geom["has_dimensions"],
-            "has_validation": has_validation,
+            "name": name, "difficulty": diff, "passed": passed,
+            "issues": issues, "time_s": gen["time_s"],
+            "has_geometry": fixture["has_geometry"],
+            "node_count": fixture["node_count"],
+            "has_dims": bool(fixture.get("dims")),
+            "kcl_len": len(fixture.get("kcl") or ""),
             "project_id": project_id,
         }
 
-    def run_all(self):
-        """Run all test cases and print summary."""
+    def run_all(self, difficulty_filter: str | None = None):
         print("=" * 60)
         print("ScaleCAD Generation Quality Test Suite")
         print(f"API: {API_URL}")
-        print(f"Tests: {len(TEST_CASES)}")
+
+        cases = TEST_CASES
+        if difficulty_filter:
+            cases = [tc for tc in cases if tc["difficulty"] == difficulty_filter]
+        print(f"Tests: {len(cases)}")
         print("=" * 60)
 
         self.login()
 
-        for tc in TEST_CASES:
+        for tc in cases:
             result = self.run_test(tc)
             self.results.append(result)
 
         # Summary
-        print("\n\n" + "=" * 60)
+        print(f"\n\n{'='*60}")
         print("SUMMARY")
-        print("=" * 60)
-        passed = sum(1 for r in self.results if r["passed"])
-        total = len(self.results)
-        print(f"\n  {passed}/{total} tests passed\n")
-
+        print("="*60)
+        by_diff = {}
         for r in self.results:
-            status = "✓" if r["passed"] else "✗"
-            extras = []
-            if r.get("has_geometry"): extras.append("geom")
-            if r.get("has_nodes"): extras.append("nodes")
-            if r.get("has_dims"): extras.append("dims")
-            print(f"  {status} {r['name']:30s} {r['time_s']:6.1f}s  [{', '.join(extras)}]")
-            if r.get("reasons"):
-                for reason in r["reasons"]:
-                    print(f"    → {reason}")
+            d = r["difficulty"]
+            if d not in by_diff:
+                by_diff[d] = {"passed": 0, "total": 0}
+            by_diff[d]["total"] += 1
+            if r["passed"]:
+                by_diff[d]["passed"] += 1
 
-        print(f"\n  Total time: {sum(r['time_s'] for r in self.results):.0f}s")
-        return passed == total
+        for d in ["simple", "moderate", "hard", "extreme"]:
+            if d in by_diff:
+                s = by_diff[d]
+                print(f"  {d.upper():10s}: {s['passed']}/{s['total']}")
+
+        total_passed = sum(1 for r in self.results if r["passed"])
+        total = len(self.results)
+        print(f"\n  TOTAL: {total_passed}/{total}")
+
+        print(f"\n{'─'*60}")
+        for r in self.results:
+            s = "✓" if r["passed"] else "✗"
+            print(f"  {s} [{r['difficulty'][:3].upper()}] {r['name']:30s} {r['time_s']:5.0f}s  "
+                  f"geom={r['has_geometry']} nodes={r['node_count']:2d} kcl={r['kcl_len']:5d}")
+            for issue in r.get("issues", []):
+                print(f"      → {issue}")
+
+        return total_passed == total
 
 
 if __name__ == "__main__":
+    diff_filter = sys.argv[1] if len(sys.argv) > 1 else None
     runner = TestRunner()
-    success = runner.run_all()
+    success = runner.run_all(diff_filter)
     sys.exit(0 if success else 1)
