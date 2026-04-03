@@ -141,6 +141,28 @@ function GltfModel({ url, touchpointMode, viewMode, onFaceClick, cameraAction, o
     onCameraActionDone?.();
   }, [cameraAction, fitCamera, camera, controls, onCameraActionDone]);
 
+  // Apply selected material override (PBR properties from workspace state)
+  const { state: wsState } = useWorkspace();
+  const selectedMaterial = wsState.selectedMaterial;
+
+  if (selectedMaterial && viewMode === 'shaded') {
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        const mat = new THREE.MeshStandardMaterial({
+          color: selectedMaterial.color,
+          metalness: selectedMaterial.metalness,
+          roughness: selectedMaterial.roughness,
+        });
+        if (Array.isArray(mesh.material)) {
+          mesh.material = mesh.material.map(() => mat.clone());
+        } else {
+          mesh.material = mat;
+        }
+      }
+    });
+  }
+
   // Apply viewMode materials
   if (viewMode === 'wireframe') {
     cloned.traverse((obj) => {

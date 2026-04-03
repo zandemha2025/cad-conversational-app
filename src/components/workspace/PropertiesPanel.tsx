@@ -3,7 +3,7 @@ import {
   ChevronDown, ChevronRight, Info, Activity, Layers, Settings2, Tag, GitBranch,
   AlertTriangle, CheckCircle2, XCircle, Circle, Triangle,
 } from 'lucide-react';
-import { useWorkspace } from '../../store/workspaceStore';
+import { useWorkspace, MATERIAL_APPEARANCE } from '../../store/workspaceStore';
 import {
   runFeaLite, fetchValidationResults, fetchProject,
   fetchRevisions, fetchMaterials,
@@ -82,7 +82,7 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const [activeTab, setActiveTab] = useState<Tab>('properties');
   const [feaResult, setFeaResult] = useState<FeaLiteResult | null>(null);
   const [feaRunning, setFeaRunning] = useState(false);
-  const { state } = useWorkspace();
+  const { state, dispatch } = useWorkspace();
   const sel = state.selectedFeature;
   const features = state.features;
 
@@ -390,14 +390,24 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
               {liveMaterials.map(mat => (
                 <button
                   key={mat.id}
-                  onClick={() => setSelectedMaterialId(mat.id)}
+                  onClick={() => {
+                    setSelectedMaterialId(mat.id);
+                    const appearance = MATERIAL_APPEARANCE[mat.id];
+                    dispatch({
+                      type: 'SET_MATERIAL',
+                      material: appearance
+                        ? { id: mat.id, ...appearance }
+                        : { id: mat.id, color: '#c0c0c0', metalness: 0.8, roughness: 0.35 },
+                    });
+                  }}
                   className={`w-full flex items-center gap-3 p-2 rounded-lg border text-left transition-all ${
                     selectedMaterialId === mat.id
                       ? 'bg-cadblue-900/30 border-cadblue-600/50'
                       : 'bg-cadsurface-800 border-cadsurface-700 hover:border-cadsurface-600'
                   }`}
                 >
-                  <div className="w-5 h-5 rounded-full border border-cadsurface-600 shrink-0 bg-slate-400" />
+                  <div className="w-5 h-5 rounded-full border border-cadsurface-600 shrink-0"
+                    style={{ backgroundColor: MATERIAL_APPEARANCE[mat.id]?.color ?? '#c0c0c0' }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-slate-200 truncate">{mat.display_name}</p>
                     <p className="text-xs text-slate-500">

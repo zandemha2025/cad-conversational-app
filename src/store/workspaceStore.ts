@@ -7,6 +7,24 @@ import { createContext, useContext, useReducer, useCallback } from 'react';
 import type { ApiTouchpoint, ApiStudy, Machine, CostEstimate, ShoppingListItem, InventoryItem } from '../lib/api';
 import type { PartFeatures } from '../types';
 
+export interface SelectedMaterial {
+  id: string;
+  color: string;
+  metalness: number;
+  roughness: number;
+}
+
+export const MATERIAL_APPEARANCE: Record<string, { color: string; metalness: number; roughness: number }> = {
+  'aluminum_6061':   { color: '#c0c0c0', metalness: 0.8,  roughness: 0.35 },
+  'aluminum_7075':   { color: '#b8b8b8', metalness: 0.8,  roughness: 0.3  },
+  'mild_steel_1018': { color: '#8a8a8a', metalness: 0.9,  roughness: 0.4  },
+  'steel_4140':      { color: '#707070', metalness: 0.9,  roughness: 0.3  },
+  'stainless_304':   { color: '#d0d0d0', metalness: 0.95, roughness: 0.2  },
+  'titanium':        { color: '#a8a8a8', metalness: 0.85, roughness: 0.25 },
+  'abs_plastic':     { color: '#e8e8e8', metalness: 0.0,  roughness: 0.7  },
+  'nylon':           { color: '#f0f0e8', metalness: 0.0,  roughness: 0.6  },
+};
+
 export interface SelectedFeature {
   id: string;           // face_id or hole id
   type: 'face' | 'hole' | 'datum';
@@ -53,6 +71,7 @@ interface WorkspaceState {
   // Assembly state
   assemblyComponents: AssemblyComponent[];
   hoveredComponentId: string | null;
+  selectedMaterial: SelectedMaterial | null;
 }
 
 type Action =
@@ -77,7 +96,9 @@ type Action =
   | { type: 'SET_INVENTORY'; items: InventoryItem[] }
   // Assembly actions
   | { type: 'SET_ASSEMBLY_COMPONENTS'; components: AssemblyComponent[] }
-  | { type: 'SET_HOVERED_COMPONENT'; id: string | null };
+  | { type: 'SET_HOVERED_COMPONENT'; id: string | null }
+  // Material actions
+  | { type: 'SET_MATERIAL'; material: SelectedMaterial | null };
 
 function reducer(state: WorkspaceState, action: Action): WorkspaceState {
   switch (action.type) {
@@ -122,6 +143,9 @@ function reducer(state: WorkspaceState, action: Action): WorkspaceState {
       return { ...state, assemblyComponents: action.components };
     case 'SET_HOVERED_COMPONENT':
       return { ...state, hoveredComponentId: action.id };
+    // Material cases
+    case 'SET_MATERIAL':
+      return { ...state, selectedMaterial: action.material };
     default:
       return state;
   }
@@ -144,6 +168,7 @@ const initialState: WorkspaceState = {
   inventory: [],
   assemblyComponents: [],
   hoveredComponentId: null,
+  selectedMaterial: null,
 };
 
 import React from 'react';
