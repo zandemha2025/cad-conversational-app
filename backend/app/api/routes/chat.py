@@ -323,6 +323,7 @@ async def _run_generation_inline(
 
         # ── Single-part path (skip if assembly already produced geometry) ─────
         MAX_CQ_ATTEMPTS = 2
+        _cq_dimensions = None
 
         if gltf_url:
             # Assembly already produced geometry — skip single-part generation
@@ -404,6 +405,9 @@ async def _run_generation_inline(
 
                 if gltf_url and result.get("engine") != "zoo_fallback":
                     log.info("CadQuery OK project=%s %s gltf_url=%s", project_id, attempt_label, bool(gltf_url))
+                    # Capture dimensions for DB storage
+                    if result.get("dimensions_json"):
+                        _cq_dimensions = result["dimensions_json"]
                     break
 
                 last_error = result.get("error") or "CadQuery produced no geometry or empty mesh"
@@ -462,8 +466,8 @@ async def _run_generation_inline(
             "kcl": stored_kcl,
         }
         # Include bounding box dimensions if CadQuery extracted them
-        if isinstance(result, dict) and result.get("dimensions_json"):
-            update_data["dimensions_json"] = result["dimensions_json"]
+        if _cq_dimensions:
+            update_data["dimensions_json"] = _cq_dimensions
         update_result = sb.table("fixture_geometries").update(update_data).eq("id", fixture_id).execute()
         if hasattr(update_result, 'error') and update_result.error:
             log.error("Failed to update fixture_geometries gltf_url fixture=%s: %s", fixture_id, update_result.error)
