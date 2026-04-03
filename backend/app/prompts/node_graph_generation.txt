@@ -1,64 +1,60 @@
-You are a CAD system generating a parametric node graph for a manufacturing fixture.
+You are a parametric CAD system. Generate a node graph that represents the ACTUAL operations in the CadQuery script below. Each node must correspond to a real operation or parameter in the script.
 
-Each node represents one parametric operation. Nodes connect to show data flow.
-The graph is used by engineers to fine-tune individual aspects of the fixture.
-
-## Context:
-
-### Part Features
-{part_features_json}
-
-### Touchpoints
-{touchpoints_json}
-
-### Environment
-{environment_json}
-
-### Printer Profile
-{printer_profile_json}
-
-### Template
-{template_id}
-
-## Output format (JSON):
-
-```json
-{
-  "nodes": [
-    {
-      "id": "string (snake_case)",
-      "label": "Human-readable label",
-      "category": "input|foundation|geometry|print|output",
-      "x": 0,
-      "y": 0,
-      "w": 180,
-      "h": 80,
-      "ai_generated": true,
-      "params": [
-        {"name": "param_name", "value": 10.0, "unit": "mm", "type": "number"}
-      ]
-    }
-  ],
-  "connections": [
-    {
-      "from_node": "node_id",
-      "from_port": "output",
-      "to_node": "other_node_id",
-      "to_port": "input"
-    }
-  ]
-}
+## CadQuery Script Being Modeled:
+```python
+{cadquery_script}
 ```
 
+## User's Original Request:
+{user_prompt}
+
+## Rules:
+1. Each VARIABLE ASSIGNMENT in the script (e.g., `diameter = 80.0`) becomes a parameter on an input node
+2. Each CAD OPERATION (e.g., `.circle().extrude()`, `.hole()`, `.shell()`, `.union()`) becomes a geometry node
+3. Node params MUST match the actual variable names in the script exactly (so editing a param can find/replace the variable)
+4. Do NOT add generic fixture nodes (base plate, clamp towers, locating pins) unless they exist in the script
+5. Generate ONLY nodes that correspond to actual operations in the script
+
 ## Node categories:
-- input: Part geometry, environment config, printer profile inputs
-- foundation: Base plate, mounting pattern, coordinate system
-- geometry: Locating features, clamp features, support pads
-- print: Layer profile, support generation, DFM validation
-- output: Final fixture, GLTF export, STEP export
+- input: Script parameters (dimensions, counts, angles) — one node per logical group
+- geometry: Each CAD operation (create body, add holes, cut pocket, shell, union, etc.)
+- output: Export operations
 
-Generate 12–18 nodes covering all aspects of the fixture.
-Position nodes left-to-right by category (inputs at x≈0, outputs at x≈1300).
-Space nodes vertically with 100px gaps.
+## Output format (JSON only, no markdown):
+{{
+  "nodes": [
+    {{
+      "id": "string (snake_case matching script context)",
+      "label": "Human-readable label",
+      "category": "input|geometry|output",
+      "x": 0, "y": 0, "w": 200, "h": 80,
+      "ai_generated": true,
+      "params": [
+        {{"name": "variable_name_from_script", "value": <actual_value_from_script>, "unit": "mm", "type": "number"}}
+      ]
+    }}
+  ],
+  "connections": [
+    {{"from_node": "node_id", "from_port": "output", "to_node": "other_node_id", "to_port": "input"}}
+  ]
+}}
 
-Output ONLY the JSON object. No markdown. No explanation.
+## Example:
+For this script:
+```python
+diameter = 80.0
+height = 70.0
+hole_d = 6.0
+result = cq.Workplane('XY').circle(diameter/2).extrude(height)
+result = result.faces('<Z').workplane().hole(hole_d)
+```
+
+Generate:
+- Input node "dimensions" with params: diameter=80.0, height=70.0, hole_d=6.0
+- Geometry node "create_cylinder" — .circle().extrude()
+- Geometry node "add_bottom_hole" — .hole()
+- Output node "export_step"
+- Connections: dimensions→create_cylinder→add_bottom_hole→export_step
+
+Position nodes left-to-right: inputs at x≈0, geometry at x≈400-800, outputs at x≈1100.
+Space vertically with 120px gaps.

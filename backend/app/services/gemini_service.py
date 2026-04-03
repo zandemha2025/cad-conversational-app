@@ -554,16 +554,13 @@ class GeminiService:
         environment: dict,
         printer_profile: dict,
         template_id: str,
+        cadquery_script: str = "",
+        user_prompt: str = "",
     ) -> dict:
         template = _load_prompt("node_graph_generation.txt")
-        prompt = _fill_template(
-            template,
-            part_features_json=json.dumps(part_features, default=str),
-            touchpoints_json=json.dumps(touchpoints, default=str),
-            environment_json=json.dumps(environment, default=str),
-            printer_profile_json=json.dumps(printer_profile, default=str),
-            template_id=template_id,
-        )
+        # New prompt uses actual CadQuery script + user prompt
+        prompt = template.replace("{cadquery_script}", cadquery_script or "# No script available")
+        prompt = prompt.replace("{user_prompt}", user_prompt or template_id)
 
         if not settings.GEMINI_API_KEY:
             log.warning("GEMINI_API_KEY not set — returning stub node graph")

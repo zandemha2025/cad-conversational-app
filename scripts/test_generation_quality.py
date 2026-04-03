@@ -111,6 +111,24 @@ TEST_CASES = [
             "kcl_contains_any": [".revolve(", ".loft("],  # must use revolve or loft
         },
     },
+    # ── DIABOLICAL ───────────────────────────────────────────────────────────
+    {
+        "name": "D1: DJI Mini 4 Pro case",
+        "difficulty": "diabolical",
+        "prompt": "Protective carrying case for a DJI Mini 4 Pro drone with compartment for the drone body, 3 battery slots, and a controller compartment. Include a carry handle on top.",
+        "checks": {
+            "has_geometry": True,
+        },
+    },
+    {
+        "name": "D2: GoPro bike handlebar mount",
+        "difficulty": "diabolical",
+        "prompt": "GoPro Hero 12 mount that clamps onto a 22.2mm bicycle handlebar. Must include the standard GoPro 2-prong finger mount interface (14.7mm prong spacing). Use a hinged clamp with M5 bolt.",
+        "checks": {
+            "has_geometry": True,
+            "kcl_contains": ["math."],
+        },
+    },
 ]
 
 

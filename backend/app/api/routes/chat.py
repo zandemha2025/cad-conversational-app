@@ -498,6 +498,8 @@ async def _run_generation_inline(
                 environment=env,
                 printer_profile=printer,
                 template_id=template_id,
+                cadquery_script=_cq_script_final or "",
+                user_prompt=prompt_text,
             )
             sb.table("node_graphs").insert({
                 "id": str(uuid.uuid4()),
