@@ -90,16 +90,71 @@ async def update_node(
 
     sb.table(TABLE).update({"nodes_json": nodes}).eq("id", graph_id).execute()
 
-    # Queue sub-graph re-generation
+    # Re-execute CadQuery with updated parameter values
     import logging as _logging
-    from app.tasks.generate_fixture import regenerate_subgraph, dispatch_generate_fixture
-    try:
-        job = regenerate_subgraph.apply_async(args=[project_id, node_id], queue="normal")
-        return {"job_id": job.id, "node_id": node_id, "status": "queued"}
-    except Exception as exc:
-        _logging.getLogger(__name__).warning("Celery unavailable (%s), running sync", exc)
+    _log = _logging.getLogger(__name__)
+
+    # Fetch the latest CadQuery script for this project
+    fixture_res = (
+        sb.table("fixture_geometries")
+        .select("id,kcl,version")
+        .eq("project_id", project_id)
+        .order("version", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not fixture_res.data or not fixture_res.data[0].get("kcl"):
+        _log.warning("No CadQuery script found for project %s — falling back to full regen", project_id)
+        from app.tasks.generate_fixture import dispatch_generate_fixture
         job_id = dispatch_generate_fixture(project_id, f"Update node {node_id}")
-        return {"job_id": job_id, "node_id": node_id, "status": "queued" if job_id else "running_sync"}
+        return {"job_id": job_id, "node_id": node_id, "status": "full_regen"}
+
+    fixture = fixture_res.data[0]
+    script = fixture["kcl"]
+    version = fixture["version"]
+    fixture_id = fixture["id"]
+
+    # Apply parameter changes to the CadQuery script
+    # Node params have "name" and "value" — find matching variable assignments in the script
+    updated_params = {p.name: p.value for p in body.params}
+    modified_script = script
+
+    import re
+    for param_name, param_value in updated_params.items():
+        # Match: variable_name = <number> or variable_name = <number with decimal>
+        # Try exact variable name first, then common variations
+        for var_name in [param_name, param_name.lower().replace(" ", "_")]:
+            pattern = rf'^(\s*{re.escape(var_name)}\s*=\s*)[\d.]+(.*)$'
+            replacement = rf'\g<1>{param_value}\2'
+            new_script, count = re.subn(pattern, replacement, modified_script, flags=re.MULTILINE)
+            if count > 0:
+                modified_script = new_script
+                _log.info("Updated param %s=%s in CadQuery script (%d replacements)", var_name, param_value, count)
+                break
+
+    if modified_script == script:
+        _log.warning("No variable replacements made for node %s — params may not map to script variables", node_id)
+
+    # Re-execute the modified script
+    try:
+        from app.services.cadquery_service import execute_cadquery_script
+        result = execute_cadquery_script(modified_script, project_id, "fixture", version)
+        gltf_url = result.get("gltf_url")
+
+        if gltf_url:
+            # Update the fixture record with new geometry
+            sb.table("fixture_geometries").update({
+                "gltf_url": gltf_url,
+                "kcl": modified_script,
+            }).eq("id", fixture_id).execute()
+            _log.info("Node param update → new GLB for project=%s node=%s", project_id, node_id)
+            return {"node_id": node_id, "status": "updated", "gltf_url": gltf_url}
+        else:
+            _log.warning("CadQuery re-execution produced no geometry for node %s", node_id)
+            return {"node_id": node_id, "status": "no_geometry", "error": result.get("error")}
+    except Exception as exc:
+        _log.error("CadQuery re-execution failed for node %s: %s", node_id, exc)
+        return {"node_id": node_id, "status": "error", "error": str(exc)[:200]}
 
 
 @router.post("/{project_id}/nodes/regenerate")

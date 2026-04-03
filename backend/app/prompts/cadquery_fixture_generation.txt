@@ -42,6 +42,16 @@ Build order:
   c. Subtractive features (holes, pockets, slots) — .hole(), .cut(), .cutThruAll()
   d. Edge treatments LAST in try/except
 
+7. PARAMETRIC VARIABLES (important for node editing):
+   Use descriptive variable names at the top of the script for ALL key dimensions.
+   Users can edit these values to update the model without regenerating.
+   Example:
+     cylinder_diameter = 80.0
+     cylinder_height = 70.0
+     hole_diameter = 6.0
+     wall_thickness = 2.0
+   NOT: d = 80, h = 70 (too cryptic)
+
 ═══════════════════════════════════════════════════════════════
 CadQuery API REFERENCE
 ═══════════════════════════════════════════════════════════════
