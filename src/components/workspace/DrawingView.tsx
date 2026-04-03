@@ -3,7 +3,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Printer, Download,
   Plus, Layers, Tag, Grid3x3, Loader2, RefreshCw,
 } from 'lucide-react';
-import { fetchLatestDrawing, generateProjectDrawings, directExport } from '../../lib/api';
+import { fetchLatestDrawing, generateProjectDrawings, fetchProjectDrawings, directExport } from '../../lib/api';
 import { useJobPoll } from '../../hooks/useJobPoll';
 
 
@@ -26,15 +26,25 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
     }
   }, [pdfDownloadUrl]);
 
-  // Try to load existing server drawing
+  // Try to load existing server drawing (try v2 endpoint first, fall back to v1)
   useEffect(() => {
     if (!projectId || projectId === 'demo') return;
-    fetchLatestDrawing(projectId)
+    fetchProjectDrawings(projectId)
       .then((data: unknown) => {
-        const d = data as { svg_json?: { svg?: string } | null } | null;
-        if (d?.svg_json?.svg) setServerSvg(d.svg_json.svg);
+        const arr = data as Array<{ svg_json?: { svg?: string } | null }> | null;
+        if (arr && arr.length > 0 && arr[0]?.svg_json?.svg) {
+          setServerSvg(arr[0].svg_json.svg);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Fallback to v1 endpoint
+        fetchLatestDrawing(projectId)
+          .then((data: unknown) => {
+            const d = data as { svg_json?: { svg?: string } | null } | null;
+            if (d?.svg_json?.svg) setServerSvg(d.svg_json.svg);
+          })
+          .catch(() => {});
+      });
   }, [projectId]);
 
   const handleGenerateDrawing = async () => {
@@ -45,7 +55,17 @@ export default function DrawingView({ projectId = 'demo' }: { projectId?: string
       // Backend returns { id, status, drawing: { svg_json: { svg: "..." } } }
       const d = res as { drawing?: { svg_json?: { svg?: string }; svg?: string } } | null;
       const svg = d?.drawing?.svg_json?.svg ?? d?.drawing?.svg ?? null;
-      if (svg) setServerSvg(svg);
+      if (svg) {
+        setServerSvg(svg);
+      } else {
+        // Refetch from DB after a short delay (generation may be async)
+        setTimeout(async () => {
+          try {
+            const arr = await fetchProjectDrawings(projectId) as unknown as Array<{ svg_json?: { svg?: string } }> | null;
+            if (arr && arr.length > 0 && arr[0]?.svg_json?.svg) setServerSvg(arr[0].svg_json.svg);
+          } catch {}
+        }, 3000);
+      }
     } catch {}
     finally { setGenerating(false); }
   };
