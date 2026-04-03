@@ -40,6 +40,8 @@ CHECK each requirement:
    - If spec describes thin visual features (FOV, beam) → thickness MUST be >= 5mm
    - For phone cases: must include corner fillets/radii for ergonomics
 
+6. FEATURE COUNT: Count the number of distinct hole operations (.hole(), .cskHole(), .cboreHole(), .cutThruAll()) in the code. If the design spec lists N distinct hole features but the code has significantly fewer hole operations, flag as 'Missing hole features — spec has N holes but code only creates M'. Each user-specified hole diameter at each position should be a separate operation.
+
 Output ONLY valid JSON:
 {{
   "pass": true | false,

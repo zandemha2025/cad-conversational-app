@@ -95,6 +95,15 @@ def execute_cadquery_script(
                 f.write(script)
 
             timeout = _compute_timeout(script)
+
+            # Debug logging for revolve operations — these are crash-prone
+            if '.revolve(' in cq_script:
+                log.info(
+                    "Revolve operation detected for '%s' (timeout=%ds). "
+                    "Verify profile is closed, x>=0, and starts/ends on axis.",
+                    component_name, timeout,
+                )
+
             result = subprocess.run(
                 [sys.executable, script_path],
                 timeout=timeout,

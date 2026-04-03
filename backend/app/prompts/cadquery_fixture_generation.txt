@@ -169,17 +169,42 @@ cq.exporters.export(result, '/tmp/cq_output.step')
 ```
 
 Example 5 — Revolved shape (bottle/vase/dome):
-"Water bottle 70mm dia × 200mm tall with neck"
+"Water bottle 70mm dia × 200mm tall with tapered neck"
 ```python
 import cadquery as cq
-# Profile points: (radius, height) from bottom to top
-profile = [
-    (35, 0), (35, 140), (30, 155), (15, 170),
-    (15, 190), (13, 195), (13, 200), (0, 200)
+# REVOLVE RULES:
+# 1. The 2D profile must be a CLOSED shape
+# 2. All profile points must have x >= 0 (do NOT cross the revolution axis)
+# 3. Start and end the profile ON the axis (x=0) to create a solid of revolution
+# 4. Work on the XZ plane; revolve around the Y axis via (0,0,0)→(0,1,0)
+# Profile: half cross-section (x=radius, y=height) from bottom-center to top-center
+bottle_radius = 35.0
+neck_radius = 15.0
+body_height = 140.0
+total_height = 200.0
+profile_pts = [
+    (0, 0),                    # Bottom center (ON axis)
+    (bottle_radius, 0),        # Bottom edge
+    (bottle_radius, body_height),  # Body wall
+    (neck_radius, 170),        # Shoulder taper
+    (neck_radius, total_height),   # Neck top
+    (0, total_height),         # Top center (ON axis)
 ]
-result = cq.Workplane('XZ').polyline(profile).close().revolve(360, (0,0,0), (0,1,0))
+result = (
+    cq.Workplane('XZ')
+    .polyline(profile_pts)
+    .close()
+    .revolve(360, (0, 0, 0), (0, 1, 0))
+)
 cq.exporters.export(result, '/tmp/cq_output.step')
 ```
+
+REVOLVE RULES (critical — violating these causes empty geometry or crashes):
+- The 2D profile must be a CLOSED shape (polyline + .close())
+- All profile x-coordinates must be >= 0 (NEVER cross the revolution axis)
+- Start and end the profile ON the axis (x=0) to create a watertight solid
+- Use the XZ workplane and revolve around Y: .revolve(360, (0,0,0), (0,1,0))
+- Use named variables for dimensions (parametric, editable)
 
 Example 6 — Lofted shape (tapered housing/adapter):
 "Square-to-round adapter: 60mm square bottom to 40mm circle top, 50mm tall"
@@ -297,6 +322,8 @@ KEY RULES FOR CONCENTRIC HOLES:
 - Use .cskHole(holeDia, cskDia, cskAngle) for countersunk holes
 - Use .cboreHole(holeDia, cboreDia, cboreDepth) for counterbored holes
 - Convert corner-based coordinates to CadQuery center-based: x_cq = x_corner - length/2
+
+CONCENTRIC HOLES: When the user specifies MULTIPLE different hole diameters at the SAME XY position (e.g., main bore + mounting hole + pilot hole), create each as a SEPARATE .hole()/.cskHole()/.cboreHole() operation. Do NOT merge them into one operation. Work from LARGEST diameter to SMALLEST.
 
 ═══════════════════════════════════════════════════════════════
 CONTEXT (use ONLY if directly relevant)
