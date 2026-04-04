@@ -216,11 +216,24 @@ async def export_direct(
         elif isinstance(fj, list):
             features = fj
 
-    # Also check if we have a Zoo.dev/KCL compiled result
-    fixture_res = (
+    # Also check if we have a Zoo.dev/KCL compiled result.
+    # Prefer the latest fixture that has a gltf_url (study variations may have
+    # kcl but no gltf_url when generation is still pending or failed).
+    fixture_res_with_glb = (
         sb.table("fixture_geometries")
         .select("kcl,gltf_url")
         .eq("project_id", project_id)
+        .not_.is_("gltf_url", "null")
+        .order("generated_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    # Also grab the latest fixture with KCL (may or may not have GLB)
+    fixture_res_with_kcl = (
+        sb.table("fixture_geometries")
+        .select("kcl,gltf_url")
+        .eq("project_id", project_id)
+        .not_.is_("kcl", "null")
         .order("generated_at", desc=True)
         .limit(1)
         .execute()
@@ -228,13 +241,16 @@ async def export_direct(
 
     # Fetch fixture KCL if available (for Zoo.dev / OCCT conversion)
     fixture_kcl = None
-    if fixture_res.data and fixture_res.data[0].get("kcl"):
-        fixture_kcl = fixture_res.data[0]["kcl"]
+    if fixture_res_with_kcl.data and fixture_res_with_kcl.data[0].get("kcl"):
+        fixture_kcl = fixture_res_with_kcl.data[0]["kcl"]
 
     # Best available GLB URL: prefer fixture GLB (AI-generated), fall back to
     # part GLB (converted from uploaded STEP). Passed to compile_kcl_to_format()
-    # so the fast GLB→format path is used instead of re-running text-to-CAD.
-    fixture_gltf_url = fixture_res.data[0].get("gltf_url") if fixture_res.data else None
+    # so the fast GLB->format path is used instead of re-running text-to-CAD.
+    fixture_gltf_url = (
+        fixture_res_with_glb.data[0].get("gltf_url")
+        if fixture_res_with_glb.data else None
+    )
     part_gltf_url = geom_res.data[0].get("gltf_url") if geom_res.data else None
     best_glb_url = fixture_gltf_url or part_gltf_url
 

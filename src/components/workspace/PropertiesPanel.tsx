@@ -6,7 +6,8 @@ import {
 import { useWorkspace, MATERIAL_APPEARANCE } from '../../store/workspaceStore';
 import {
   runFeaLite, fetchValidationResults, fetchProject,
-  fetchRevisions, fetchMaterials, fetchGdtCallouts, generateGdtCallouts,
+  fetchProjectRevisions, createProjectRevision,
+  fetchMaterials, fetchGdtCallouts, generateGdtCallouts,
 } from '../../lib/api';
 import type { MaterialProperties, GdtCallout } from '../../lib/api';
 import type { FeaLiteResult, ApiProject } from '../../lib/api';
@@ -96,6 +97,11 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const [gdtGenerating, setGdtGenerating] = useState(false);
   const [gdtGeneratedAt, setGdtGeneratedAt] = useState<string | null>(null);
 
+  // ECR form state
+  const [ecrFormOpen, setEcrFormOpen] = useState(false);
+  const [ecrDescription, setEcrDescription] = useState('');
+  const [ecrSubmitting, setEcrSubmitting] = useState(false);
+
   const isLive = !!projectId;
 
   // Fetch materials from live API (no auth needed)
@@ -126,9 +132,9 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
       });
       setDfmIssues(deduped.slice(0, 10));
     });
-    fetchRevisions(projectId).then((data: unknown) => {
+    fetchProjectRevisions(projectId).then((data: unknown) => {
       const revs = data as Revision[] | null;
-      if (revs && revs.length > 0) setRevisions(revs);
+      if (revs) setRevisions(revs);
     });
     fetchGdtCallouts(projectId).then(res => {
       if (res && res.callouts && res.callouts.length > 0) {
@@ -171,6 +177,55 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
       if (res) setFeaResult(res);
     } finally { setFeaRunning(false); }
   }, [projectId, features]);
+
+  /** Compute the next revision letter from the current list. A->B->C...->Z->AA */
+  const getNextRevLetter = useCallback((): string => {
+    if (revisions.length === 0) return 'A';
+    const sorted = [...revisions].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    const last = sorted[0].rev_letter;
+    // Simple single-letter increment; wrap Z->AA
+    if (last.length === 1 && last < 'Z') {
+      return String.fromCharCode(last.charCodeAt(0) + 1);
+    }
+    if (last === 'Z') return 'AA';
+    // Multi-letter: increment last char
+    const prefix = last.slice(0, -1);
+    const lastChar = last.slice(-1);
+    if (lastChar < 'Z') return prefix + String.fromCharCode(lastChar.charCodeAt(0) + 1);
+    return prefix + 'A' + 'A'; // overflow
+  }, [revisions]);
+
+  const handleRaiseEcr = useCallback(async () => {
+    if (!projectId || ecrSubmitting) return;
+    setEcrSubmitting(true);
+    try {
+      const nextRev = getNextRevLetter();
+      const desc = ecrDescription.trim() || 'Design revision';
+      const ecrNum = `ECR-${Date.now().toString(36).toUpperCase()}`;
+      await createProjectRevision(projectId, {
+        rev_letter: nextRev,
+        description: desc,
+        ecr_number: ecrNum,
+        changes: [desc],
+      });
+      // Refetch revisions
+      const data = await fetchProjectRevisions(projectId);
+      const revs = data as Revision[] | null;
+      if (revs) setRevisions(revs);
+      // Refetch project to update the revision letter in the header
+      const p = await fetchProject(projectId);
+      if (p) setProject(p);
+      // Reset form
+      setEcrDescription('');
+      setEcrFormOpen(false);
+    } catch (err) {
+      console.error('Failed to raise ECR:', err);
+    } finally {
+      setEcrSubmitting(false);
+    }
+  }, [projectId, ecrSubmitting, ecrDescription, getNextRevLetter]);
 
   const tabs: { id: Tab; icon: React.ReactNode; label: string }[] = [
     { id: 'properties', icon: <Settings2 size={13} />, label: 'Props' },
@@ -570,7 +625,43 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
               ) : (
                 <p className="text-xs text-slate-600 py-2">No revisions yet. Use "Raise ECR" to create the first revision.</p>
               )}
-              <button className="btn-primary w-full mt-2 text-xs">Raise ECR</button>
+              {ecrFormOpen ? (
+                <div className="mt-2 bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2 space-y-2">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-0.5">Next Revision</label>
+                    <span className="text-xs font-mono text-cadblue-400">Rev {getNextRevLetter()}</span>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-0.5">Description</label>
+                    <input
+                      type="text"
+                      value={ecrDescription}
+                      onChange={e => setEcrDescription(e.target.value)}
+                      placeholder="Design revision"
+                      className="w-full text-xs bg-cadsurface-900 border border-cadsurface-600 focus:border-cadblue-500 rounded px-2 py-1 outline-none text-slate-200 placeholder-slate-600"
+                      onKeyDown={e => { if (e.key === 'Enter') handleRaiseEcr(); }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={handleRaiseEcr}
+                      disabled={ecrSubmitting}
+                      className="btn-primary flex-1 text-xs disabled:opacity-50"
+                    >{ecrSubmitting ? 'Creating...' : 'Create ECR'}</button>
+                    <button
+                      onClick={() => { setEcrFormOpen(false); setEcrDescription(''); }}
+                      className="flex-1 text-xs py-1 rounded border border-cadsurface-600 text-slate-400 hover:text-slate-200 hover:border-cadsurface-500 transition-colors"
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEcrFormOpen(true)}
+                  disabled={!isLive}
+                  className="btn-primary w-full mt-2 text-xs disabled:opacity-50"
+                >Raise ECR</button>
+              )}
             </Section>
 
             <Section title="Standards Compliance" defaultOpen={false}>

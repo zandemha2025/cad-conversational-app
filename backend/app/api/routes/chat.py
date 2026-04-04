@@ -393,24 +393,29 @@ async def _run_generation_inline(
             log.info("CadQuery script generated (%d chars) project=%s", len(cq_script), project_id)
 
             # Stage 3: Validate code against spec before executing
-            validation = await gemini.validate_cadquery_against_spec(
-                cq_script, design_spec, prompt_text,
-            )
-            if not validation.get("pass", True):
-                issues = validation.get("issues", [])
-                log.warning("CadQuery validation failed project=%s: %s", project_id, issues)
-                # Regenerate with specific feedback from validation
-                await _ws_send_safe(ws, {
-                    "type": "generation_progress", "progress": 0.52,
-                    "message": "Refining geometry…", "job_id": job_id,
-                })
-                issue_text = "; ".join(issues[:3])
-                cq_script = await gemini.retry_cadquery_with_error(
-                    cq_script,
-                    f"VALIDATION FAILED: {issue_text}. Fix the code to match the design spec.",
-                    prompt_text,
+            # Skip validation for high-detail prompts — user already specified
+            # everything precisely, so spec validation adds ~3s with no value.
+            if _is_high_detail:
+                log.info("Skipping spec validation for high-detail prompt project=%s", project_id)
+            else:
+                validation = await gemini.validate_cadquery_against_spec(
+                    cq_script, design_spec, prompt_text,
                 )
-                log.info("CadQuery regenerated after validation (%d chars) project=%s", len(cq_script), project_id)
+                if not validation.get("pass", True):
+                    issues = validation.get("issues", [])
+                    log.warning("CadQuery validation failed project=%s: %s", project_id, issues)
+                    # Regenerate with specific feedback from validation
+                    await _ws_send_safe(ws, {
+                        "type": "generation_progress", "progress": 0.52,
+                        "message": "Refining geometry…", "job_id": job_id,
+                    })
+                    issue_text = "; ".join(issues[:3])
+                    cq_script = await gemini.retry_cadquery_with_error(
+                        cq_script,
+                        f"VALIDATION FAILED: {issue_text}. Fix the code to match the design spec.",
+                        prompt_text,
+                    )
+                    log.info("CadQuery regenerated after validation (%d chars) project=%s", len(cq_script), project_id)
 
             # Stage 4: Execute CadQuery with retry on execution errors
             loop = asyncio.get_event_loop()
@@ -505,59 +510,63 @@ async def _run_generation_inline(
         if hasattr(update_result, 'error') and update_result.error:
             log.error("Failed to update fixture_geometries gltf_url fixture=%s: %s", fixture_id, update_result.error)
 
-        # ── 5. Node graph ────────────────────────────────────────────────────
+        # ── 5+6. Node graph + DFM validation (PARALLEL) ─────────────────────
+        # These two steps are independent — run them concurrently to save ~8s.
         await _ws_send_safe(ws, {
             "type": "generation_progress", "progress": 0.80,
-            "message": "Building parametric node graph…", "job_id": job_id,
+            "message": "Building node graph & running validation…", "job_id": job_id,
         })
 
-        try:
-            node_graph = await gemini.generate_node_graph(
-                part_features=features,
-                touchpoints=touchpoints,
-                environment=env,
-                printer_profile=printer,
-                template_id=template_id,
-                cadquery_script=_cq_script_final or "",
-                user_prompt=prompt_text,
-            )
-            sb.table("node_graphs").insert({
-                "id": str(uuid.uuid4()),
-                "project_id": project_id,
-                "nodes_json": node_graph.get("nodes", []),
-                "connections_json": node_graph.get("connections", []),
-                "generated_at": now_iso,
-            }).execute()
-        except Exception as ng_exc:
-            log.error("Node graph generation failed project=%s: %s", project_id, ng_exc)
-
-        # ── 6. DFM validation ────────────────────────────────────────────────
-        await _ws_send_safe(ws, {
-            "type": "generation_progress", "progress": 0.90,
-            "message": "Running DFM validation…", "job_id": job_id,
-        })
-
-        try:
-            all_results = validate_all(
-                features=features,
-                printer_profile=printer,
-                touchpoints=touchpoints,
-                project=proj,
-            )
-            for method, issues in all_results.items():
-                errors = sum(1 for i in issues if i["severity"] == "error")
-                warnings = sum(1 for i in issues if i["severity"] == "warning")
-                sb.table("validation_results").insert({
+        async def _generate_and_store_node_graph():
+            """Generate parametric node graph and store in DB."""
+            try:
+                node_graph = await gemini.generate_node_graph(
+                    part_features=features,
+                    touchpoints=touchpoints,
+                    environment=env,
+                    printer_profile=printer,
+                    template_id=template_id,
+                    cadquery_script=_cq_script_final or "",
+                    user_prompt=prompt_text,
+                )
+                sb.table("node_graphs").insert({
                     "id": str(uuid.uuid4()),
                     "project_id": project_id,
-                    "method": method,
-                    "issues_json": issues,
-                    "error_count": errors,
-                    "warning_count": warnings,
-                    "ran_at": now_iso,
+                    "nodes_json": node_graph.get("nodes", []),
+                    "connections_json": node_graph.get("connections", []),
+                    "generated_at": now_iso,
                 }).execute()
-        except Exception as val_exc:
-            log.error("Validation failed project=%s: %s", project_id, val_exc)
+            except Exception as ng_exc:
+                log.error("Node graph generation failed project=%s: %s", project_id, ng_exc)
+
+        async def _run_dfm_validation():
+            """Run DFM validation checks and store results."""
+            try:
+                all_results = validate_all(
+                    features=features,
+                    printer_profile=printer,
+                    touchpoints=touchpoints,
+                    project=proj,
+                )
+                for method, issues in all_results.items():
+                    errors = sum(1 for i in issues if i["severity"] == "error")
+                    warnings = sum(1 for i in issues if i["severity"] == "warning")
+                    sb.table("validation_results").insert({
+                        "id": str(uuid.uuid4()),
+                        "project_id": project_id,
+                        "method": method,
+                        "issues_json": issues,
+                        "error_count": errors,
+                        "warning_count": warnings,
+                        "ran_at": now_iso,
+                    }).execute()
+            except Exception as val_exc:
+                log.error("Validation failed project=%s: %s", project_id, val_exc)
+
+        await asyncio.gather(
+            _generate_and_store_node_graph(),
+            _run_dfm_validation(),
+        )
 
         # ── 7. Done ──────────────────────────────────────────────────────────
         if not gltf_url:
