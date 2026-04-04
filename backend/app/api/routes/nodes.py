@@ -1,7 +1,13 @@
+import asyncio
+import logging
+import re
+
 from fastapi import APIRouter, HTTPException, Depends, status
 from app.models.node_graph import NodeGraphResponse, NodeUpdate
 from app.api.deps import get_current_user_id
 from app.core.database import get_supabase_client
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["nodes"])
 TABLE = "node_graphs"
@@ -91,9 +97,6 @@ async def update_node(
     sb.table(TABLE).update({"nodes_json": nodes}).eq("id", graph_id).execute()
 
     # Re-execute CadQuery with updated parameter values
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
-
     # Fetch the latest CadQuery script for this project
     fixture_res = (
         sb.table("fixture_geometries")
@@ -119,12 +122,11 @@ async def update_node(
     updated_params = {p.name: p.value for p in body.params}
     modified_script = script
 
-    import re
     for param_name, param_value in updated_params.items():
         # Match: variable_name = <number> or variable_name = <number with decimal>
         # Try exact variable name first, then common variations
         for var_name in [param_name, param_name.lower().replace(" ", "_")]:
-            pattern = rf'^(\s*{re.escape(var_name)}\s*=\s*)[\d.]+(.*)$'
+            pattern = rf'^(\s*{re.escape(var_name)}\s*=\s*)-?[\d.]+(.*)$'
             replacement = rf'\g<1>{param_value}\2'
             new_script, count = re.subn(pattern, replacement, modified_script, flags=re.MULTILINE)
             if count > 0:
@@ -135,10 +137,14 @@ async def update_node(
     if modified_script == script:
         _log.warning("No variable replacements made for node %s — params may not map to script variables", node_id)
 
-    # Re-execute the modified script
+    # Re-execute the modified script in a thread so that synchronous
+    # code (subprocess calls, Zoo.dev fallback with its own event loop)
+    # does not conflict with FastAPI's running async loop.
     try:
         from app.services.cadquery_service import execute_cadquery_script
-        result = execute_cadquery_script(modified_script, project_id, "fixture", version)
+        result = await asyncio.to_thread(
+            execute_cadquery_script, modified_script, project_id, "fixture", version
+        )
         gltf_url = result.get("gltf_url")
 
         if gltf_url:
