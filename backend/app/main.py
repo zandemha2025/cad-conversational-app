@@ -49,6 +49,7 @@ from app.api.routes.analytics import router as analytics_router
 from app.api.routes.audit_log import router as audit_router
 from app.api.routes.fea_lite import router as fea_lite_router
 # New manufacturing features (Sprint 5)
+from app.api.routes.gdt import router as gdt_router
 from app.api.routes.approvals import router as approvals_router
 from app.api.routes.constraints import router as constraints_router
 from app.api.routes.interference import router as interference_router
@@ -86,6 +87,7 @@ app.include_router(upload.router,      prefix=API)
 app.include_router(geometry.router,    prefix=API)
 app.include_router(touchpoints.router, prefix=API)
 app.include_router(validation.router,  prefix=API)
+app.include_router(gdt_router,         prefix=API)
 app.include_router(nodes.router,       prefix=API)
 app.include_router(chat.router,        prefix=API)
 app.include_router(generation.router,  prefix=API)

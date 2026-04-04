@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -10,6 +11,7 @@ from app.api.deps import get_current_user_id
 from app.core.database import get_supabase_client
 
 router = APIRouter(prefix="/projects", tags=["validation"])
+log = logging.getLogger(__name__)
 TABLE = "validation_results"
 
 
@@ -133,6 +135,30 @@ async def run_validation(
         }
         sb.table(TABLE).insert(record).execute()
         results.append({"method": method, "error_count": errors, "warning_count": warnings})
+
+    # ── GD&T callout generation (runs after DFM checks) ────────────────────
+    if "gdt" in target_methods or (body is None) or (body and body.methods is None):
+        try:
+            from app.services.gemini_service import GeminiService
+            _gemini = GeminiService()
+            proj_res2 = sb.table("projects").select("name, description").eq("id", project_id).single().execute()
+            proj2 = proj_res2.data or {}
+            user_prompt = proj2.get("description") or proj2.get("name") or "machined part"
+            gdt_callouts = await _gemini.generate_gdt_callouts(features, user_prompt)
+            sb.table(TABLE).insert({
+                "id": str(uuid.uuid4()),
+                "project_id": project_id,
+                "method": "gdt",
+                "issues_json": gdt_callouts,
+                "error_count": 0,
+                "warning_count": len(gdt_callouts),
+                "ran_at": now,
+            }).execute()
+            results.append({"method": "gdt", "error_count": 0, "warning_count": len(gdt_callouts)})
+            if "gdt" not in target_methods:
+                target_methods.append("gdt")
+        except Exception as gdt_exc:
+            log.error("GD&T generation failed project=%s: %s", project_id, gdt_exc)
 
     job_id = str(uuid.uuid4())
     return {"job_id": job_id, "status": "completed", "methods_run": target_methods, "results": results}

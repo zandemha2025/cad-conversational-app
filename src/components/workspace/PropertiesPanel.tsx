@@ -6,9 +6,9 @@ import {
 import { useWorkspace, MATERIAL_APPEARANCE } from '../../store/workspaceStore';
 import {
   runFeaLite, fetchValidationResults, fetchProject,
-  fetchRevisions, fetchMaterials,
+  fetchRevisions, fetchMaterials, fetchGdtCallouts, generateGdtCallouts,
 } from '../../lib/api';
-import type { MaterialProperties } from '../../lib/api';
+import type { MaterialProperties, GdtCallout } from '../../lib/api';
 import type { FeaLiteResult, ApiProject } from '../../lib/api';
 import type { Revision } from '../../types';
 
@@ -92,6 +92,9 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [liveMaterials, setLiveMaterials] = useState<MaterialProperties[]>([]);
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>('aluminum_6061');
+  const [gdtCallouts, setGdtCallouts] = useState<GdtCallout[]>([]);
+  const [gdtGenerating, setGdtGenerating] = useState(false);
+  const [gdtGeneratedAt, setGdtGeneratedAt] = useState<string | null>(null);
 
   const isLive = !!projectId;
 
@@ -127,6 +130,12 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
       const revs = data as Revision[] | null;
       if (revs && revs.length > 0) setRevisions(revs);
     });
+    fetchGdtCallouts(projectId).then(res => {
+      if (res && res.callouts && res.callouts.length > 0) {
+        setGdtCallouts(res.callouts);
+        setGdtGeneratedAt(res.generated_at);
+      }
+    });
   }, [isLive, projectId]);
 
   // Compute 3-2-1 constraint status from real touchpoints
@@ -138,6 +147,18 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
     + Math.min(locating.length >= 2 ? 2 : locating.length, 2)
     + Math.min(locating.length >= 3 || clamping.length >= 1 ? 1 : 0, 1);
   const isFullyConstrained = dofConstrained >= 6;
+
+  const handleGenerateGdt = useCallback(async () => {
+    if (!projectId || gdtGenerating) return;
+    setGdtGenerating(true);
+    try {
+      const res = await generateGdtCallouts(projectId);
+      if (res && res.callouts) {
+        setGdtCallouts(res.callouts);
+        setGdtGeneratedAt(res.generated_at);
+      }
+    } finally { setGdtGenerating(false); }
+  }, [projectId, gdtGenerating]);
 
   const handleRunFea = useCallback(async () => {
     if (!projectId) return;
@@ -258,16 +279,61 @@ export default function PropertiesPanel({ projectId = 'demo' }: { projectId?: st
                 ))}
               </div>
             </div>
-            <div className="px-3 py-6 text-center">
-              <Tag size={28} className="text-slate-700 mx-auto mb-3" />
-              <p className="text-xs text-slate-500">GD&T annotations are added via the AI chat.</p>
-              <p className="text-xs text-slate-600 mt-1">
-                Example: <span className="text-cadblue-500 font-mono">"Add a ⊕ 0.1 |A|B|C position callout on the bushing bores"</span>
-              </p>
-              {Object.entries(GDT_GLYPHS).slice(0, 6).map(([sym, glyph]) => (
-                <span key={sym} className="inline-block m-0.5 text-base text-slate-600" title={sym}>{glyph}</span>
-              ))}
-            </div>
+            {gdtCallouts.length > 0 ? (
+              <div className="px-3 py-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-slate-500">
+                    {gdtCallouts.length} callout{gdtCallouts.length !== 1 ? 's' : ''}
+                    {gdtGeneratedAt && <> &middot; {new Date(gdtGeneratedAt).toLocaleString()}</>}
+                  </span>
+                  <button
+                    onClick={handleGenerateGdt}
+                    disabled={gdtGenerating}
+                    className="text-xs text-cadblue-400 hover:text-cadblue-300 disabled:opacity-50"
+                  >{gdtGenerating ? 'Generating...' : 'Regenerate'}</button>
+                </div>
+                <div className="space-y-2">
+                  {gdtCallouts.map((c, i) => (
+                    <div key={i} className="bg-cadsurface-800 border border-cadsurface-700 rounded-lg p-2">
+                      <div className="flex items-start gap-2">
+                        <span className="text-base leading-none mt-0.5 shrink-0" title={c.symbol}>
+                          {GDT_GLYPHS[c.symbol] ?? c.symbol}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-slate-200">
+                            <span className="capitalize">{c.symbol.replace(/[_-]/g, ' ')}</span>
+                            <span className="text-cadblue-400 font-mono ml-1">{c.tolerance}</span>
+                            {c.datum_refs.length > 0 && (
+                              <span className="text-amber-400 font-mono ml-1">
+                                | {c.datum_refs.join(' | ')}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">{c.feature}</p>
+                          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{c.rationale}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="px-3 py-6 text-center">
+                <Tag size={28} className="text-slate-700 mx-auto mb-3" />
+                <p className="text-xs text-slate-500 mb-3">No GD&T callouts generated yet.</p>
+                <button
+                  onClick={handleGenerateGdt}
+                  disabled={gdtGenerating || !isLive}
+                  className="btn-primary text-xs px-4 py-1.5 disabled:opacity-50"
+                >{gdtGenerating ? 'Generating...' : 'Generate GD&T Callouts'}</button>
+                <p className="text-xs text-slate-600 mt-3">
+                  Or use AI chat: <span className="text-cadblue-500 font-mono">"Add a ⊕ 0.1 |A|B|C position callout on the bushing bores"</span>
+                </p>
+                {Object.entries(GDT_GLYPHS).slice(0, 6).map(([sym, glyph]) => (
+                  <span key={sym} className="inline-block m-0.5 text-base text-slate-600" title={sym}>{glyph}</span>
+                ))}
+              </div>
+            )}
           </>
         )}
 

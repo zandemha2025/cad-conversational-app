@@ -10,6 +10,7 @@ class ValidationMethod(str, Enum):
     functional = "functional"
     standards  = "standards"
     inventory  = "inventory"
+    gdt        = "gdt"
 
 
 class IssueSeverity(str, Enum):

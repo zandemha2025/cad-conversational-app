@@ -320,6 +320,30 @@ export async function runValidation(projectId: string, methods?: string[]) {
   });
 }
 
+// ── GD&T ─────────────────────────────────────────────────────────────────────
+
+export interface GdtCallout {
+  symbol: string;
+  tolerance: string;
+  datum_refs: string[];
+  feature: string;
+  rationale: string;
+}
+
+export interface GdtResponse {
+  project_id: string;
+  callouts: GdtCallout[];
+  generated_at: string | null;
+}
+
+export async function fetchGdtCallouts(projectId: string): Promise<GdtResponse | null> {
+  return apiFetch<GdtResponse>(`/projects/${projectId}/gdt`);
+}
+
+export async function generateGdtCallouts(projectId: string): Promise<GdtResponse | null> {
+  return apiFetch<GdtResponse>(`/projects/${projectId}/gdt/generate`, { method: 'POST' });
+}
+
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
 export async function fetchNodeGraph(projectId: string) {

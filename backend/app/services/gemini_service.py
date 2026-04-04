@@ -437,6 +437,51 @@ class GeminiService:
 
         return "\n".join(lines) + "\n"
 
+    # ── GD&T callout generation (Flash) ─────────────────────────────────────────
+    async def generate_gdt_callouts(
+        self, part_features: dict, user_prompt: str,
+    ) -> list[dict]:
+        """Generate GD&T callouts based on part geometry and user's intent.
+        Returns list of {symbol, tolerance, datum_refs, feature, rationale}"""
+        template = _load_prompt("gdt_generation.txt")
+        prompt = _fill_template(
+            template,
+            part_features_json=json.dumps(part_features, default=str),
+            user_prompt=user_prompt,
+        )
+
+        if not settings.GEMINI_API_KEY:
+            log.warning("GEMINI_API_KEY not set — returning stub GD&T callouts")
+            return [
+                {"symbol": "flatness", "tolerance": "0.05",
+                 "datum_refs": [], "feature": "bottom face (Datum A)",
+                 "rationale": "Primary datum surface"},
+                {"symbol": "position", "tolerance": "Dia 0.2 MMC",
+                 "datum_refs": ["A", "B", "C"], "feature": "bolt holes",
+                 "rationale": "Bolt pattern alignment"},
+            ]
+
+        model = self._get_flash()
+        try:
+            resp = await limiter.execute(
+                lambda: model.generate_content(prompt),
+                tier="flash",
+                context="generate_gdt_callouts",
+            )
+            raw = resp.text.strip()
+            # Strip markdown fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            callouts = json.loads(raw)
+            if not isinstance(callouts, list):
+                log.warning("GD&T response is not a list, wrapping")
+                callouts = [callouts]
+            log.info("Generated %d GD&T callouts", len(callouts))
+            return callouts
+        except (json.JSONDecodeError, Exception) as e:
+            log.error("generate_gdt_callouts error: %s", e)
+            return []
+
     # ── Design spec generation (Flash — fast structured output) ─────────────────
     async def generate_design_spec(self, user_prompt: str, research_data: dict | None = None) -> dict:
         """
